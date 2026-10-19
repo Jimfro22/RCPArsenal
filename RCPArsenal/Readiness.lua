@@ -25,7 +25,7 @@ local function Plain(value, limit)
 end
 local function Now() return GetTime and GetTime() or 0 end
 local function Combat()
-    return RA.InEncounter or (InCombatLockdown and InCombatLockdown())
+    return (InCombatLockdown and InCombatLockdown())
         or (IsEncounterInProgress and IsEncounterInProgress())
 end
 local function Notify() RA:FireCallback("READINESS_UPDATED") end
@@ -267,8 +267,8 @@ local function Invalidate(reason)
     end
     Notify()
 end
-local function ValidateRoster()
-    local roster = Roster()
+local function ValidateRoster(roster)
+    roster = roster or Roster()
     if not roster then return nil end
     if rosterFingerprint and rosterFingerprint ~= roster.fingerprint then
         Invalidate("The group roster changed; query the group again.")
@@ -290,17 +290,28 @@ local function Finish(state, reason)
     end
     Notify()
 end
-function Readiness:QueryGroup()
-    local reason = self:GetRestrictionReason()
+local function QueryEligibility()
+    local reason = Readiness:GetRestrictionReason()
     if reason then return false, reason end
     if not GroupChannel() then return false, "Join a party or raid to query readiness." end
-    local roster = ValidateRoster()
+    local roster = Roster()
     if not roster then return false, "The group roster is not available." end
     local player
     for i = 1, #roster.list do if roster.list[i].isPlayer then player = roster.list[i]; break end end
     if not player or not (player.leader or player.assistant) then return false, "Only the group leader or an assistant can query readiness." end
     if request then return false, "A readiness query is already running." end
-    if Now() - lastQuery < self.QUERY_COOLDOWN then return false, "Wait a few seconds before querying again." end
+    if Now() - lastQuery < Readiness.QUERY_COOLDOWN then return false, "Wait a few seconds before querying again." end
+    return true, nil, roster
+end
+-- Read-only UI eligibility: no cache, settings, callbacks, timers, or comms.
+function Readiness:GetQueryEligibility()
+    local eligible, reason = QueryEligibility()
+    return eligible, reason
+end
+function Readiness:QueryGroup()
+    local eligible, reason, roster = QueryEligibility()
+    if not eligible then return false, reason end
+    ValidateRoster(roster)
     generation, nonceCounter = generation + 1, nonceCounter + 1
     local nonce = string.format("%x-%x-%x", math.floor(Now() * 1000) % 2147483647, nonceCounter % 65536, math.random(0, 16777215))
     snapshot = NewSnapshot(roster, "checking")
@@ -411,16 +422,32 @@ local function ReceiveResponse(fields, sender)
     end
     if done then Finish("complete", "All online group members responded.") else Notify() end
 end
+local function ResolveSender(roster, senderName)
+    if senderName:find("-", 1, true) then return roster.byName[senderName:lower()] end
+    -- Same-realm addon events may omit the realm. Bind that spelling only to
+    -- an actual local-realm roster member, and reject every short-name clash.
+    local realm = GetNormalizedRealmName and Plain(GetNormalizedRealmName(), 64)
+        or (GetRealmName and Plain(GetRealmName(), 64))
+    if not realm then return nil end
+    realm = realm:gsub("%s", "")
+    local candidate = roster.byName[(senderName .. "-" .. realm):lower()]
+    if not candidate then return nil end
+    local matches = 0
+    for i = 1, #roster.list do
+        if roster.list[i].name:match("^[^-]+"):lower() == senderName:lower() then matches = matches + 1 end
+    end
+    return matches == 1 and candidate or nil
+end
 local function OnMessage(_, prefix, message, channel, senderName)
     -- Never concatenate, pattern-match, or compare secret event values first.
     if Secret(prefix) or Secret(message) or Secret(channel) or Secret(senderName) then return end
     if type(prefix) ~= "string" or prefix ~= Readiness.PREFIX or type(message) ~= "string"
         or #message == 0 or #message > Readiness.MAX_PACKET_BYTES or message:find("%c")
-        or type(channel) ~= "string" or not Plain(senderName, 128) or not senderName:find("-", 1, true)
+        or type(channel) ~= "string" or not Plain(senderName, 128)
         or Readiness:GetRestrictionReason() then return end
     local roster = ValidateRoster()
     if not roster then return end
-    local sender = roster.byName[senderName:lower()]
+    local sender = ResolveSender(roster, senderName)
     if not sender or sender.isPlayer or sender.online ~= true then return end
     local bucket = receiveCounts[sender.guid]
     if not bucket or Now() - bucket.at >= 15 then bucket = { at = Now(), count = 0 }; receiveCounts[sender.guid] = bucket end

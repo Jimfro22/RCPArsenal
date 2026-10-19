@@ -158,7 +158,6 @@ check(R:GetSnapshot().status == "checking", "query status missing")
 check(R:GetSnapshot().byGUID["Player-3"].status == "offline", "offline member not distinct")
 check(Mage().status == "unknown" and Mage().addons.northernsky.state == "unknown", "no response became missing")
 Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Intruder-TestRealm")
-Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage")
 Deliver(Response(nonce, "northernsky", "111", "1.2.3"), nil, "PARTY")
 Deliver(Response(nonce .. "a", "northernsky", "111", "1.2.3"))
 Deliver((Response(nonce, "northernsky", "111", "1.2.3"):gsub("R|1", "R|2", 1)))
@@ -319,4 +318,73 @@ for _, packet in ipairs(actualPackets) do Deliver((packet.message:gsub("a%-b%-c"
 check(R:GetSnapshot().status == "complete", "actual encoded catalog packets failed round-trip")
 check(Mage().addons.northernsky.version == string.rep("1", 64), "exact long version changed on wire")
 check(Mage().addons.arsenal.build == string.rep("2", 32), "Arsenal build changed on wire")
+
+-- Eligibility mirrors query gates and remains a read-only API for the UI.
+R = Setup()
+local callbacksSeen = 0
+RA:RegisterCallback("READINESS_UPDATED", function() callbacksSeen = callbacksSeen + 1 end)
+local beforeGeneration, beforeTimers = R:GetSnapshot().generation, #timers
+for i = 1, 4 do
+    local eligible, reason = R:GetQueryEligibility()
+    check(eligible and reason == nil, "eligible leader has no UI eligibility")
+end
+check(#sent == 0 and #timers == beforeTimers and callbacksSeen == 0 and R:GetSnapshot().generation == beforeGeneration,
+    "eligibility mutated readiness state or emitted work")
+RA.InEncounter = true -- A stale inspection/HUD cache must not block the hub.
+check(R:GetQueryEligibility() and R:QueryGroup(), "stale cached encounter flag blocked native-safe readiness")
+local eligible, reason = R:GetQueryEligibility()
+check(not eligible and reason:find("already running", 1, true), "active query eligibility gate missing")
+Advance(13)
+eligible, reason = R:GetQueryEligibility()
+check(not eligible and reason:find("Wait", 1, true), "cooldown eligibility gate missing")
+Advance(3)
+check(R:GetQueryEligibility(), "completed cooldown left UI ineligible")
+combat = true
+check(not R:GetQueryEligibility(), "combat UI query enabled")
+combat = false
+restriction = true
+check(not R:GetQueryEligibility(), "restricted UI query enabled")
+restriction = false
+units.player.leader = false
+check(not R:GetQueryEligibility(), "member UI query enabled")
+units.player.assist = true
+check(R:GetQueryEligibility(), "assistant UI query disabled")
+grouped = false
+check(not R:GetQueryEligibility(), "solo UI query enabled")
+grouped = true
+units.party1.guid = nil
+check(not R:GetQueryEligibility(), "incomplete roster UI query enabled")
+
+-- Resolve short event senders through the current roster, never payload names.
+R = Setup()
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage")
+check(Mage().receivedCount == 1, "unique local-realm short sender was rejected")
+R = Setup()
+units.party1.realm = "OtherRealm"
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage")
+check(Mage().receivedCount == 0, "offrealm-only short sender was accepted")
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage-OtherRealm")
+check(Mage().receivedCount == 1, "qualified offrealm roster sender was rejected")
+R = Setup()
+units.party2 = Member("Mage", "Player-3")
+units.party2.realm = "OtherRealm"
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage")
+check(Mage().receivedCount == 0, "ambiguous cross-realm short sender was accepted")
+for _, sender in ipairs({"Mage-Injected", "Mage-TestRealm-Injected", " Mage", "Mage|TestRealm", "Mage\n"}) do
+    Deliver(Response(nonce, "northernsky", "111", "1.2.3"), sender)
+end
+check(Mage().receivedCount == 0, "injected sender identity was accepted")
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"), "Mage-TestRealm")
+check(Mage().receivedCount == 1, "qualified sender was rejected because another realm shared the short name")
+R = Setup()
+units.player.leader, units.party1.leader = false, true
+Deliver("Q|1|a-b-c", "Mage", "PARTY")
+Advance(4)
+check(#sent == 7 and sent[1].target == "Mage-TestRealm", "short leader query did not bind replies to canonical roster identity")
 print("readiness: " .. checks .. " checks passed")
