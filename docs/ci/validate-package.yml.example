@@ -1,0 +1,26 @@
+# Draft only. Move to .github/workflows/ after choosing the remote destination.
+# Produces a workflow artifact; does not create a release or upload to CurseForge.
+name: Validate and package
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate and build test ZIP
+        run: python3 tools/package.py --output-dir dist --label ci
+      - uses: actions/upload-artifact@v7
+        with:
+          name: RCPArsenal-test-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
