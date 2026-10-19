@@ -59,15 +59,23 @@ local COLORS = {
 }
 
 local TAB_DEFS = {
-    { key = "ADDONS", label = "ADDONS", subtitle = "Morning Brew", icon = Theme.Assets.NavContent },
-    { key = "MYTOOLS", label = "MY TOOLS", subtitle = "Choose what runs", icon = Theme.Assets.NavHUD },
-    { key = "RAIDTOOLS", label = "RAID TOOLS", subtitle = "Group addon versions", icon = Theme.Assets.NavScanning },
-    { key = "SETTINGS", label = "SETTINGS", subtitle = "Appearance & profiles", icon = Theme.Assets.NavActions },
+    { key = "HUD", label = "HUD", subtitle = "Enable, appearance & position", group = "ARSENAL", icon = Theme.Assets.NavHUD },
+    { key = "QUICKBAR", label = "QUICK BAR", subtitle = "Puck & raid controls", group = "ARSENAL", icon = Theme.Assets.NavHUD },
+    { key = "CONTENT", label = "CONTENT", subtitle = "Abilities & order", group = "ARSENAL", icon = Theme.Assets.NavContent },
+    { key = "SCANNING", label = "SCANNING", subtitle = "Inspections & groups", group = "ARSENAL", icon = Theme.Assets.NavScanning },
+    { key = "ACTIONS", label = "CALLOUTS & PANIC", subtitle = "Click actions & messages", group = "ARSENAL", icon = Theme.Assets.NavActions },
+    { key = "WORLDMARKERS", label = "WORLD MARKERS", subtitle = "Sequence & keybindings", group = "ARSENAL", icon = Theme.Assets.NavActions },
+    { key = "ADDONS", label = "ADDONS", subtitle = "Your raid checklist", group = "RAID SETUP", icon = Theme.Assets.NavContent },
+    { key = "RAIDTOOLS", label = "VERSION CHECK", subtitle = "Group addon versions", group = "RAID SETUP", icon = Theme.Assets.NavScanning },
+    { key = "MYTOOLS", label = "PERSONAL TOOLS", subtitle = "Resurrection & reminders", group = "OTHER", icon = Theme.Assets.NavHUD },
+    { key = "SETTINGS", label = "PROFILES & RECOVERY", subtitle = "Import, export & reset", group = "OTHER", icon = Theme.Assets.NavActions },
 }
 local PANE_CONTEXT = {
-    HUD = "MYTOOLS", QUICKBAR = "MYTOOLS", CONTENT = "MYTOOLS", WORLDMARKERS = "MYTOOLS",
-    SCANNING = "RAIDTOOLS", ACTIONS = "RAIDTOOLS", NORTHERNSKY = "ADDONS",
+    NORTHERNSKY = "ADDONS",
 }
+local function PaneContext(key)
+    return PANE_CONTEXT[key]
+end
 
 local TIER_COLORS = {
     CORE = TC.magenta,
@@ -669,15 +677,20 @@ local function UpdatePreview()
 end
 
 local function CreateHUDPane(parent)
-    CreateHeading(parent, "HUD", "Customize how the overlay looks and behaves.")
+    CreateHeading(parent, "HUD", "Enable HUD + inspection below. Unlock, then drag the grip beside the HUD. Viewing settings does not enable it.")
 
     local settingsCard = CreateCard(parent, "LAYOUT", "Scale the complete HUD or tune its physical tile density independently.")
     SetSize(settingsCard, 438, 598)
     SetPoint(settingsCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
 
-    local rightCard = CreateCard(parent, "LAYOUT PREVIEW", "Sample providers show appearance. Enable the HUD separately on My tools.", Theme.Assets.GradientBerry)
-    SetSize(rightCard, 500, 248)
-    SetPoint(rightCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+    local positionCard = CreateCard(parent, "POSITION & DIRECTION", "Growth uses your saved HUD anchor. These controls do not move the puck.")
+    SetSize(positionCard, 500, 214)
+    SetPoint(positionCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+
+    local rightCard = CreateCard(parent, "LAYOUT SAMPLE", "Sample providers show appearance without enabling the HUD or inspection.", Theme.Assets.GradientBerry)
+    SetSize(rightCard, 500, 334)
+    SetPoint(rightCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -290)
+    rightCard:Hide()
 
     previewHUD = CreateFrame("Frame", nil, rightCard, "BackdropTemplate")
     Backdrop(previewHUD, TC.transparent, TC.transparent, 10, false)
@@ -696,7 +709,20 @@ local function CreateHUDPane(parent)
 
     local styleCard = CreateCard(parent, "PRESENTATION", "Control visual structure, category text, and behavior at the tile cap.")
     SetSize(styleCard, 500, 334)
-    SetPoint(styleCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -326)
+    SetPoint(styleCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -290)
+
+    local sample = CreateButton(positionCard, "SHOW SAMPLE", 150, 32, function(self)
+        local show = not rightCard:IsShown()
+        rightCard:SetShown(show)
+        styleCard:SetShown(not show)
+        self.label:SetText(show and "HIDE SAMPLE" or "SHOW SAMPLE")
+    end)
+    SetPoint(sample, "BOTTOMRIGHT", positionCard, "BOTTOMRIGHT", -18, 18)
+    local function HideSample()
+        rightCard:Hide(); styleCard:Show(); sample.label:SetText("SHOW SAMPLE")
+    end
+    parent:HookScript("OnHide", HideSample)
+    RA.ConfigFrame:HookScript("OnHide", HideSample)
 
     local y = -64
     local mode = CreateSegmented(settingsCard, "HUD MODE", {
@@ -751,6 +777,24 @@ local function CreateHUDPane(parent)
         function() return RA:GetDB().compact.wrapAfter end,
         function(v) RA:GetDB().compact.wrapAfter = v end,
         function(v) return tostring(v) .. " TILES" end)
+
+    local hudDirection = CreateSegmented(positionCard, "HUD GROWTH DIRECTION", {
+        {label = "AUTO", value = "AUTO"},
+        {label = "RIGHT", value = "RIGHT"},
+        {label = "LEFT", value = "LEFT"},
+        {label = "DOWN", value = "DOWN"},
+        {label = "UP", value = "UP"},
+    }, function() return RA:GetDB().hudDirection or "AUTO" end, function(value)
+        RA:GetDB().hudDirection = value
+        ApplyVisualChange()
+    end)
+    SetPoint(hudDirection, "TOPLEFT", positionCard, "TOPLEFT", 18, -64)
+    SetSize(hudDirection, 464, 54)
+    hudDirection:Layout(464)
+    local positionHelp = Font(positionCard, 9.3, TC.textSoft, "REGULAR")
+    positionHelp:SetText("Unlock below, then drag the HUD grip.\nRecenter resets only the HUD position.")
+    SetWidth(positionHelp, 300)
+    SetPoint(positionHelp, "TOPLEFT", positionCard, "TOPLEFT", 18, -134)
 
     local background = CreateSegmented(styleCard, "BACKGROUND STYLE", {
         {label = "NONE", value = "NONE"},
@@ -1161,7 +1205,7 @@ local function RefreshScanPane()
 end
 
 local function CreateScanningPane(parent)
-    CreateHeading(parent, "Scanning", "Saved inspections survive reload. C marks cached talents; use Full Rescan to confirm them again.")
+    CreateHeading(parent, "Scanning", "Viewing does not enable inspection. C marks saved talents; enable inspection on HUD before scanning.")
 
     scanStatusPill = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     SetSize(scanStatusPill, 220, 36)
@@ -1203,20 +1247,29 @@ local function CreateScanningPane(parent)
             ApplyVisualChange()
             RefreshScanPane()
         end)
-    SetPoint(demoScan, "TOPLEFT", displayCard, "TOPLEFT", 18, -118)
+    SetPoint(demoScan, "TOPLEFT", displayCard, "TOPLEFT", 18, -304)
     SetWidth(demoScan, 420)
+    demoScan:Hide()
+    local advancedDemo = CreateButton(displayCard, "ADVANCED: DEMO", 210, 32, function(self)
+        demoScan:SetShown(not demoScan:IsShown())
+        self.label:SetText(demoScan:IsShown() and "HIDE DEMO OPTIONS" or "ADVANCED: DEMO")
+    end)
+    SetPoint(advancedDemo, "TOPLEFT", displayCard, "TOPLEFT", 18, -258)
+    local function HideDemoOptions() demoScan:Hide(); advancedDemo.label:SetText("ADVANCED: DEMO") end
+    parent:HookScript("OnHide", HideDemoOptions)
+    RA.ConfigFrame:HookScript("OnHide", HideDemoOptions)
 
     local scanScale = CreateSlider(displayCard, "SCAN STRIP SCALE", 0.75, 2.00, 0.05,
         function() return RA:GetDB().scan.scale end,
         function(value) RA:GetDB().scan.scale = value; ApplyVisualChange() end,
         function(value) return string.format("%d%%", math.floor(value * 100 + 0.5)) end)
-    SetPoint(scanScale, "TOPLEFT", displayCard, "TOPLEFT", 18, -190)
+    SetPoint(scanScale, "TOPLEFT", displayCard, "TOPLEFT", 18, -118)
     SetWidth(scanScale, 420)
 
     local scanWrap = CreateSlider(displayCard, "PENDING PLAYERS PER ROW", 4, 14, 1,
         function() return RA:GetDB().scan.wrapAfter end,
         function(value) RA:GetDB().scan.wrapAfter = value; ApplyVisualChange() end)
-    SetPoint(scanWrap, "TOPLEFT", displayCard, "TOPLEFT", 18, -260)
+    SetPoint(scanWrap, "TOPLEFT", displayCard, "TOPLEFT", 18, -188)
     SetWidth(scanWrap, 420)
 
     local groupsCard = CreateCard(parent, "TRACKED RAID GROUPS", "Gradient groups are tracked. Groups 7 and 8 default to bench and are ignored.")
@@ -1319,7 +1372,7 @@ local function CreateQuickBarPane(parent)
     SetSize(rightTop, 476, 278)
     SetPoint(rightTop, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
 
-    local rightBottom = CreateCard(parent, "HUD GROWTH", "Choose which direction the main ability HUD grows from its saved anchor.")
+    local rightBottom = CreateCard(parent, "MOVE QUICK BAR", "The puck has its own saved position, separate from the HUD.")
     SetSize(rightBottom, 476, 302)
     SetPoint(rightBottom, "BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
 
@@ -1398,48 +1451,24 @@ local function CreateQuickBarPane(parent)
     SetPoint(countdownSeconds, "TOPLEFT", leftCard, "TOPLEFT", 18, -450)
     SetWidth(countdownSeconds, 420)
 
-    local resetDock = CreateButton(leftCard, "RESET QUICK BAR POSITION", 220, 34, function()
+    local resetDock = CreateButton(rightBottom, "RESET PUCK POSITION", 220, 34, function()
         if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.ResetPosition then RA.RaidLeaderToolbox:ResetPosition() end
     end)
-    SetPoint(resetDock, "BOTTOMLEFT", leftCard, "BOTTOMLEFT", 18, 22)
+    SetPoint(resetDock, "BOTTOMLEFT", rightBottom, "BOTTOMLEFT", 20, 24)
 
     local behaviorText = Font(rightTop, 10.0, TC.textSoft, "REGULAR")
     behaviorText:SetWordWrap(true)
     behaviorText:SetSpacing(5)
-    behaviorText:SetText("• Hover: opens immediately\\n• Left click puck: start configured countdown; click again to cancel\\n• Mouse leaves: uses the close delay\\n• Click elsewhere: closes immediately\\n• Middle click puck: pin / unpin\\n• Right click puck: start a ready check\\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
+    behaviorText:SetText("• Hover: opens immediately\n• Left click puck: start configured countdown; click again to cancel\n• Mouse leaves: uses the close delay\n• Click elsewhere: closes immediately\n• Middle click puck: pin / unpin\n• Right click puck: start a ready check\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
     SetPoint(behaviorText, "TOPLEFT", rightTop, "TOPLEFT", 20, -66)
     SetWidth(behaviorText, 430)
 
-    local markerSetup = CreateButton(rightTop, "WORLD MARKERS", 190, 34, function()
-        RA:OpenConfig("WORLDMARKERS")
-    end)
-    SetPoint(markerSetup, "BOTTOMLEFT", rightTop, "BOTTOMLEFT", 20, 16)
-
-    local hudDirection = CreateSegmented(rightBottom, "MAIN HUD DIRECTION", {
-        {label = "AUTO", value = "AUTO"},
-        {label = "RIGHT", value = "RIGHT"},
-        {label = "LEFT", value = "LEFT"},
-        {label = "DOWN", value = "DOWN"},
-        {label = "UP", value = "UP"},
-    }, function() return RA:GetDB().hudDirection or "AUTO" end, function(value)
-        RA:GetDB().hudDirection = value
-        ApplyVisualChange()
-    end)
-    SetPoint(hudDirection, "TOPLEFT", rightBottom, "TOPLEFT", 18, -72)
-    SetSize(hudDirection, 440, 54)
-    hudDirection:Layout(440)
-
     local directionHelp = Font(rightBottom, 9.3, TC.textSoft, "REGULAR")
     directionHelp:SetWordWrap(true)
-    directionHelp:SetText("RIGHT / LEFT anchor the HUD to that side. DOWN centers the HUD below its anchor; UP centers it above. AUTO chooses the side with the most available screen space.")
-    SetPoint(directionHelp, "TOPLEFT", rightBottom, "TOPLEFT", 20, -148)
+    directionHelp:SetSpacing(5)
+    directionHelp:SetText("Enable Quick Bar to show its checkmark puck while in a raid.\n\nOutside combat, hold the left mouse button and drag the puck to move it. Dragging does not start a countdown.\n\nReset below changes only the puck position. Move the HUD from the HUD page; World Markers has its own sidebar page.")
+    SetPoint(directionHelp, "TOPLEFT", rightBottom, "TOPLEFT", 20, -66)
     SetWidth(directionHelp, 430)
-
-    local recenter = CreateButton(rightBottom, "RECENTER HUD", 150, 34, function()
-        if RA.RecoverHUD then RA:RecoverHUD() end
-        RefreshConfig()
-    end)
-    SetPoint(recenter, "BOTTOMLEFT", rightBottom, "BOTTOMLEFT", 20, 24)
 end
 
 local function CreateWorldMarkersPane(parent)
@@ -1448,8 +1477,6 @@ local function CreateWorldMarkersPane(parent)
     local message = ""
     local slots, palette = {}, {}
     CreateHeading(parent, "World marker cycler", "Place ground markers at your cursor. These are not target icons.")
-    local back = CreateButton(parent, "BACK TO QUICK BAR", 180, 32, function() RA:OpenConfig("QUICKBAR") end)
-    SetPoint(back, "TOPRIGHT", parent, "TOPRIGHT", -52, 0)
 
     local toggle = CreateToggle(parent, "Enable world marker cycler", "Off until you choose it. Bindings start unassigned; no extra overlay.",
         function() return markers:GetSettings().enabled end,
@@ -1642,7 +1669,7 @@ local function CreateWorldMarkersPane(parent)
 end
 
 local function CreateActionsPane(parent)
-    CreateHeading(parent, "Actions", "Configure tile callouts and the emergency encounter Panic action.")
+    CreateHeading(parent, "Callouts & Panic", "Configure tile callouts. The Panic button moves with the HUD; it has no separate position.")
 
     local leftCard = CreateCard(parent, "LEFT CLICK", "Choose one callout channel. Say and Whisper are mutually exclusive.")
     SetSize(leftCard, 456, 370)
@@ -1693,7 +1720,7 @@ local function CreateActionsPane(parent)
     SetPoint(raidEdit, "TOPLEFT", rightCard, "TOPLEFT", 18, -126)
     SetWidth(raidEdit, 440)
 
-    local panicToggle = CreateToggle(rightCard, "Panic button", "Attach an emergency ! button beside the first visible ability category. One click sends one Raid Warning.",
+    local panicToggle = CreateToggle(rightCard, "Panic button", "Beside the first HUD category; moves with the HUD. One click sends one Raid Warning.",
         function() return RA:GetDB().leaderToolbox.panicEnabled ~= false end,
         function(value)
             RA:GetDB().leaderToolbox.panicEnabled = value
@@ -1711,9 +1738,23 @@ local function CreateActionsPane(parent)
     SetPoint(panicEdit, "TOPLEFT", rightCard, "TOPLEFT", 18, -274)
     SetWidth(panicEdit, 440)
 
-    local statusCard = CreateCard(parent, "SECURE CALLOUT STATUS", "Verify the hardware-click callouts before a pull.")
+    local diagnostics = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    diagnostics:SetAllPoints(parent)
+    diagnostics:SetFrameLevel(parent:GetFrameLevel() + 40)
+    diagnostics:EnableMouse(true)
+    Backdrop(diagnostics, {0, 0, 0, 0.78}, TC.line, 14, false)
+    diagnostics:Hide()
+    local advanced = CreateButton(parent, "ADVANCED: TEST CALLOUTS", 260, 34, function() diagnostics:Show() end)
+    SetPoint(advanced, "TOPLEFT", parent, "TOPLEFT", 0, -454)
+    local hudPosition = CreateButton(parent, "HUD POSITION", 180, 34, function() RA:OpenConfig("HUD") end)
+    SetPoint(hudPosition, "TOPRIGHT", parent, "TOPRIGHT", 0, -454)
+    parent:HookScript("OnHide", function() diagnostics:Hide() end)
+    RA.ConfigFrame:HookScript("OnHide", function() diagnostics:Hide() end)
+    local statusCard = CreateCard(diagnostics, "SECURE CALLOUT STATUS", "Explicit hardware-click tests; each test can send its displayed message.")
     SetSize(statusCard, 950, 250)
-    SetPoint(statusCard, "BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+    SetPoint(statusCard, "CENTER", diagnostics, "CENTER", 0, 0)
+    local closeTests = CreateButton(statusCard, "CLOSE TESTS", 140, 32, function() diagnostics:Hide() end)
+    SetPoint(closeTests, "TOPRIGHT", statusCard, "TOPRIGHT", -18, -14)
 
     actionStatusText = Font(statusCard, 14, TC.text, "BOLD")
     SetPoint(actionStatusText, "TOPLEFT", statusCard, "TOPLEFT", 24, -62)
@@ -1752,19 +1793,18 @@ local function SetTab(tabKey)
         pane:SetShown(key == tabKey)
     end
     for key, button in pairs(tabButtons) do
-        local selected = key == (PANE_CONTEXT[tabKey] or tabKey)
+        local selected = key == (PaneContext(tabKey) or tabKey)
         SetSurfaceColor(button, selected and TC.activeDark or TC.transparent)
         SetBorderColor(button, selected and CopyColor(TC.magenta, 0.34) or TC.transparent)
         button.gradient:SetAlpha(selected and 0.66 or 0)
         button.title:SetTextColor(unpack(selected and TC.white or TC.textSoft))
-        button.subtitle:SetTextColor(unpack(selected and TC.textSoft or TC.muted))
         button.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
         button.bar:SetShown(selected)
     end
     if hudFooter then hudFooter:SetShown(tabKey == "HUD") end
     if advancedBack then
         advancedBack:SetShown(PANE_CONTEXT[tabKey] ~= nil)
-        advancedBack.label:SetText(PANE_CONTEXT[tabKey] == "RAIDTOOLS" and "BACK TO RAID TOOLS" or (PANE_CONTEXT[tabKey] == "ADDONS" and "BACK TO ADDONS" or "BACK TO MY TOOLS"))
+        advancedBack.label:SetText("BACK TO ADDONS")
     end
     if RefreshHub then RefreshHub(tabKey) end
     if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
@@ -1956,14 +1996,20 @@ local function CreateConfig()
     subtitle:SetSpacing(2)
     SetPoint(subtitle, "TOPLEFT", sidebar, "TOPLEFT", 18, -84)
 
-    local navTop = -142
+    local navTop, navGroup = -126, nil
     for i = 1, #TAB_DEFS do
         local definition = TAB_DEFS[i]
+        if definition.group ~= navGroup then
+            local heading = Font(sidebar, 8.8, TC.muted, "BOLD")
+            heading:SetText(definition.group)
+            SetPoint(heading, "TOPLEFT", sidebar, "TOPLEFT", 20, navTop)
+            navTop = navTop - 20
+            navGroup = definition.group
+        end
         local button = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
-        local navX = definition.child and 34 or 16
-        local navWidth = definition.child and 188 or 206
-        SetSize(button, navWidth, definition.child and 60 or 70)
-        SetPoint(button, "TOPLEFT", sidebar, "TOPLEFT", navX, navTop - ((i - 1) * 74))
+        SetSize(button, 206, 42)
+        SetPoint(button, "TOPLEFT", sidebar, "TOPLEFT", 16, navTop)
+        navTop = navTop - 46
         Backdrop(button, TC.transparent, TC.transparent, 11, false)
         button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
 
@@ -1974,15 +2020,12 @@ local function CreateConfig()
         SetPoint(button.bar, "BOTTOMLEFT", button, "BOTTOMLEFT", 0, 9)
         button.bar:Hide()
 
-        button.icon = Theme:CreateIcon(button, definition.icon, definition.child and 20 or 24, TC.muted)
-        SetPoint(button.icon, "LEFT", button, "LEFT", definition.child and 13 or 17, 0)
+        button.icon = Theme:CreateIcon(button, definition.icon, 20, TC.muted)
+        SetPoint(button.icon, "LEFT", button, "LEFT", 13, 0)
 
-        button.title = Font(button, 11.8, TC.textSoft, "BOLD")
+        button.title = Font(button, 10.8, TC.textSoft, "BOLD")
         button.title:SetText(definition.label)
-        SetPoint(button.title, "TOPLEFT", button.icon, "TOPRIGHT", 12, -3)
-        button.subtitle = Font(button, 9.0, TC.muted, "REGULAR")
-        button.subtitle:SetText(definition.subtitle)
-        SetPoint(button.subtitle, "TOPLEFT", button.title, "BOTTOMLEFT", 0, -4)
+        SetPoint(button.title, "LEFT", button.icon, "RIGHT", 12, 0)
 
         button:SetScript("OnEnter", function(self)
             if activeTab ~= definition.key then
@@ -1991,7 +2034,7 @@ local function CreateConfig()
             end
         end)
         button:SetScript("OnLeave", function(self)
-            local selected = (PANE_CONTEXT[activeTab] or activeTab) == definition.key
+            local selected = (PaneContext(activeTab) or activeTab) == definition.key
             SetSurfaceColor(self, selected and TC.activeDark or TC.transparent)
             self.gradient:SetAlpha(selected and 0.66 or 0)
         end)
@@ -1999,12 +2042,13 @@ local function CreateConfig()
         tabButtons[definition.key] = button
     end
 
-    advancedBack = CreateButton(sidebar, "BACK TO MY TOOLS", 206, 34, function()
-        SetTab(PANE_CONTEXT[activeTab] or "MYTOOLS")
+    advancedBack = CreateButton(main, "BACK TO ADDONS", 206, 34, function()
+        SetTab(PaneContext(activeTab) or "ADDONS")
     end)
-    SetPoint(advancedBack, "TOPLEFT", sidebar, "TOPLEFT", 16, -460)
+    advancedBack:SetFrameLevel(main:GetFrameLevel() + 20)
+    SetPoint(advancedBack, "TOPRIGHT", main, "TOPRIGHT", -68, -20)
     local hint = Font(sidebar, 10, TC.muted, "REGULAR")
-    hint:SetText("/rcp opens Morning Brew\n\nVersion replies work with every\noptional tool switched off.")
+    hint:SetText("Tools stay optional.\n/rcp opens the addon checklist.")
     hint:SetWordWrap(true)
     SetWidth(hint, 200)
     SetPoint(hint, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 30)
@@ -2041,18 +2085,18 @@ local function CreateConfig()
     CreateActionsPane(panes.ACTIONS)
     CreateWorldMarkersPane(panes.WORLDMARKERS)
 
-    local hudToggle = CreateButton(footer, "DISABLE HUD + SCANS", 200, 42, function(self)
+    local hudToggle = CreateButton(footer, "DISABLE HUD + INSPECTION", 200, 42, function(self)
         if RA:GetDB().shown then RA:HideHUD() else RA:ShowHUD() end
         self:Refresh()
         RefreshConfig()
     end, true, Theme.Assets.IconEye)
     SetPoint(hudToggle, "LEFT", footer, "LEFT", 12, 0)
     hudToggle.Refresh = function(self)
-        self.label:SetText(RA:IsHUDEnabled() and "DISABLE HUD + SCANS" or "ENABLE HUD + SCANS")
+        self.label:SetText(RA:IsHUDEnabled() and "DISABLE HUD + INSPECTION" or "ENABLE HUD + INSPECTION")
     end
     RegisterControl(hudToggle)
 
-    local recover = CreateButton(footer, "RECENTER", 144, 42, function()
+    local recover = CreateButton(footer, "RECENTER HUD", 144, 42, function()
         if RA.RecoverHUD then RA:RecoverHUD() end
         RefreshConfig()
     end, false, Theme.Assets.IconTarget)

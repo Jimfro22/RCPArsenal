@@ -1792,7 +1792,7 @@ end
 
 function RA:SetDemoMode(enabled)
     if enabled and not self:IsHUDEnabled() then
-        self:Print("Enable the capability HUD on My tools before using demo data.")
+        self:Print("Enable HUD + inspection on the HUD page before using demo data.")
         return false
     end
     if InCombatLockdown() then

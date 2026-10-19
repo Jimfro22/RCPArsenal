@@ -30,11 +30,6 @@ function RA:CreateHubPanes(panes, kit)
     local function Result(ok, message)
         if feedback then feedback:SetText(message or (ok and "Saved." or "Unavailable.")) end
     end
-    local function Navigate(parent, label, key, x, y, width)
-        local b = Button(parent, label, width or 200, 34, function() RA:OpenConfig(key) end)
-        Point(b, "TOPLEFT", parent, "TOPLEFT", x, y)
-        return b
-    end
     function RA:HideHubTransientDialogs()
         if linkOverlay then linkOverlay:Hide() end
         if resetOverlay then resetOverlay:Hide() end
@@ -107,51 +102,40 @@ function RA:CreateHubPanes(panes, kit)
     end
 
     local tools = panes.MYTOOLS
-    kit.Heading(tools, "My tools", "Choose the tools you want. Installing Arsenal does not enable overlays, talent scans, or announcements.")
-    local function Tool(label, description, getter, setter, y, configure)
+    kit.Heading(tools, "Personal tools", "Optional resurrection and consumable reminders. HUD, Quick Bar, and World Markers each have their own sidebar page.")
+    local function Tool(label, description, getter, setter, y)
         local toggle = kit.Toggle(tools, label, description, getter, function(value)
             local ok, reason = setter(value)
             if ok == false and reason then RA:Print(reason) end
         end)
-        Point(toggle, "TOPLEFT", tools, "TOPLEFT", 0, y); Width(toggle, 730)
-        if configure then Navigate(tools, "CONFIGURE", configure, 750, y - 8, 200) end
+        Point(toggle, "TOPLEFT", tools, "TOPLEFT", 0, y); Width(toggle, 950)
     end
-    Tool("Capability HUD + talent inspection", "Pre-pull capability inventory. Enabling this starts inspection; switching it off stops scans.",
-        function() return RA:IsHUDEnabled() end, function(v) return RA:SetHUDEnabled(v) end, -68, "HUD")
-    Tool("Quick Bar puck", "Independent raid dock for ready checks, countdowns, and group tools. This does not enable talent scans.",
-        function() return RA:GetDB().leaderToolbox.enabled == true end, function(v) return RA:SetQuickBarEnabled(v) end, -134, "QUICKBAR")
-    Tool("World marker cycler", "Your native keybindings place the next configured marker at the cursor. Configure outside combat.",
-        function() return RA:GetDB().worldMarkers.enabled == true end, function(v) return RA.WorldMarkers:SetEnabled(v) end, -200, "WORLDMARKERS")
     Tool("Accept normal resurrection", "Accepts ordinary resurrection offers. Battle resurrection stays manual while encounter or group combat is active.",
-        function() return RA:GetDB().personalTools.autoRes == true end, function(v) return RA.PersonalTools:SetOption("autoRes", v) end, -266)
+        function() return RA:GetDB().personalTools.autoRes == true end, function(v) return RA.PersonalTools:SetOption("autoRes", v) end, -68)
     Tool("Healthstone / potion reminder", "An optional bouncing reminder for a usable item at low health. Use your own item keybind.",
-        function() return RA:GetDB().personalTools.consumableReminder == true end, function(v) return RA.PersonalTools:SetOption("consumableReminder", v) end, -332)
+        function() return RA:GetDB().personalTools.consumableReminder == true end, function(v) return RA.PersonalTools:SetOption("consumableReminder", v) end, -134)
     local threshold = kit.Slider(tools, "Reminder health threshold", 1, 99, 1,
         function() return RA:GetDB().personalTools.healthThreshold end,
         function(v) RA.PersonalTools:SetOption("healthThreshold", v) end,
         function(v) return string.format("%d%%", v) end)
-    Width(threshold, 440); Point(threshold, "TOPLEFT", tools, "TOPLEFT", 16, -403)
+    Width(threshold, 440); Point(threshold, "TOPLEFT", tools, "TOPLEFT", 16, -205)
     local preview = Button(tools, "PREVIEW", 110, 34, function() RA.PersonalTools:PreviewReminder() end)
-    Point(preview, "TOPLEFT", tools, "TOPLEFT", 480, -414)
+    Point(preview, "TOPLEFT", tools, "TOPLEFT", 480, -216)
     local move = Button(tools, "MOVE", 110, 34, function() RA.PersonalTools:MoveReminder() end)
-    Point(move, "TOPLEFT", tools, "TOPLEFT", 598, -414)
+    Point(move, "TOPLEFT", tools, "TOPLEFT", 598, -216)
     local stop = Button(tools, "STOP PREVIEW", 110, 34, function() RA.PersonalTools:StopReminderPreview() end)
-    Point(stop, "TOPLEFT", tools, "TOPLEFT", 716, -414)
+    Point(stop, "TOPLEFT", tools, "TOPLEFT", 716, -216)
     local resetReminder = Button(tools, "RESET", 110, 34, function() RA.PersonalTools:ResetReminderPosition() end)
-    Point(resetReminder, "TOPLEFT", tools, "TOPLEFT", 834, -414)
-    Text(tools, "Press your item/macro key when reminded. Preview, Move, and Reset keep your tool switch unchanged.", 10, 16, -467, 914)
-    local personalStatus = Text(tools, "", 10, 16, -500, 914)
+    Point(resetReminder, "TOPLEFT", tools, "TOPLEFT", 834, -216)
+    Text(tools, "Press your item/macro key when reminded. Preview, Move, and Reset keep your tool switch unchanged.", 10, 16, -269, 914)
+    local personalStatus = Text(tools, "", 10, 16, -302, 914)
     personalStatus:SetSpacing(5)
-    Navigate(tools, "HUD CONTENT", "CONTENT", 0, -565, 210)
-    Navigate(tools, "INSPECTION", "SCANNING", 226, -565, 210)
-    Navigate(tools, "CALLOUTS", "ACTIONS", 452, -565, 210)
-    Text(tools, "Group version replies work with all of these tools switched off.", 10, 0, -625, 940, C.muted)
     refreshers.MYTOOLS = function()
         personalStatus:SetText("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " .. RA.PersonalTools:GetStatusText("consumableReminder"))
     end
 
     local raid = panes.RAIDTOOLS
-    kit.Heading(raid, "Raid tools", "Leaders and assistants can request addon reports. Replies are passive; no talent inspection is required.")
+    kit.Heading(raid, "Version check", "Leaders and assistants can request addon reports. Replies are passive; no talent inspection is required.")
     matrixMeta = Text(raid, "", 10, 0, -60, 720)
     local query = Button(raid, "CHECK GROUP VERSIONS", 218, 34, function()
         local ok, reason = RA.Readiness:QueryGroup(); Result(ok, reason)
@@ -264,15 +248,26 @@ function RA:CreateHubPanes(panes, kit)
     RA.ConfigFrame:HookScript("OnHide", StopMatrixTicker)
 
     local settings = panes.SETTINGS
-    kit.Heading(settings, "Settings", "Appearance and portable content preferences. Tool activation, local targets, and keybindings stay yours.")
+    kit.Heading(settings, "Profiles & Recovery", "Import or export portable preferences. Appearance controls are on HUD and Content; tool switches stay on their own pages.")
     local card = Card(settings, "LOCAL PROFILE", "Import and export appearance, content ordering, and callout templates.")
     Size(card, 950, 230); Point(card, "TOPLEFT", settings, "TOPLEFT", 0, -68)
     local import = Button(card, "IMPORT", 180, 36, function() RA:OpenProfileDialog("IMPORT") end)
     Point(import, "TOPLEFT", card, "TOPLEFT", 20, -78)
     local export = Button(card, "EXPORT", 180, 36, function() RA:OpenProfileDialog("EXPORT") end)
     Point(export, "LEFT", import, "RIGHT", 12, 0)
-    Text(card, "Import preserves your tool switches, local addon targets, marker sequence, and positions.\nReset restores quiet defaults and clears local targets; your native keybindings are not changed.", 11, 20, -134, 900)
-    local reset = Button(card, "RESET PROFILE", 210, 34, function()
+    Text(card, "Import preserves your tool switches, local addon targets, marker sequence, and positions.\nExport keeps portable preferences; full profile reset is in Advanced below.", 11, 20, -134, 900)
+    local danger = Card(settings, "FULL PROFILE RESET", "This is not a HUD or puck position reset. Your native keybindings are not changed.")
+    Size(danger, 950, 150); Point(danger, "TOPLEFT", settings, "TOPLEFT", 0, -355)
+    danger:Hide()
+    local advancedReset = Button(settings, "ADVANCED: FULL PROFILE RESET", 300, 34, function(self)
+        danger:SetShown(not danger:IsShown())
+        self.label:SetText(danger:IsShown() and "HIDE FULL RESET" or "ADVANCED: FULL PROFILE RESET")
+    end)
+    Point(advancedReset, "TOPLEFT", settings, "TOPLEFT", 0, -310)
+    local function HideResetOptions() danger:Hide(); advancedReset.label:SetText("ADVANCED: FULL PROFILE RESET") end
+    settings:HookScript("OnHide", HideResetOptions)
+    RA.ConfigFrame:HookScript("OnHide", HideResetOptions)
+    local reset = Button(danger, "RESET PROFILE", 210, 34, function()
         if InCombatLockdown() then RA:Print("Reset is unavailable during combat."); return end
         if not resetOverlay then
             resetOverlay = CreateFrame("Frame", nil, RA.ConfigFrame, "BackdropTemplate")
@@ -296,11 +291,8 @@ function RA:CreateHubPanes(panes, kit)
         end
         resetOverlay:Show()
     end)
-    Point(reset, "TOPRIGHT", card, "TOPRIGHT", -20, -78)
-    Navigate(settings, "HUD APPEARANCE", "HUD", 0, -325, 240)
-    Navigate(settings, "CONTENT & ORDER", "CONTENT", 256, -325, 240)
-    Text(settings, "Opening appearance controls does not enable the HUD. Choose tools on My tools.", 11, 0, -383, 930)
-    local commandStatus = Text(settings, "", 11, 0, -440, 930)
+    Point(reset, "TOPLEFT", danger, "TOPLEFT", 20, -78)
+    local commandStatus = Text(settings, "", 11, 0, -560, 930)
     refreshers.SETTINGS = function()
         commandStatus:SetText("Open Morning Brew with /rcp. Unique fallback: /rcparsenal.\n" .. (RA.GetSlashCommandStatus and RA:GetSlashCommandStatus() or ""))
     end
