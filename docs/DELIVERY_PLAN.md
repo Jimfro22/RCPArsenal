@@ -8,11 +8,15 @@ The owner’s [canonical checklist and idea bank](https://chatgpt.com/space/page
 
 The kickoff sections below describe their original baseline/proposal, not current code. The 0.15.0-alpha.1 implementation now contains quiet schema-19 profiles, the four-section /rcp hub, seven-entry local catalog, passive leader version matrix, bounded visual recovery, and off-by-default personal tools. See the versioned release notes and HUB_WINDOWS_TESTS.md for current behavior. GitHub delivery is active and earlier baseline/marker releases are preserved. CurseForge remains independently owned.
 
-These are source/offline milestones, not client acceptance: the health reminder is explicitly experimental in this alpha; native curve/item feasibility, normal res, cold enabled-profile login, two-client transport, and existing secure/raid behaviors remain pending Windows checks. No NSRT adapter, note workflow, timed announcement engine, or WowUtils Bridge has been claimed implemented. The canonical Page remains lead-owned and unchanged by Engineering.
+These are source/offline milestones, not client acceptance: the health reminder is explicitly experimental in this alpha; native curve/item feasibility, normal res, cold enabled-profile login, two-client transport, and existing secure/raid behaviors remain pending Windows checks. The 0.15.0 foundation did not implement NSRT; the later checkpoint below records that adapter. Timed announcements and WowUtils Bridge remain open. The canonical Page remains lead-owned and unchanged by Engineering.
 
 ## Northern Sky adapter implementation checkpoint
 
 0.15.1-alpha.1 adds a guarded local setup adapter for separately installed stock NSRT12.1.32: runtime note view/draft/local copy, profile clone with preservation, native geometry edits, independent samples, guarded session undo/release and copyable failure recovery. NSRT code/codec/assets are not redistributed. Source/internal coupling and native unknowns are documented in NSRT_ADAPTER_CONTRACT.md and NSRT_WINDOWS_TESTS.md. Public reads/config degrade independently for missing or other versions. Client acceptance, actual sharing/scheduling, later timed-announcement decisions, and WowUtils Bridge ownership remain open.
+
+## Inspection persistence bugfix checkpoint
+
+0.15.2-alpha.1 addresses repeated inspection after reload/login: confirmed ordinary snapshots persist outside portable profiles, restore by GUID and qualified name/class before HUD reconciliation, and remain visibly cached. Storage is limited to 160 entries / 30 days with original observation provenance and compatibility checks. Automatic missing/new/known-change scans and explicit full refresh remain distinct. Quiet opt-ins and unrelated setup remain intact; native acceptance is tracked in INSPECTION_CACHE_WINDOWS_TESTS.md. The possible future WowUtils boss-roster planner is not implemented by this fix.
 
 ## Verified baseline and completed foundations
 

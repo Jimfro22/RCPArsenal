@@ -19,6 +19,7 @@ function methods:HasFocus() return self.focus end
 function methods:SetFocus() self.focus = true end
 function methods:ClearFocus() self.focus = false end
 function methods:IsEnabled() return self.enabled ~= false end
+function methods:IsMouseEnabled() return true end
 function methods:Enable() self.enabled = true end
 function methods:Disable() self.enabled = false end
 function methods:SetEnabled(value) self.enabled = value end
@@ -452,6 +453,90 @@ RA:CloseConfig()
 check(not recoveryEditor('Native profile export recovery'), 'Closing hub left recovery content visible')
 for key in pairs(adapter) do adapter[key]=nil end
 for key,value in pairs(originals) do adapter[key]=value end
+cleanErrors()
+
+-- Cache provenance is visible in the real HUD/configuration, independently of
+-- the save/new-lifecycle tests in inspection_cache.lua.
+local fullNameAPI = UnitFullName
+UnitFullName = function() return 'Test',nil end
+check(RA:GetFullUnitName('player') == 'Test-Realm', 'Same-realm identity was not qualified for stable cache keys')
+UnitFullName = function() return 'Test','OtherRealm' end
+check(RA:GetFullUnitName('party1') == 'Test-OtherRealm', 'Cross-realm identity fell back to the local realm')
+UnitFullName = fullNameAPI
+local ability = RA.CatalogByKey.aura_mastery
+check(ability ~= nil, 'Cache UI fixture requires an actual Paladin talent capability')
+local name='Cached-Realm'
+RA.Reports={[name]={name=name,guid='Player-1-CAFE',class='PALADIN',role='HEALER',specID=65,classRevision=RA:GetClassCatalogRevision('PALADIN'),verified=true,source='PERSISTED_CACHE',cached=true,sessionVerified=false,originalSource='INSPECT',observerGUID='Player-1-BEEF',confirmedAt=1799996400,capabilities={[ability.index]=true},evidence={[ability.index]='SELECTED_TALENT'}}}
+RA.Roster={[name]={name=name,guid='Player-1-CAFE',class='PALADIN',role='HEALER',unit='party1',subgroup=1,connected=true}}
+RA.RosterOrder={RA.Roster[name]}
+local cacheProfile=RA:GetDB()
+cacheProfile.hudEnabled,cacheProfile.shown,cacheProfile.demoMode,cacheProfile.mode=true,true,false,'COMPACT'
+local requestsBefore=inspectCalls
+RA:RefreshHUD()
+local savedTile
+for _,obj in ipairs(objects) do if obj.owner and obj.owner.name==name and obj:IsVisible() then savedTile=obj; break end end
+check(savedTile and savedTile.cacheLabel:IsShown(), 'Compact cached provider lacked a visible C marker')
+local tooltipLines={}
+local oldTooltipAddLine=GameTooltip.AddLine
+GameTooltip.AddLine=function(_,text) tooltipLines[#tooltipLines+1]=text end
+savedTile:Fire('OnEnter')
+local tooltipText=table.concat(tooltipLines,'\n')
+check(tooltipText:find('Saved inspection; not confirmed this session.',1,true) and tooltipText:find('1h ago',1,true), 'Cached provider tooltip lost original age/provenance')
+GameTooltip.AddLine=oldTooltipAddLine
+cacheProfile.mode='DETAILED'; RA:RefreshHUD()
+local markedOwner=false
+for _,obj in ipairs(objects) do if obj:IsVisible() and type(obj.text)=='string' and obj.text:find('[C]',1,true) then markedOwner=true; break end end
+check(markedOwner and hasVisibleText('0 confirmed · 1 cached · 0 unknown'), 'Detailed HUD called a saved report confirmed or omitted its cache marker')
+tooltipLines={}
+GameTooltip.AddLine=function(_,text) tooltipLines[#tooltipLines+1]=text end
+local detailedRow
+for _,obj in ipairs(objects) do if obj.owners and obj.owners[1] and obj.owners[1].name==name and obj:IsVisible() then detailedRow=obj; break end end
+if detailedRow then detailedRow:Fire('OnEnter') end
+tooltipText=table.concat(tooltipLines,'\n')
+check(detailedRow and tooltipText:find('Saved inspection; not confirmed this session.',1,true) and tooltipText:find('1h ago',1,true) and tooltipText:find('/rcp rescan',1,true), 'Detailed provider tooltip omitted cached origin, original age or explicit refresh route')
+GameTooltip.AddLine=oldTooltipAddLine
+RA:OpenConfig('SCANNING')
+check(hasVisibleText('1 / 1 RESOLVED') and hasVisibleText('0 confirmed · 1 cached · 0 unknown'), 'Scanning pane conflated reusable cache with current inspection')
+SlashCmdList.RCPARSENAL('status')
+check(messages[#messages]:find('1 cached',1,true) and not messages[#messages]:find('1 inspected',1,true), 'Status command called historical cache newly inspected')
+check(inspectCalls==requestsBefore, 'Showing cached provenance initiated inspection')
+local oldCache=RaidArsenalDB.inspectionCache
+RaidArsenalDB.inspectionCache={sentinel='PRIVATE-INSPECTION-GUID'}
+local portable=RA:ExportProfileString()
+check(portable and not portable:find('PRIVATE-INSPECTION-GUID',1,true) and not portable:find('inspectionCache',1,true), 'Portable profile leaked another player inspection cache')
+RaidArsenalDB.inspectionCache=oldCache
+RA:CloseConfig()
+
+-- Routine role/split layouts may use the same compatible last-known spec
+-- after reload, rather than demanding a full scan solely for a new session.
+local raid={{name='SavedA',guid='Player-1-AA',group=1},{name='SavedB',guid='Player-1-BB',group=1}}
+local function raidUnit(unit) return raid[tonumber((unit or ''):match('^raid(%d+)$')) or (unit=='player' and 1 or 0)] end
+IsInRaid=function() return true end
+IsInGroup=function() return true end
+GetNumGroupMembers=function() return #raid end
+UnitExists=function(unit) return raidUnit(unit)~=nil end
+UnitIsPlayer=UnitExists
+UnitFullName=function(unit) local row=raidUnit(unit); if row then return row.name,'Realm' end end
+UnitGUID=function(unit) local row=raidUnit(unit); return row and row.guid end
+UnitClass=function(unit) if raidUnit(unit) then return 'Hunter','HUNTER' end end
+UnitGroupRolesAssigned=function() return 'DAMAGER' end
+UnitIsGroupLeader=function(unit) return unit=='player' end
+GetRaidRosterInfo=function(index) local row=raid[index]; return row.name..'-Realm',index==1 and 2 or 0,row.group,80,'Hunter','HUNTER',nil,true end
+cacheProfile.leaderToolbox.enabled=true
+RA.Reports={}
+for _,row in ipairs(raid) do
+    local full=row.name..'-Realm'
+    RA.Reports[full]={name=full,guid=row.guid,class='HUNTER',role='DAMAGER',specID=255,classRevision=RA:GetClassCatalogRevision('HUNTER'),verified=true,source='PERSISTED_CACHE',cached=true,sessionVerified=false,originalSource='INSPECT',observerGUID=raid[1].guid,confirmedAt=1799996400,capabilities={},evidence={roleOnly=true}}
+end
+requestsBefore=inspectCalls
+for _,command in ipairs({'sort','split','groupsplit'}) do
+    raid[2].group=command=='sort' and 1 or 2
+    local firstMessage=#messages+1
+    SlashCmdList.RCPARSENAL(command)
+    local output=table.concat(messages,'\n',firstMessage)
+    check(output:find('Using 2 saved specializations',1,true) and output:find('Raid is already arranged',1,true), command..' demanded a reload-only rescan or lost guarded cached spec classification')
+    check(inspectCalls==requestsBefore and not RA:IsInspectionRunning() and not RA.RaidLeaderToolbox:IsSorting(), command..' queued inspection or an unexpected move for an already arranged cached layout')
+end
 cleanErrors()
 print = nativePrint
 print('PASS: ' .. checks .. ' hub/migration/quiet-lifecycle assertions (actual addon modules; offline frame mocks)')

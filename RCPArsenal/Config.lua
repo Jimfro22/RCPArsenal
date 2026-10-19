@@ -1118,18 +1118,18 @@ local function ScanStatusText()
         return "DEMO DATA", "Enable the scan preview below to test the 13/20 pending-player experience."
     end
     if paused then
-        return string.format("%d / %d INSPECTED", inspected, total), "Paused after the current inspection."
+        return string.format("%d / %d RESOLVED", inspected, total), "Paused after the current inspection. " .. RA:FormatInspectionEvidenceSummary(summary)
     elseif running then
         return string.format("%d / %d SCANNING", processed, scanTotal), currentName and ("Inspecting " .. RA:GetShortName(currentName)) or "Inspecting the next nearby player."
     end
     local details = {}
-    if summary.inspected > 0 then details[#details + 1] = summary.inspected .. " inspected" end
+    details[#details + 1] = RA:FormatInspectionEvidenceSummary(summary)
     if summary.filtered > 0 then details[#details + 1] = summary.filtered .. " class-skipped" end
     if summary.ignored > 0 then details[#details + 1] = summary.ignored .. " ignored" end
     if summary.outOfRange > 0 then details[#details + 1] = summary.outOfRange .. " out of range" end
     if summary.offline > 0 then details[#details + 1] = summary.offline .. " offline" end
     if summary.failed > 0 then details[#details + 1] = summary.failed .. " failed" end
-    return string.format("%d / %d INSPECTED", inspected, total), (#details > 0 and table.concat(details, "  ·  ") or "Tracked roster complete.")
+    return string.format("%d / %d RESOLVED", inspected, total), table.concat(details, "  ·  ")
 end
 
 local function RefreshScanPane()
@@ -1161,7 +1161,7 @@ local function RefreshScanPane()
 end
 
 local function CreateScanningPane(parent)
-    CreateHeading(parent, "Scanning", "Fast incremental inspection with persistent results between bosses.")
+    CreateHeading(parent, "Scanning", "Saved inspections survive reload. C marks cached talents; use Full Rescan to confirm them again.")
 
     scanStatusPill = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     SetSize(scanStatusPill, 220, 36)

@@ -719,17 +719,14 @@ local function OpenMissingPanel()
     missingPanel:Show()
 end
 
-local function GetFreshSpecID(fullName, unit, guid, role)
+local function GetUsableSpecID(fullName, unit, guid, role)
     local rosterInfo = RA.Roster and RA.Roster[fullName]
     local report = RA.Reports and RA.Reports[fullName]
     if report and report.verified and report.guid == guid then
-        local fresh = true
-        if rosterInfo and RA.IsReportFresh then
-            fresh = RA:IsReportFresh(report, rosterInfo)
-        elseif report.role and role and report.role ~= role then
-            fresh = false
-        end
-        if fresh and type(report.specID) == "number" then return report.specID end
+        -- The same guarded last-known observation remains useful after reload.
+        -- Its cached provenance is reported when a layout uses it.
+        local usable = rosterInfo and RA.IsReportUsable and RA:IsReportUsable(report, rosterInfo)
+        if usable and type(report.specID) == "number" then return report.specID, report.cached == true end
     end
 
     if UnitIsUnit and UnitIsUnit(unit, "player") and C_SpecializationInfo then
@@ -743,8 +740,8 @@ local function GetFreshSpecID(fullName, unit, guid, role)
 end
 
 local function ResolveKind(member)
-    local specID = GetFreshSpecID(member.name, member.unit, member.guid, member.role)
-    if specID and SPEC_KIND[specID] then return SPEC_KIND[specID], specID end
+    local specID, cached = GetUsableSpecID(member.name, member.unit, member.guid, member.role)
+    if specID and SPEC_KIND[specID] then return SPEC_KIND[specID], specID, cached end
     if member.role == "TANK" then return "TANK", specID end
     if member.role == "HEALER" then return "HEALER", specID end
     if member.role == "DAMAGER" then return DAMAGE_CLASS_FALLBACK[member.class], specID end
@@ -777,7 +774,7 @@ local function BuildRaidSnapshot()
                 role = role,
                 ignored = RA:IsRaidGroupIgnored(subgroup),
             }
-            member.kind, member.specID = ResolveKind(member)
+            member.kind, member.specID, member.specCached = ResolveKind(member)
             members[#members + 1] = member
             byName[fullName] = member
         end
@@ -1219,6 +1216,8 @@ local function BuildSortPlan(mode)
     local eligible, unknown = BuildOrderedEligible(snapshot)
     if not eligible then return nil, "unknown roles", unknown end
 
+    local cachedSpecCount = 0
+    for _, member in ipairs(eligible) do if member.specCached then cachedSpecCount = cachedSpecCount + 1 end end
     local isSplit = mode == "SPLIT_ODD_EVEN" or mode == "SPLIT_ADJACENT"
     local targetGroups = GetTargetGroups(#eligible, isSplit)
     if not targetGroups then return nil, "not enough active groups" end
@@ -1270,6 +1269,7 @@ local function BuildSortPlan(mode)
         eligibleNames = names,
         orderedNames = orderedNames,
         eligibleCount = #eligible,
+        cachedSpecCount = cachedSpecCount,
         initialWrong = wrong,
         targetGroups = targetGroups,
         initialSideByName = initialSideByName,
@@ -1567,6 +1567,9 @@ end
 
 StartSortFromPlan = function(plan, sourceButton)
     pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
+    if (plan.cachedSpecCount or 0) > 0 then
+        RA:Print(string.format("Using %d saved specializations for this layout. They may have changed; /rcp rescan updates them.", plan.cachedSpecCount))
+    end
     if plan.initialWrong == 0 then
         SetActionButtonState(sourceButton, "DONE", "SUCCESS")
         ResetActionButtonSoon(sourceButton, 2.5)
@@ -2071,6 +2074,7 @@ local function CreateToolbox()
         ScheduleDelayedTooltip(self, function(owner)
             GameTooltip:SetOwner(owner, "ANCHOR_TOP")
             GameTooltip:SetText("Sort Raid")
+            GameTooltip:AddLine("Uses last confirmed specializations, including compatible saved inspections. /rcp rescan updates them.", 0.78, 0.65, 0.42, true)
             GameTooltip:AddLine("Left click: Tanks > Melee > Ranged > Healers", 0.82, 0.87, 0.94)
             GameTooltip:AddLine("Right click: Sort options", 0.82, 0.87, 0.94)
             if not IsLeaderOrAssistant() then
@@ -2088,6 +2092,7 @@ local function CreateToolbox()
         ScheduleDelayedTooltip(self, function(owner)
             GameTooltip:SetOwner(owner, "ANCHOR_TOP")
             GameTooltip:SetText("Split Raid Evenly")
+            GameTooltip:AddLine("Uses last confirmed specializations, including compatible saved inspections. /rcp rescan updates them.", 0.78, 0.65, 0.42, true)
             GameTooltip:AddLine("Left click: Odd / Even groups", 0.82, 0.87, 0.94)
             GameTooltip:AddLine("Right click: G1+G2 / G3+G4 style split", 0.82, 0.87, 0.94)
             if not IsLeaderOrAssistant() then

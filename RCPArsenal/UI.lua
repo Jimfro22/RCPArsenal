@@ -409,8 +409,17 @@ local function GetRowFrame(index)
         if HUD:IsMouseEnabled() then
             self:SetBackdropColor(COLORS.rowHover[1], COLORS.rowHover[2], COLORS.rowHover[3], 0.96)
         end
+        if self.ability and self.owners then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(RA:GetAbilityName(self.ability), 1, 1, 1)
+            for _, owner in ipairs(self.owners) do
+                GameTooltip:AddLine(RA:GetShortName(owner.name) .. ": " .. RA:GetInspectionEvidenceText(owner), 0.78, 0.65, 0.42, true)
+            end
+            GameTooltip:AddLine("/rcp scan fills missing data; /rcp rescan refreshes the tracked roster.", 0.72, 0.78, 0.86, true)
+            GameTooltip:Show()
+        end
     end)
-    row:SetScript("OnLeave", RestoreRowBackdrop)
+    row:SetScript("OnLeave", function(self) RestoreRowBackdrop(self); GameTooltip:Hide() end)
 
     rowPool[index] = row
     return row
@@ -467,6 +476,7 @@ local function ShowTileTooltip(tile)
         GameTooltip:SetText(RA:GetAbilityName(tile.ability), 1, 1, 1)
     end
     GameTooltip:AddLine("Owner: " .. RA:GetShortName(tile.owner.name), 0.72, 0.78, 0.86)
+    GameTooltip:AddLine(RA:GetInspectionEvidenceText(tile.owner), 0.78, 0.65, 0.42, true)
     GameTooltip:AddLine(" ")
     local actions = RA:GetDB().actions or {}
     local leftClickMode = actions.leftClickMode or "OFF"
@@ -612,6 +622,11 @@ local function GetCompactTile(index)
     tile.nameText:SetJustifyH("CENTER")
     tile.nameText:SetWordWrap(false)
 
+    tile.cacheLabel = CreateFontString(tile.iconFrame, 8, COLORS.amber, "BOLD")
+    tile.cacheLabel:SetText("C")
+    SetPoint(tile.cacheLabel, "TOPLEFT", tile.iconFrame, "TOPLEFT", 1, -1)
+    tile.cacheLabel:Hide()
+
     tile.callFlash = tile:CreateTexture(nil, "OVERLAY")
     if Theme then
         Theme:RegisterAccentTexture(tile.callFlash, "PRIMARY")
@@ -702,6 +717,7 @@ local function GetScanToken(index)
         local role = self.entry.role or "NONE"
         local state = self.entry.state or "WAITING"
         GameTooltip:AddLine((role == "NONE" and "Unassigned" or role) .. " · " .. state, 0.64, 0.70, 0.78)
+        GameTooltip:AddLine(self.entry.cachedSpecID and RA:GetInspectionEvidenceText(self.entry) or "Specialization and talents unknown; the portrait shows class only.", 0.78, 0.65, 0.42, true)
         if self.entry.reason and self.entry.reason ~= "" then
             GameTooltip:AddLine(self.entry.reason, 0.78, 0.58, 0.35, true)
         end
@@ -769,7 +785,7 @@ local function FormatOwners(owners, maxNames)
     local visibleNames = math.min(#owners, maxNames)
     for i = 1, visibleNames do
         local owner = owners[i]
-        output[#output + 1] = RA:ColorizeName(owner.shortName, owner.class)
+        output[#output + 1] = RA:ColorizeName(owner.shortName, owner.class) .. (owner.cached and " |cffffc56e[C]|r" or "")
     end
 
     local text = table.concat(output, " |cff56606d·|r ")
@@ -997,8 +1013,10 @@ local function SetScanControlTooltip(button)
             GameTooltip:SetText("Retry missing players", 1, 1, 1)
             GameTooltip:AddLine("Only unresolved tracked players are queued.", 0.64, 0.70, 0.78, true)
         else
-            GameTooltip:SetText("Raid scan complete", 1, 1, 1)
+            GameTooltip:SetText("Tracked roster resolved", 1, 1, 1)
         end
+        GameTooltip:AddLine(RA:FormatInspectionEvidenceSummary(), 0.72, 0.78, 0.86, true)
+        GameTooltip:AddLine("C marks saved inspection data. Cached talents may have changed; /rcp rescan confirms them again.", 0.78, 0.65, 0.42, true)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function()
@@ -1074,11 +1092,7 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
     headerStatus:SetJustifyH("LEFT")
     SetPoint(headerStatus, "TOPLEFT", headerTitle, "BOTTOMLEFT", 0, -2)
     headerStatus:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
-    if not IsInGroup() then
-        headerStatus:SetText("LOCAL CAPABILITIES")
-    else
-        headerStatus:SetText(string.format("%d/%d INSPECTED", inspected, total))
-    end
+    headerStatus:SetText(isDemo and "DEMO CAPABILITIES" or RA:FormatInspectionEvidenceSummary())
 
     SetHeight(headerLine, 1)
     SetPoint(headerLine, "TOPLEFT", HUD, "TOPLEFT", 7, -30)
@@ -1127,6 +1141,7 @@ local function LayoutDetailedRow(row, ability, owners, y, width)
     local isActive = activeStates[ability.key] == true
 
     row.isActive = isActive
+    row.ability, row.owners = ability, owners
     row:ClearAllPoints()
     SetPoint(row, "TOPLEFT", HUD, "TOPLEFT", DETAILED.outerInset, y)
     SetSize(row, rowWidth, DETAILED.rowHeight)
@@ -1256,6 +1271,7 @@ end
 local function ConfigureCompactTile(tile, ability, owner, abbreviations, active, metrics)
     tile.ability = ability
     tile.owner = owner
+    tile.cacheLabel:SetShown(owner.cached == true)
     SetSize(tile, metrics.tileWidth, metrics.tileHeight)
 
     SetSize(tile.iconFrame, metrics.iconSize, metrics.iconSize)
