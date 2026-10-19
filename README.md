@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for the Morning Brew raid hub. The current feature alpha is **0.15.2-alpha.1**: a quiet `/rcp` hub, honest local addon shelf, leader version matrix, cold-login visual recovery, opt-in personal tools, guarded stock Northern Sky setup, and bounded inspection snapshots across reload/login. Profile schema is 19; original assets/history and the prior marker alpha remain preserved.
+This is the editable source checkout for the Morning Brew raid hub. The current alpha is **0.15.2-alpha.2**, a focused duplicate marker-binding header hotfix over the hub and inspection-cache alpha. Profile schema is 19; original assets/history and the prior marker alpha remain preserved. Settings-navigation recovery is still in progress following the owner's first native Windows/WoW feedback.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
@@ -21,7 +21,7 @@ python3 tools/package.py --output-dir dist --label local
 
 Use `--check-baseline` only when verifying the original baseline checkout; it correctly rejects this feature build. Keep the TOC and `RA.VERSION` versions in sync. A package label changes only the filename; it does not change the version seen in game. The ZIP includes exactly one `RCPArsenal/` root, addon code, assets, and inherited docs. Engineering tools and planning documents are outside the game payload. Each ZIP has a SHA-256 sidecar and a manifest containing file hashes and Git revision. ZIP entries use stable ordering, timestamps, and uncompressed storage for reproducible bytes across platforms.
 
-Packaging checks validate versions, manifest references, and ZIP contents. CI also installs Lua 5.1, parses all addon modules, and runs every `tests/*.lua` harness for actual-module profile/hub/quiet lifecycle, assets, readiness protocol, personal tools, and marker logic. These checks do not simulate WoW native hardware dispatch, taint, terrain, or permissions. No game testing has been performed.
+Packaging checks validate versions, manifest references, and ZIP contents. CI also installs Lua 5.1, parses all addon modules, and runs every `tests/*.lua` harness for actual-module profile/hub/quiet lifecycle, assets, readiness protocol, personal tools, and marker logic. These checks do not simulate WoW native hardware dispatch, taint, terrain, or permissions. The owner's first actual Windows/WoW run loaded the addon but failed usability acceptance and reported a duplicate marker-binding header warning. Native confirmation of this hotfix is pending; earlier offline/source checks did not establish usability.
 
 ## Delivery documents
 
