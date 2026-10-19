@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.3"
+RA.VERSION = "0.15.3-alpha.4"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -129,7 +129,7 @@ local DEFAULTS = {
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false },
         personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
-            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH" },
+            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH", reminderSound = true },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
@@ -437,6 +437,7 @@ local function MigrateProfile(profile)
     end
     personal.reminderIconSize = math.max(24, math.min(128, tonumber(personal.reminderIconSize) or 56))
     if personal.reminderTextSize ~= nil then personal.reminderTextSize = math.max(8, math.min(32, tonumber(personal.reminderTextSize) or 10)) end
+    if personal.reminderSound == nil then personal.reminderSound = true else personal.reminderSound = personal.reminderSound == true end
     if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
     profile.readiness.targets = type(profile.readiness.targets) == "table" and profile.readiness.targets or {}

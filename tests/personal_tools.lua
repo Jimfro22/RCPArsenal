@@ -487,6 +487,26 @@ check(itemCalls==before,"Cached unrecognized potion was left pending")
 tools=loadTools()
 check(tools:SetOption("reminderStoneText", "|Tbad:60|t\nGo"), "Literal text option failed")
 check(tools:PreviewReminder("stone") and frames[2].strings[1].text == "||Tbad:60||t Go", "Message interpreted markup or retained newline")
+-- Native-sound preferences default on without enabling the master, and
+-- preference edits are independent of inventory/health/appearance/placement.
+tools=loadTools()
+check(tools:GetState().reminderSound and not tools:GetState().consumableReminder,"Sound default enabled the reminder or defaulted off")
+local beforeItems,beforeHealth=itemCalls,healthCalls
+check(tools:SetOption("reminderSound",false) and not tools:GetState().reminderSound,"Sound OFF not saved")
+check(itemCalls==beforeItems and healthCalls==beforeHealth and #frames==0 and #timers==0 and #tickers==0,"Sound edit created runtime work")
+local defaults=coreTextRA:CreateDefaultProfile()
+check(defaults.personalTools.reminderSound and not defaults.personalTools.consumableReminder,"Fresh sound/master defaults differ")
+defaults.personalTools.reminderSound=false
+coreTextRA:NormalizeProfile(defaults)
+check(defaults.personalTools.reminderSound==false,"Normalization overwrote deliberate sound OFF")
+ready(5512);tools:SetOption("consumableReminder",true)
+local beforeItems,beforeHealth=itemCalls,healthCalls
+check(tools:SetOption("reminderSound",true),"Sound ON not saved")
+check(itemCalls==beforeItems and healthCalls==beforeHealth,"Audio toggle rescanned bags or health while opted in")
+check(tools:GetNativeSoundEligibility(),"Enabled sound eligibility refused")
+tools:SetOption("reminderSound",false)
+check(not tools:GetNativeSoundEligibility(),"Saved sound OFF remained eligible")
+check(not tools:SetOption("reminderSound",secret) and not tools:SetOption("reminderSound",1),"Secret/nonboolean sound preference accepted")
 -- No artificial low-health wait: both player events write alpha in their
 -- own callback at a fixed clock, without timers, inventory or a bounce phase.
 tools=loadTools();ready(5512);healthRatio=.8

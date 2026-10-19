@@ -76,6 +76,11 @@ local function ReminderText(kind)
     return RA:NormalizeReminderText(text)
 end
 
+local function SoundEnabled()
+    local value = (Settings() or {}).reminderSound
+    return value == nil or (not IsSecret(value) and value == true)
+end
+
 local function CombatMode()
     local mode = (Settings() or {}).reminderCombat
     return COMBAT_MODES[mode] and mode or "BOTH"
@@ -106,8 +111,8 @@ local function Enabled(key)
     return settings and settings[key] == true
 end
 
-local function Notify()
-    RA:FireCallback("PERSONAL_TOOLS_CHANGED")
+local function Notify(option)
+    RA:FireCallback("PERSONAL_TOOLS_CHANGED", option)
 end
 
 local function CancelRes()
@@ -371,7 +376,7 @@ function Tools:SetOption(key, value)
     if not db then return false, "Profile unavailable." end
     if IsSecret(key) or IsSecret(value) then return false, "Invalid personal tool option." end
     if key ~= "autoRes" and key ~= "consumableReminder" and key ~= "healthThreshold"
-        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderCombat" then
+        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" then
         return false, "Unknown personal tool option."
     end
     if key == "healthThreshold" then
@@ -392,10 +397,12 @@ function Tools:SetOption(key, value)
         db.personalTools = { autoRes = false, consumableReminder = false, healthThreshold = DEFAULT_THRESHOLD }
     end
     db.personalTools[key] = value
+    -- Audio preferences do not refresh inventory, visuals or health.
+    if key == "reminderSound" then Notify(key); return true end
     ApplyAppearance(reminder, reminderLabel, selectedKind)
     ApplyAppearance(preview, previewCaption, previewKind)
     self:Refresh(key == "consumableReminder")
-    Notify()
+    Notify(key)
     return true
 end
 
@@ -521,6 +528,23 @@ function Tools:MoveReminder(kind)
     return true
 end
 
+function Tools:IsNativeSoundOptedIn()
+    return Enabled("consumableReminder") == true and SoundEnabled()
+end
+
+function Tools:GetNativeSoundEligibility()
+    if not Enabled("consumableReminder") then return false, "Reminder is off." end
+    if not SoundEnabled() then return false, "Sound is off." end
+    if not CombatAllowsReminder() then return false, "Hidden by combat setting." end
+    if ReadBoolean(UnitIsDeadOrGhost, "player") ~= false then return false, "Player dead or life state unknown." end
+    return true
+end
+
+function Tools:PreviewReminderSound()
+    if not RA.NativeWarningAudio then return false, "Native game sound unavailable." end
+    return RA.NativeWarningAudio:Preview()
+end
+
 function Tools:GetStatusText(key)
     if key == "autoRes" then return resReason end
     if key == "consumableReminder" then return reminderReason end
@@ -529,7 +553,7 @@ end
 
 function Tools:GetState()
     return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
-        healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
+        reminderSound = SoundEnabled(), healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
         reminderStoneText = ReminderText("stone"), reminderPotionText = ReminderText("potion"), reminderIconSize = IconSize(), reminderTextSize = TextSize(), reminderCombat = CombatMode(),
         reminderStatus = reminderReason, autoResStatus = resReason, previewMode = previewMode }
 end

@@ -362,8 +362,24 @@ check(db.position == navPosition and db.leaderToolbox.position == navPuckPositio
 check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
 check(hasVisibleText("Uses your carried Healthstone first, then a healing potion. Cooldown readiness isn't checked."), 'Reminder copy claims readiness')
 check(hasVisibleText('SHOW REMINDER') and hasVisibleText('ICON SIZE') and hasVisibleText('TEXT SIZE'), 'Everyday controls hidden')
-check(not hasVisibleText('HEALTHSTONE TEXT') and clickVisible('REMINDER TEXT +'), 'Text details not initially collapsed')
+check(not hasVisibleText('HEALTHSTONE TEXT') and clickVisible('REMINDER TEXT & SOUND +'), 'Text details not initially collapsed')
 check(hasVisibleText('HEALTHSTONE TEXT') and hasVisibleText('HEALING POTION TEXT') and hasVisibleText('PREVIEW SAMPLE'), 'Message/sample options missing')
+check(hasVisibleText('Low-health sound') and hasVisibleText('Native warning - normally 35%'), 'Native audio scope/setting missing')
+check(hasVisibleText('Separate from your visual threshold; Blizzard UI settings apply.'), 'Audio threshold distinction missing')
+check(hasVisibleText('Low with neither supported item: OUT OF POTIONS until recovery or replenishment.') and not hasVisibleText('RAID SUPPLIES'), 'Expanded audio/raid label overlap or empty explanation missing')
+local audioToggle
+for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Low-health sound' and obj.switch then audioToggle=obj end end
+check(audioToggle~=nil and RA:GetDB().personalTools.reminderSound==true, 'Default native sound preference missing')
+audioToggle:Fire('OnClick')
+check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder, 'Sound toggle enabled master or failed OFF')
+local oldKit,oldPlaySound=SOUNDKIT,PlaySound
+local previews,beforeSoundTimers,beforeSoundSent=0,#timers,sent
+SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
+PlaySound=function(id,...) check(id==12889 and select('#',...)==0,'Preview changed native sound parameters');previews=previews+1;return true,7777 end
+check(clickVisible('PREVIEW SOUND') and previews==1, 'Explicit sound preview failed')
+check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder
+    and #timers==beforeSoundTimers and sent==beforeSoundSent, 'Audio preview changed opt-in or started timer/network work')
+SOUNDKIT,PlaySound=oldKit,oldPlaySound
 local personalSnapshot=RA:GetDB().personalTools
 local pos=personalSnapshot.reminderPosition
 RA.PersonalTools:SetOption('reminderStoneText','Stone now')
@@ -380,7 +396,7 @@ check(sent==beforeSupplySent and #timers==beforeSupplyTimers and talentReads==be
 check(clickVisible('CLOSE') and clickVisible('VIEW RESULTS') and #timers==beforeSupplyTimers and sent==beforeSupplySent, 'Reopening supply results starts a request')
 check(clickVisible('CLOSE') and clickVisible('CHECK RAID SUPPLIES') and hasVisibleText('Join a raid to check supplies.'), 'Ineligible query lacks explanation')
 check(sent==beforeSupplySent and #timers==beforeSupplyTimers, 'Ineligible supply action sent/started work')
-check(clickVisible('CLOSE') and clickVisible('HIDE REMINDER TEXT'), 'Text disclosure did not collapse')
+check(clickVisible('CLOSE') and clickVisible('HIDE REMINDER TEXT & SOUND') and hasVisibleText('RAID SUPPLIES'), 'Disclosure collapse lost raid label')
 check(clickVisible('PREVIEW'), 'Reminder preview button missing')
 check(RA.PersonalTools:GetState().previewMode == 'PREVIEW' and not RA:GetDB().personalTools.consumableReminder, 'Preview changed activation')
 check(clickVisible('MOVE') and RA.PersonalTools:GetState().previewMode == 'MOVE', 'Move button did not select mover')
