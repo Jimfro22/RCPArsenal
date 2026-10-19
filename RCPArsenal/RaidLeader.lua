@@ -1635,7 +1635,7 @@ local function TryStartMode(mode, allowScan, sourceButton)
             pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
             SetActionButtonState(sourceButton, "NEED SPEC", "WARNING")
             ResetActionButtonSoon(sourceButton, 3.5)
-            RA:Print("This layout needs specialization data. Enable Capability HUD + talent inspection on My tools to collect it.")
+            RA:Print("This layout needs specialization data. Enable HUD + inspection on the HUD page to collect it.")
             return
         end
         pendingMode = mode

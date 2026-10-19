@@ -244,23 +244,100 @@ local function hasVisibleText(text)
     for _, region in ipairs(objects) do if region.text == text and region:IsVisible() and (text ~= 'Morning Brew' or (region.fontSize or 0) >= 20) then return true end end
     return false
 end
-check(hasVisibleText('Settings') and not hasVisibleText('Morning Brew'), 'Settings pane navigation failed')
+check(hasVisibleText('Profiles & Recovery') and not hasVisibleText('Morning Brew'), 'Profiles pane navigation failed')
 SlashCmdList.RCPARSENAL('')
-check(hasVisibleText('Morning Brew') and not hasVisibleText('Settings'), 'Bare /rcp did not return to Addons')
+check(hasVisibleText('Morning Brew') and not hasVisibleText('Profiles & Recovery'), 'Bare /rcp did not return to Addons')
 check(talentReads == 0 and inspectCalls == 0 and sent == 0, 'Opening the hub performed scans or network requests')
 SlashCmdList.RCPARSENAL('raid')
-check(hasVisibleText('Raid tools'), 'Raid tools pane missing')
+check(hasVisibleText('Version check'), 'Version check pane missing')
 check(hasVisibleText('OPTIONAL'), 'Optional addons are not visibly separated')
 SlashCmdList.RCPARSENAL('scan'); SlashCmdList.RCPARSENAL('rescan'); SlashCmdList.RCPARSENAL('resume'); SlashCmdList.RCPARSENAL('clearcache'); SlashCmdList.RCPARSENAL('demoscan')
 check(not db.hudEnabled and not db.demoMode and talentReads == 0, 'Legacy slash actions silently enabled inspection')
 RA:OpenConfig('MYTOOLS'); cleanErrors()
-check(hasVisibleText('My tools'), 'My tools did not open')
+check(hasVisibleText('Personal tools'), 'Personal tools did not open')
 local function clickVisible(label)
     for _, obj in ipairs(objects) do
         if obj.label and obj.label.text == label and obj:IsVisible() and obj:IsEnabled() then obj:Fire('OnClick'); return true end
     end
     return false
 end
+
+-- Exercise real entry buttons and Back routes; these are navigation assertions,
+-- not a claim that the rendered window is usable in the game client.
+local function selectedNav(label)
+    for _, obj in ipairs(objects) do
+        if obj.title and obj.title.text == label and obj.bar and obj:IsVisible() then
+            return obj.bar:IsShown()
+        end
+    end
+    return false
+end
+local function clickNav(label)
+    for _, obj in ipairs(objects) do
+        if obj.title and obj.title.text == label and obj.bar and obj:IsVisible() then
+            obj:Fire('OnClick'); return true
+        end
+    end
+    return false
+end
+local function visibleButton(label)
+    for _, obj in ipairs(objects) do
+        if obj.label and obj.label.text == label and obj:IsVisible() then return true end
+    end
+    return false
+end
+local function hasHeading(label)
+    for _, obj in ipairs(objects) do
+        if obj.text == label and (obj.fontSize or 0) >= 20 and obj:IsVisible() then return true end
+    end
+    return false
+end
+local navHUD, navPuck, navMarkers = db.hudEnabled, db.leaderToolbox.enabled, db.worldMarkers.enabled
+local navReads, navInspects, navSent = talentReads, inspectCalls, sent
+local navPosition, navPuckPosition = db.position, db.leaderToolbox.position
+local navX, navY, navPuckX, navPuckY, navScale = db.position.x, db.position.y, db.leaderToolbox.position.x, db.leaderToolbox.position.y, db.scale
+local routes = {{'HUD','HUD'}, {'QUICK BAR','Quick Bar'}, {'CONTENT','Content'}, {'SCANNING','Scanning'},
+    {'CALLOUTS & PANIC','Callouts & Panic'}, {'WORLD MARKERS','World marker cycler'}, {'ADDONS','Morning Brew'},
+    {'VERSION CHECK','Version check'}, {'PERSONAL TOOLS','Personal tools'}, {'PROFILES & RECOVERY','Profiles & Recovery'}}
+local previousBottom = 0
+for _, route in ipairs(routes) do
+    for _, obj in ipairs(objects) do
+        if obj.title and obj.title.text == route[1] and obj.bar then
+            local top = -obj.points[1][5]
+            check(top >= previousBottom + 4 and top + obj:GetHeight() < obj.parent:GetHeight() - 60,
+                route[1] .. ' exceeds the sidebar or overlaps the previous row / bottom hint')
+            previousBottom = top + obj:GetHeight()
+        end
+    end
+end
+for _, route in ipairs(routes) do
+    check(clickNav(route[1]) and hasHeading(route[2]), route[1] .. ' was not directly reachable from the persistent sidebar')
+    for _, other in ipairs(routes) do check(selectedNav(other[1]) == (route[1] == other[1]), route[1] .. ' selected the wrong sidebar destination') end
+    check(not clickVisible('BACK TO ADDONS') and not clickVisible('BACK TO QUICK BAR'), route[1] .. ' retained a competing parent route')
+end
+check(clickNav('ADDONS') and clickVisible('SETUP') and selectedNav('ADDONS'), 'Northern Sky lost its Addons context')
+check(clickVisible('BACK TO ADDONS') and hasHeading('Morning Brew'), 'Nested Northern Sky Back did not return to Addons')
+check(clickNav('HUD') and hasVisibleText('HUD GROWTH DIRECTION') and not clickVisible('HIDE SAMPLE'), 'HUD position controls or initially hidden sample are wrong')
+check(hasVisibleText('HUD OPACITY'), 'Live HUD opacity is hidden behind the optional sample')
+check(clickVisible('SHOW SAMPLE') and clickVisible('HIDE SAMPLE'), 'HUD sample was not explicitly collapsible')
+check(hasVisibleText('HUD OPACITY') and hasVisibleText('PRESENTATION'), 'Closing the sample hid common appearance settings')
+check(clickNav('QUICK BAR') and not hasVisibleText('HUD GROWTH DIRECTION') and visibleButton('RESET PUCK POSITION'), 'Quick Bar retained unrelated HUD controls or lost its position reset')
+check(clickNav('CALLOUTS & PANIC') and not clickVisible('TEST WHISPER') and not clickVisible('TEST PANIC'), 'Callout diagnostics are initially exposed')
+check(clickVisible('ADVANCED: TEST CALLOUTS') and hasVisibleText('SECURE CALLOUT STATUS') and clickVisible('CLOSE TESTS'), 'Callout tests could not explicitly open/close')
+check(clickVisible('ADVANCED: TEST CALLOUTS'), 'Callout tests could not reopen')
+RA:CloseConfig(); RA:OpenConfig('ACTIONS')
+check(not hasVisibleText('SECURE CALLOUT STATUS'), 'Closing the host reopened diagnostic tests')
+check(not clickVisible('TEST PANIC') and clickVisible('HUD POSITION') and selectedNav('HUD'), 'Panic position link did not select HUD')
+check(clickNav('SCANNING') and not hasVisibleText('Demo the scanning state'), 'Scan demo is initially exposed')
+check(clickVisible('ADVANCED: DEMO') and hasVisibleText('Demo the scanning state'), 'Scan demo could not be deliberately revealed')
+check(clickNav('PROFILES & RECOVERY') and not clickVisible('RESET PROFILE'), 'Full reset is not initially behind Advanced')
+check(db.hudEnabled == navHUD and db.leaderToolbox.enabled == navPuck and db.worldMarkers.enabled == navMarkers,
+    'Settings navigation changed tool opt-ins')
+check(talentReads == navReads and inspectCalls == navInspects and sent == navSent, 'Settings navigation inspected or sent a version request')
+check(db.position == navPosition and db.leaderToolbox.position == navPuckPosition and db.position.x == navX and db.position.y == navY and
+    db.leaderToolbox.position.x == navPuckX and db.leaderToolbox.position.y == navPuckY and db.scale == navScale,
+    'Opening settings changed saved geometry')
+check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
 check(clickVisible('PREVIEW'), 'Reminder preview button missing')
 check(RA.PersonalTools:GetState().previewMode == 'PREVIEW' and not RA:GetDB().personalTools.consumableReminder, 'Preview changed activation')
 check(clickVisible('MOVE') and RA.PersonalTools:GetState().previewMode == 'MOVE', 'Move button did not select mover')
@@ -290,7 +367,7 @@ db.readiness.targets = {northernsky='1.2.3'}; local targets = db.readiness
 local personal = db.personalTools
 RA:OpenConfig('SETTINGS')
 local beforeReset = RA:GetDB()
-check(clickVisible('RESET PROFILE') and RA:GetDB() == beforeReset, 'Reset ran before consequence confirmation')
+check(clickVisible('ADVANCED: FULL PROFILE RESET') and clickVisible('RESET PROFILE') and RA:GetDB() == beforeReset, 'Reset ran before consequence confirmation')
 check(clickVisible('CANCEL') and RA:GetDB() == beforeReset, 'Reset cancel changed the profile')
 local imported = assert(RA:ExportProfileString())
 check(RA:ImportProfileString(imported), 'Portable round trip failed')

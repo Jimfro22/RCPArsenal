@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for the Morning Brew raid hub. The current alpha is **0.15.2-alpha.2**, a focused duplicate marker-binding header hotfix over the hub and inspection-cache alpha. Profile schema is 19; original assets/history and the prior marker alpha remain preserved. Settings-navigation recovery is still in progress following the owner's first native Windows/WoW feedback.
+This is the editable source checkout for the Morning Brew raid hub. Current source is **0.15.2-alpha.3**, restoring direct access to familiar Arsenal settings after the owner's first native Windows/WoW feedback. It includes the separate **0.15.2-alpha.2** duplicate marker-binding header hotfix. Profile schema is 19; original assets/history and the prior marker alpha remain preserved. Navigation and warning acceptance still require the owner's in-game retest.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
