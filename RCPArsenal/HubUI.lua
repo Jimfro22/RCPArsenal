@@ -129,7 +129,7 @@ function RA:CreateHubPanes(panes, kit)
     Point(preview, "TOPLEFT", tools, "TOPLEFT", 480, -414)
     local move = Button(tools, "MOVE", 110, 34, function() RA.PersonalTools:MoveReminder() end)
     Point(move, "TOPLEFT", tools, "TOPLEFT", 598, -414)
-    local stop = Button(tools, "STOP", 110, 34, function() RA.PersonalTools:StopReminderPreview() end)
+    local stop = Button(tools, "STOP PREVIEW", 110, 34, function() RA.PersonalTools:StopReminderPreview() end)
     Point(stop, "TOPLEFT", tools, "TOPLEFT", 716, -414)
     local resetReminder = Button(tools, "RESET", 110, 34, function() RA.PersonalTools:ResetReminderPosition() end)
     Point(resetReminder, "TOPLEFT", tools, "TOPLEFT", 834, -414)
@@ -141,7 +141,7 @@ function RA:CreateHubPanes(panes, kit)
     Navigate(tools, "CALLOUTS", "ACTIONS", 452, -565, 210)
     Text(tools, "Group version replies work with all of these tools switched off.", 10, 0, -625, 940, C.muted)
     refreshers.MYTOOLS = function()
-        personalStatus:SetText(RA.PersonalTools:GetStatusText("autoRes") .. "\n" .. RA.PersonalTools:GetStatusText("consumableReminder"))
+        personalStatus:SetText("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " .. RA.PersonalTools:GetStatusText("consumableReminder"))
     end
 
     local raid = panes.RAIDTOOLS

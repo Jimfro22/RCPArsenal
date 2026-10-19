@@ -263,7 +263,7 @@ end
 check(clickVisible('PREVIEW'), 'Reminder preview button missing')
 check(RA.PersonalTools:GetState().previewMode == 'PREVIEW' and not RA:GetDB().personalTools.consumableReminder, 'Preview changed activation')
 check(clickVisible('MOVE') and RA.PersonalTools:GetState().previewMode == 'MOVE', 'Move button did not select mover')
-check(clickVisible('STOP') and RA.PersonalTools:GetState().previewMode == nil, 'Stop button left sample active')
+check(clickVisible('STOP PREVIEW') and RA.PersonalTools:GetState().previewMode == nil, 'Stop button left sample active')
 check(clickVisible('PREVIEW'), 'Preview could not reopen')
 RA:OpenConfig('ADDONS')
 check(RA.PersonalTools:GetState().previewMode == nil, 'Navigation left reminder sample visible')

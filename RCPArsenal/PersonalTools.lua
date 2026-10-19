@@ -404,7 +404,7 @@ local function CreatePreview()
     preview.label:SetPoint("BOTTOM", preview, "TOP", 0, 5)
     local caption = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     caption:SetPoint("TOP", preview, "BOTTOM", 0, -4)
-    caption:SetText("Press your item/macro key")
+    caption:SetText("Sample only - use Move to position")
     preview:SetScript("OnDragStart", function()
         if previewMode == "MOVE" and ReadBoolean(InCombatLockdown) == false then
             previewMoving = true
