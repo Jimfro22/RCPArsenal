@@ -3,13 +3,15 @@ local Audio = {}
 RA.NativeWarningAudio = Audio
 
 -- Native warning proxy, normally 35%; independent of the visual's threshold.
--- No health/alpha reads, polling, inventory, native mutation or copied assets.
+-- No health/alpha reads, polling, inventory, native mutation or copied warning logic.
 local records = setmetatable({}, {__mode = "k"})
 local bound, attempted, parentShownHook, parentHiddenHook
 local worldReady = false
 local state, wasEligible = "WAIT_CLEAR", false
 local automaticHandle, previewHandle
-local status = "Reminder is off."
+local routeLabel = "Sound Effects"
+local statusBody = "Reminder is off."
+local status = routeLabel .. " - " .. statusBody
 local Reconcile
 local function Secret(value) return type(issecretvalue) == "function" and issecretvalue(value) end
 local function Boolean(fn, ...)
@@ -40,25 +42,61 @@ local function StopPreview()
     previewHandle = nil
     StopHandle(handle)
 end
+local function SetStatus(body)
+    statusBody = body
+    status = routeLabel .. " - " .. body
+end
+local function Selection()
+    local sounds = RA.ReminderSounds
+    if not sounds then return nil, "SFX" end
+    local db = type(RA.GetDB) == "function" and RA:GetDB()
+    local settings = type(db) == "table" and type(db.personalTools) == "table" and db.personalTools or {}
+    local channel = sounds:NormalizeChannel(settings.reminderSoundChannel)
+    routeLabel = sounds:ChannelLabel(channel)
+    SetStatus(statusBody)
+    return sounds:Get(sounds:NormalizeID(settings.reminderSoundChoice)), channel
+end
+local function Volume(name)
+    if type(GetCVar) ~= "function" then return nil end
+    local ok, value = pcall(GetCVar, name)
+    if not ok or Secret(value) or type(value) ~= "string" then return nil end
+    value = tonumber(value)
+    if not value or value ~= value or value < 0 or value > 1 then return nil end
+    return value
+end
+local function KnownMute(channel)
+    if Boolean(GetCVarBool, "Sound_EnableAllSound") == false then return "WoW sound is disabled." end
+    if Volume("Sound_MasterVolume") == 0 then return "WoW master volume is zero." end
+    if channel == "SFX" then
+        if Boolean(GetCVarBool, "Sound_EnableSFX") == false then return "WoW Sound Effects are disabled." end
+        if Volume("Sound_SFXVolume") == 0 then return "WoW Sound Effects volume is zero." end
+    end
+end
 local function PlayAlert()
-    local okID, id = pcall(function()
-        if Secret(SOUNDKIT) or type(SOUNDKIT) ~= "table" then return nil end
-        return SOUNDKIT.ALARM_CLOCK_WARNING_3 -- Native stopwatch alert, 12889.
-    end)
-    if not okID or type(issecretvalue) ~= "function" or Secret(id) or type(id) ~= "number" or id ~= 12889
-        or type(PlaySound) ~= "function" then return false end
-    -- Default sound parameters: no channel, CVar or volume override.
-    local ok, playing, handle = pcall(PlaySound, id)
-    if not ok or Secret(playing) or playing ~= true then return false end
+    local entry, channel = Selection()
+    if type(issecretvalue) ~= "function" or not entry then
+        return false, nil, routeLabel .. " - sound selection unavailable."
+    end
+    local muted = KnownMute(channel)
+    if muted then return false, nil, routeLabel .. " - " .. muted end
+    local api, value
+    if entry.kind == "kit" then api, value = PlaySound, entry.kitID
+    elseif entry.kind == "file" then api, value = PlaySoundFile, entry.path end
+    if type(api) ~= "function" then return false, nil, routeLabel .. " - playback unavailable in this client." end
+    -- Both paths use the same explicit, sanitized route. No CVar/volume writes.
+    local ok, playing, handle = pcall(api, value, channel)
+    if not ok or Secret(playing) or playing ~= true then
+        return false, nil, routeLabel .. " - playback request failed."
+    end
     return true, Handle(handle)
 end
 local function Disarm(reason)
     state, wasEligible = "WAIT_CLEAR", false
-    if reason then status = reason
-    elseif RA.PersonalTools:IsNativeSoundOptedIn() then status = "Sound enabled - native warning unavailable."
+    if reason then SetStatus(reason)
+    elseif RA.PersonalTools:IsNativeSoundOptedIn() then SetStatus("Sound enabled - native warning unavailable.")
     else
         local _, offReason = RA.PersonalTools:GetNativeSoundEligibility()
-        status = offReason or "Sound is off."
+        SetStatus(offReason or "Sound is off.")
     end
     StopAutomatic()
 end
@@ -157,7 +195,7 @@ Reconcile = function(allowPlayback, allowRetry, reset)
     -- native/addon event-handler ordering cannot create a catch-up alert.
     if not wasEligible then state = "WAIT_CLEAR" end
     wasEligible = true
-    status = "Sound enabled - native warning."
+    SetStatus("Sound enabled - native warning.")
     if shown == false then
         StopAutomatic()
         state = "ARMED" -- A public, eligible own-warning clear; never alpha.
@@ -175,22 +213,23 @@ end
 
 function Audio:Preview()
     StopPreview()
-    local playing, handle = PlayAlert()
+    local playing, handle, feedback = PlayAlert()
     if playing then
         previewHandle = handle
-        return true, "Sound preview requested. Your switches are unchanged."
+        return true, routeLabel .. " - preview requested."
     end
-    return false, "Sound preview unavailable or muted. Your switches are unchanged."
+    return false, feedback
 end
 function Audio:GetStatusText() return status end -- Cached only; rendering does no native work.
 
-RA:RegisterInitializer(function() Reconcile(false, true, true) end)
+RA:RegisterInitializer(function() Selection(); Reconcile(false, true, true) end)
 RA:RegisterCallback("PERSONAL_TOOLS_CHANGED", function(option)
     if Secret(option) or type(option) ~= "string" then return end
+    if option == "reminderSoundChoice" or option == "reminderSoundChannel" then Selection(); return end
     if option == "consumableReminder" or option == "reminderSound" then Reconcile(false, true, true)
     elseif option == "reminderCombat" then Reconcile(false, false, true) end
 end)
-RA:RegisterCallback("PROFILE_RESET", function() Reconcile(false, false, true) end)
+RA:RegisterCallback("PROFILE_RESET", function() Selection(); Reconcile(false, false, true) end)
 RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()
     worldReady = true
     Reconcile(false, true, true)

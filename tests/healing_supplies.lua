@@ -64,4 +64,17 @@ setup();for bag=0,5 do sizes[bag]=100 end
 r=S:Snapshot();check(calls.slots==6 and calls.id==600 and r.slots==600,'Worst-case bag bound differs')
 setup();local containers=C_Container;C_Container=nil;r=S:Snapshot();C_Container=containers
 check(r.stone==nil and r.potion==nil,'Missing API became empty')
+for _,id in ipairs({271884,271883,245918,241304,245919,241305,244849,244839,244838,244835,212944,211880,212943,211879,212942,211878}) do
+    setup();put(id);r=S:Snapshot()
+    check(r.potion==true and r.itemID==id and #r.candidates==1 and calls.meta==0,"Reviewed direct ID lost without metadata: "..id)
+end
+for _,spell in ipairs({1295247,1234768,1238009,431416}) do
+    setup();put(99999);metadata[99999]={0,1};cached[99999]=true;spells[99999]=spell
+    r=S:Snapshot();check(r.potion==true,"Verified spell family not accepted: "..spell)
+end
+setup();put(5512);put(5512);r=S:Snapshot();check(#r.candidates==1,"Candidate list not deduplicated")
+setup();for id=90001,90050 do put(id);metadata[id]={0,1};cached[id]=true;spells[id]=1234768 end
+put(5512);r=S:Snapshot()
+check(#r.candidates==32 and r.candidates[1].id==5512 and r.candidatesTruncated and r.stone==true and r.potion==true,"Bounded candidates erased priority/carriage")
+check(S.MAP_REVISION==2 and S.MAP_VERSION=='2026-10-19.2',"Expanded map revision not stamped")
 print('PASS: '..checks..' healing inventory assertions (actual module; bounded offline API mocks)')

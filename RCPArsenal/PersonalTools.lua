@@ -19,6 +19,7 @@ local VALID_POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true,
     CENTER = true, RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
 
 local reminder, bounce, curve, curveThreshold, resTimer
+local readinessTimer, readinessGeneration, lastExpiry = nil, 0, nil
 local reminderLabel, previewCaption
 local COMBAT_MODES = { BOTH = true, IN_COMBAT = true, OUT_OF_COMBAT = true }
 local preview, previewMode, previewMoving, previewBounce
@@ -67,8 +68,12 @@ local function TextSize()
     return math.floor(math.max(8, math.min(32, saved or 10)) + 0.5)
 end
 
+local function EmptyTextSize()
+    return math.floor(math.max(16, math.min(96, Number((Settings() or {}).reminderEmptyTextSize) or 48)) + 0.5)
+end
+
 local function ReminderText(kind)
-    if kind == "empty" then return "OUT OF POTIONS" end
+    if kind == "empty" then return "OUT OF POTIONS!" end
     local settings = Settings() or {}
     local text = settings[kind == "stone" and "reminderStoneText" or "reminderPotionText"]
     if type(text) ~= "string" or IsSecret(text) then text = settings.reminderText end
@@ -79,6 +84,13 @@ end
 local function SoundEnabled()
     local value = (Settings() or {}).reminderSound
     return value == nil or (not IsSecret(value) and value == true)
+end
+
+local function SoundSelection()
+    local settings = Settings() or {}
+    local sounds = RA.ReminderSounds
+    return sounds and sounds:NormalizeID(settings.reminderSoundChoice) or "builtin_alert",
+        sounds and sounds:NormalizeChannel(settings.reminderSoundChannel) or "SFX"
 end
 
 local function CombatMode()
@@ -93,16 +105,69 @@ local function CombatAllowsReminder()
     return combat ~= nil and (combat == (mode == "IN_COMBAT"))
 end
 
+local function Metric(object, method)
+    if not object then return nil end
+    local ok, value = pcall(function() return object[method](object) end)
+    return ok and Number(value) or nil
+end
+local function FitAndClamp(frame, label, kind, requestedSize)
+    if not label then return end
+    local width = Metric(label, "GetStringWidth")
+    local height = Metric(label, "GetStringHeight")
+    if not width or width <= 0 then width = kind == "empty" and (#"OUT OF POTIONS!" + 1) * requestedSize or math.max(260, IconSize()) end
+    if not height or height <= 0 then height = requestedSize * 1.2 end
+    if kind == "empty" then
+        local screenW, screenH = Metric(UIParent, "GetWidth"), Metric(UIParent, "GetHeight")
+        local parentScale, frameScale = Metric(UIParent, "GetEffectiveScale"), Metric(frame, "GetEffectiveScale")
+        local ratio = parentScale and parentScale > 0 and frameScale and frameScale > 0 and frameScale / parentScale or 1
+        if screenW and screenH and screenW > 32 and screenH > IconSize() + 32 then
+            local availableW, availableH = screenW / ratio - 16, screenH / ratio - IconSize() - 32
+            local fit = math.min(1, availableW / (width + 2), availableH / (height + 2))
+            if fit > 0 and fit < 1 then
+                local size = math.max(6, math.floor(requestedSize * fit))
+                -- The shared font helper rounds to whole units (minimum 6).
+                -- Measure the applied font, never scaled pre-fit metrics. A
+                -- bounded decrement handles native glyph rounding as well.
+                for attempt = 1, 96 do
+                    if RA.ApplyFont then RA:ApplyFont(label, size, "REGULAR", false)
+                    elseif label.SetTextHeight then label:SetTextHeight(size) end
+                    width, height = Metric(label, "GetStringWidth"), Metric(label, "GetStringHeight")
+                    if not width or width <= 0 then width = (#"OUT OF POTIONS!" + 1) * size end
+                    if not height or height <= 0 then height = size * 1.2 end
+                    if (width + 2 <= availableW and height + 2 <= availableH) or size <= 6 then break end
+                    size = size - 1
+                end
+            end
+        end
+        width, height = width + 2, height + 2
+        if label.SetWidth then label:SetWidth(width) end
+    end
+    local clamped = kind == "empty" or frame.isPreview == true
+    if frame.SetClampedToScreen then pcall(frame.SetClampedToScreen, frame, clamped) end
+    if frame.SetClampRectInsets then
+        local side = clamped and math.max(0, (width - IconSize()) / 2) or 0
+        local top = clamped and (frame.isPreview and 20 or 7) or 0
+        local bottom = clamped and -(4 + height + 7) or 0
+        -- Native offset signs match Blizzard EditMode's selection-bound clamp.
+        -- Include the entire caption and +/-7 animation, without saving a move.
+        pcall(frame.SetClampRectInsets, frame, -side, side, top, bottom)
+    end
+end
+
 local function ApplyAppearance(frame, label, kind)
     if not frame then return end
     frame:SetSize(IconSize(), IconSize())
     if label then
-        if RA.ApplyFont then RA:ApplyFont(label, TextSize(), "REGULAR", false)
-        elseif label.SetTextHeight then label:SetTextHeight(TextSize()) end
-        if label.SetWidth then label:SetWidth(math.max(260, IconSize())) end
-        if label.SetWordWrap then label:SetWordWrap(true) end
+        local size = kind == "empty" and EmptyTextSize() or TextSize()
+        if RA.ApplyFont then RA:ApplyFont(label, size, "REGULAR", false)
+        elseif label.SetTextHeight then label:SetTextHeight(size) end
+        -- Fixed empty-warning text gets a full-em-per-character width, rather
+        -- than the ordinary caption's narrow wrapping box. Same icon anchor.
+        if label.SetWidth then label:SetWidth(kind == "empty" and (#"OUT OF POTIONS!" + 1) * size or math.max(260, IconSize())) end
+        if label.SetWordWrap then label:SetWordWrap(kind ~= "empty") end
         local text = ReminderText(kind):gsub("|", "||") -- Literal text, never links/textures/commands.
         if RA.SetVisualText then RA:SetVisualText(label, text) else label:SetText(text) end
+        FitAndClamp(frame, label, kind, size)
     end
 end
 
@@ -117,6 +182,13 @@ end
 
 local function CancelRes()
     if resTimer then resTimer:Cancel(); resTimer = nil end
+end
+
+local function CancelReadiness()
+    readinessGeneration = readinessGeneration + 1
+    local timer = readinessTimer
+    readinessTimer = nil
+    if timer then pcall(function() timer:Cancel() end) end
 end
 
 local function HideReminder(reason)
@@ -170,6 +242,8 @@ end
 local function PositionReminder()
     PositionFrame(reminder)
     PositionFrame(preview)
+    ApplyAppearance(reminder, reminderLabel, selectedKind)
+    ApplyAppearance(preview, previewCaption, previewKind)
 end
 
 local function CreateReminder()
@@ -243,6 +317,7 @@ local function ApplyHealthAlpha()
     -- ReadBoolean rejects secret/unknown life state before Lua branches. This
     -- guard also handles a death health event before PLAYER_DEAD is dispatched.
     if ReadBoolean(UnitIsDeadOrGhost, "player") ~= false then
+        CancelReadiness()
         HideReminder("Player dead or life state unknown; visual suppressed.")
         Notify()
         return
@@ -254,12 +329,67 @@ local function ApplyHealthAlpha()
     local ok = pcall(function()
         reminder:SetAlpha(UnitHealthPercent("player", true, curve))
     end)
-    if not ok then HideReminder("Native health display unavailable; visual suppressed.") else StartBounce() end
+    if not ok then CancelReadiness(); HideReminder("Native health display unavailable; visual suppressed.") else StartBounce() end
+end
+
+local function ItemReadiness(candidate, now)
+    if not now or not C_Item or type(C_Item.GetItemCooldown) ~= "function" or type(C_Item.IsUsableItem) ~= "function" then return "unknown" end
+    local ok, start, duration, enabled, usable, noMana = pcall(function()
+        local start, duration, enabled = C_Item.GetItemCooldown(candidate.id)
+        local usable, noMana = C_Item.IsUsableItem(candidate.id)
+        return start, duration, enabled, usable, noMana
+    end)
+    if not ok or IsSecret(enabled) or IsSecret(usable) or IsSecret(noMana)
+        or type(enabled) ~= "boolean" or type(usable) ~= "boolean" or type(noMana) ~= "boolean" then return "unknown" end
+    start, duration = Number(start), Number(duration)
+    if not start or not duration or start < 0 or duration < 0 then return "unknown" end
+    local deadline = Number(start + duration)
+    if not deadline or not enabled then return "unknown" end
+    if duration > 0 and deadline > now then return "cooldown", deadline end
+    if usable == true and noMana == false then return "ready" end
+    return "unusable"
+end
+
+local function SelectCarried(snapshot)
+    local now
+    if type(GetTime) == "function" then local ok, value = pcall(GetTime); if ok then now = Number(value) end end
+    if now and now < 0 then now = nil end
+    local selected, earliest, states = nil, nil, {}
+    for index, candidate in ipairs(snapshot.candidates or {}) do
+        local state, deadline = ItemReadiness(candidate, now)
+        states[index] = state
+        if state == "ready" and not selected then selected = candidate end
+        if deadline and (not earliest or deadline < earliest) then earliest = deadline end
+    end
+    if selected then return selected, "ready", earliest, now end
+    if Enabled("reminderShowOnCooldown") and snapshot.candidates and snapshot.candidates[1] then
+        return snapshot.candidates[1], states[1] or "unknown", earliest, now
+    end
+    return nil, "unavailable", earliest, now
+end
+
+local function ScheduleExpiry(deadline, now, snapshot)
+    if not deadline or not now or deadline <= now or (lastExpiry and deadline <= lastExpiry)
+        or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
+    local delay = Number(deadline - now + 0.05)
+    if not delay or delay <= 0 then return end
+    local generation = readinessGeneration
+    local ownedTimer
+    local ok, timer = pcall(C_Timer.NewTimer, delay, function()
+        if readinessTimer == ownedTimer then readinessTimer = nil end
+        if generation ~= readinessGeneration or inventory ~= snapshot or not Enabled("consumableReminder") then return end
+        lastExpiry = deadline
+        -- Only cached candidates are reconciled. Display still uses the same
+        -- direct opaque native-alpha sink; no Lua health decision or audio.
+        Tools:Refresh(false)
+    end)
+    if ok then ownedTimer, readinessTimer = timer, timer end
 end
 
 function Tools:Refresh(refreshInventory)
+    CancelReadiness()
     -- Invalidate before visibility/life guards, without scanning hidden bags.
-    if refreshInventory ~= false then inventory = nil end
+    if refreshInventory ~= false then inventory, lastExpiry = nil, nil end
     local previousItem, previousReason, previousRes = selectedItem, reminderReason, resReason
     if not Enabled("autoRes") then CancelRes(); resReason = "Off."
     elseif resReason == "Off." then resReason = "On. Combat/encounter offers stay manual; client confirmation pending." end
@@ -276,13 +406,17 @@ function Tools:Refresh(refreshInventory)
         HideReminder("Native curve unavailable; reminder hidden.")
     else
         if not inventory then inventory = RA.HealingSupplies:Snapshot() end
-        if inventory.itemID then
+        local candidate, readiness, deadline, now = SelectCarried(inventory)
+        ScheduleExpiry(deadline, now, inventory)
+        if candidate then
             CreateReminder()
-            selectedItem, selectedKind = inventory.itemID, inventory.kind
+            selectedItem, selectedKind = candidate.id, candidate.kind
             ApplyAppearance(reminder, reminderLabel, selectedKind)
+            PositionFrame(reminder)
             reminder.icon:Show(); reminder.border:Show()
-            reminder.icon:SetTexture(inventory.icon)
-            reminderReason = (selectedKind == "stone" and "Healthstone" or "Healing potion") .. " carried. Cooldown readiness isn't checked."
+            reminder.icon:SetTexture(candidate.icon)
+            local label = selectedKind == "stone" and "Healthstone" or "Healing potion"
+            reminderReason = label .. (readiness == "ready" and " ready (carried)." or readiness == "cooldown" and " carried; on cooldown." or " carried; readiness not confirmed.")
             reminder:Show()
             StartBounce()
             ApplyHealthAlpha()
@@ -290,11 +424,14 @@ function Tools:Refresh(refreshInventory)
             CreateReminder()
             selectedItem, selectedKind = nil, "empty"
             ApplyAppearance(reminder, reminderLabel, selectedKind)
+            PositionFrame(reminder)
             reminder.icon:Hide(); reminder.border:Hide()
-            reminderReason = "No supported healing item carried. Low-health visual: OUT OF POTIONS."
+            reminderReason = "No supported healing item carried. Low-health visual: OUT OF POTIONS!"
             reminder:Show()
             StartBounce()
             ApplyHealthAlpha()
+        elseif inventory.stone == true or inventory.potion == true then
+            HideReminder("Healing supplies carried; no known-ready item. Prompt hidden.")
         else
             HideReminder("Inventory unavailable or potion family unknown; reminder hidden.")
         end
@@ -376,7 +513,7 @@ function Tools:SetOption(key, value)
     if not db then return false, "Profile unavailable." end
     if IsSecret(key) or IsSecret(value) then return false, "Invalid personal tool option." end
     if key ~= "autoRes" and key ~= "consumableReminder" and key ~= "healthThreshold"
-        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" then
+        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" then
         return false, "Unknown personal tool option."
     end
     if key == "healthThreshold" then
@@ -385,20 +522,25 @@ function Tools:SetOption(key, value)
     elseif key == "reminderStoneText" or key == "reminderPotionText" then
         if type(value) ~= "string" then return false, "Enter reminder text." end
         value = RA:NormalizeReminderText(value)
-    elseif key == "reminderIconSize" or key == "reminderTextSize" then
+    elseif key == "reminderIconSize" or key == "reminderTextSize" or key == "reminderEmptyTextSize" then
         local size = Number(value)
         if not size then return false, "Choose a numeric size." end
-        local minimum, maximum = key == "reminderIconSize" and 24 or 8, key == "reminderIconSize" and 128 or 32
+        local minimum = key == "reminderIconSize" and 24 or key == "reminderEmptyTextSize" and 16 or 8
+        local maximum = key == "reminderIconSize" and 128 or key == "reminderEmptyTextSize" and 96 or 32
         value = math.floor(math.max(minimum, math.min(maximum, size)) + 0.5)
     elseif key == "reminderCombat" then
         if type(value) ~= "string" or not COMBAT_MODES[value] then return false, "Choose a combat visibility option." end
+    elseif key == "reminderSoundChoice" then
+        if not RA.ReminderSounds or not RA.ReminderSounds:Get(value) then return false, "Choose a listed sound." end
+    elseif key == "reminderSoundChannel" then
+        if type(value) ~= "string" or (value ~= "SFX" and value ~= "Master") then return false, "Choose Sound Effects or Master." end
     elseif type(value) ~= "boolean" then return false, "Choose on or off." end
     if type(db.personalTools) ~= "table" then
         db.personalTools = { autoRes = false, consumableReminder = false, healthThreshold = DEFAULT_THRESHOLD }
     end
     db.personalTools[key] = value
     -- Audio preferences do not refresh inventory, visuals or health.
-    if key == "reminderSound" then Notify(key); return true end
+    if key == "reminderSound" or key == "reminderSoundChoice" or key == "reminderSoundChannel" then Notify(key); return true end
     ApplyAppearance(reminder, reminderLabel, selectedKind)
     ApplyAppearance(preview, previewCaption, previewKind)
     self:Refresh(key == "consumableReminder")
@@ -448,6 +590,7 @@ local function CreatePreview()
     -- inventory query, health query, or timer. Its bounce uses the same visual
     -- animation as the live reminder, on an independent ordinary-alpha parent.
     preview = CreateFrame("Frame", "RCPArsenalConsumableReminderPreview", UIParent)
+    preview.isPreview = true
     preview:Hide()
     preview:SetAlpha(1)
     preview:SetSize(56, 56)
@@ -462,6 +605,7 @@ local function CreatePreview()
     body:SetAlpha(1)
     body:EnableMouse(false)
     local border = body:CreateTexture(nil, "BACKGROUND")
+    preview.border = border
     border:SetAllPoints()
     border:SetColorTexture(0.95, 0.65, 0.20, 1)
     local icon = body:CreateTexture(nil, "ARTWORK")
@@ -503,12 +647,15 @@ function Tools:StopReminderPreview()
 end
 
 function Tools:PreviewReminder(kind)
-    if kind == "stone" or kind == "potion" then previewKind = kind end
+    if kind == "stone" or kind == "potion" or kind == "empty" then previewKind = kind end
     if not Settings() then return false, "Profile unavailable." end
     self:StopReminderPreview()
     CreatePreview()
     PositionFrame(preview)
     ApplyAppearance(preview, previewCaption, previewKind)
+    PositionFrame(preview)
+    if previewKind == "empty" then preview.icon:Hide(); preview.border:Hide()
+    else preview.icon:Show(); preview.border:Show() end
     preview.icon:SetTexture(previewKind == "stone" and "Interface\\Icons\\INV_Stone_04" or GENERIC_POTION_ICON)
     previewMode = "PREVIEW"
     preview.label:SetText("BOUNCE PREVIEW - SAMPLE")
@@ -522,6 +669,7 @@ function Tools:MoveReminder(kind)
     local ok, reason = self:PreviewReminder(kind)
     if not ok then return false, reason end
     previewMode = "MOVE"
+    preview.border:Show() -- Existing sample anchor remains draggable even for text-only setup.
     previewBounce:Stop()
     preview.label:SetText("DRAG TO MOVE - SAMPLE")
     preview:EnableMouse(true)
@@ -552,9 +700,10 @@ function Tools:GetStatusText(key)
 end
 
 function Tools:GetState()
+    local soundChoice, soundChannel = SoundSelection()
     return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
-        reminderSound = SoundEnabled(), healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
-        reminderStoneText = ReminderText("stone"), reminderPotionText = ReminderText("potion"), reminderIconSize = IconSize(), reminderTextSize = TextSize(), reminderCombat = CombatMode(),
+        reminderShowOnCooldown = Enabled("reminderShowOnCooldown") == true, reminderSound = SoundEnabled(), reminderSoundChoice = soundChoice, reminderSoundChannel = soundChannel, healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
+        reminderStoneText = ReminderText("stone"), reminderPotionText = ReminderText("potion"), reminderIconSize = IconSize(), reminderTextSize = TextSize(), reminderEmptyTextSize = EmptyTextSize(), reminderCombat = CombatMode(),
         reminderStatus = reminderReason, autoResStatus = resReason, previewMode = previewMode }
 end
 
@@ -581,8 +730,19 @@ for _, event in ipairs({ "BAG_UPDATE_DELAYED",
         end
     end)
 end
+-- Signals only: payloads are ignored. No bag enumeration on these events.
+for _, event in ipairs({"BAG_UPDATE_COOLDOWN", "ACTION_USABLE_CHANGED", "SPELL_UPDATE_USABLE", "PLAYER_LEVEL_UP"}) do
+    RA:RegisterEvent(event, function()
+        if Enabled("consumableReminder") then Tools:Refresh(false) end
+    end)
+end
 for _, event in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH" }) do
     RA:RegisterEvent(event, function(_, unit)
         if Enabled("consumableReminder") and not IsSecret(unit) and unit == "player" then ApplyHealthAlpha() end
     end)
+end
+
+-- Public viewport changes only: no health, readiness or bag work.
+for _, event in ipairs({"DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED"}) do
+    RA:RegisterEvent(event, PositionReminder)
 end

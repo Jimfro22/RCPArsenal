@@ -5,7 +5,7 @@ function issecretvalue(v) return rawequal(v,secret) end
 local function check(v,m) checks=checks+1;assert(v,m) end
 local native, audio, RA, events, callbacks, initializers, registry, parent
 local master, sound, mode, combat, alive, cvar, panel, cinematic, movie
-local plays, stops, calls, result, soundHandle, cvarError, panelError, registryFail
+local plays, stops, calls, result, soundHandle, cvarError, panelError, registryFail, prefs, audioCVars
 local function Eligibility()
     if not master then return false,'Reminder is off.' end
     if not sound then return false,'Sound is off.' end
@@ -14,16 +14,27 @@ local function Eligibility()
     return true
 end
 function GetCVarBool(name)
-    calls.cvar=calls.cvar+1;check(name=='doNotFlashLowHealthWarning','Unexpected CVar read')
+    calls.cvar=calls.cvar+1
+    if name~='doNotFlashLowHealthWarning' then return audioCVars[name] end
     if cvarError then error('blocked') end;return cvar
 end
+function GetCVar(name) calls.volume=(calls.volume or 0)+1;return audioCVars[name] end
 function GetUIPanel(name)
     calls.panel=calls.panel+1;check(name=='fullscreen','Unexpected panel read')
     if panelError then error('blocked') end;return panel
 end
 function PlaySound(...)
-    local args={...};check(#args==1 and args[1]==12889,'Only built-in kit/default parameters allowed')
+    local args={...};check(#args==2 and args[1]==12889 and (args[2]=='SFX' or args[2]=='Master'),'Only built-in kit and explicit allowlisted route allowed')
+    args.kind='kit'
     plays[#plays+1]=args
+    if result=='error' then error('blocked') end
+    return result,soundHandle
+end
+function PlaySoundFile(...)
+    local args={...}
+    check(#args==2 and type(args[1])=='string' and args[1]:find('Interface\\AddOns\\RCPArsenal\\Media\\Audio\\',1,true)==1
+        and args[1]:match('%.ogg$') and (args[2]=='SFX' or args[2]=='Master'),'Uncurated file/route playback')
+    args.kind='file';plays[#plays+1]=args
     if result=='error' then error('blocked') end
     return result,soundHandle
 end
@@ -31,7 +42,7 @@ function StopSound(handle)
     check(not issecretvalue(handle) and type(handle)=='number' and handle>=100,'Stopped an unowned/nonpublic handle')
     stops[#stops+1]=handle
 end
-for _,name in ipairs({'UnitHealth','UnitHealthMax','UnitHealthPercent','UseItemByName','NotifyInspect','SetCVar','PlaySoundFile'}) do
+for _,name in ipairs({'UnitHealth','UnitHealthMax','UnitHealthPercent','UseItemByName','NotifyInspect','SetCVar'}) do
     _G[name]=function() error('Forbidden audio work: '..name) end
 end
 C_Timer={NewTimer=function() error('No audio timer') end,NewTicker=function() error('No polling') end,After=function() error('No delayed retry') end}
@@ -73,6 +84,7 @@ local function Setup(options)
     parent=true
     plays,stops,calls,events,callbacks,initializers,registry={},{},{shown=0,visible=0,cvar=0,panel=0,parent=0},{},{},{},{}
     result,soundHandle,cvarError,panelError,registryFail=true,100,false,false,options.registryFail
+    prefs,audioCVars={},{}
     SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
     UIParent={IsVisible=function() calls.parent=calls.parent+1;return parent end}
     CinematicFrame,MovieFrame=nil,nil
@@ -85,6 +97,8 @@ local function Setup(options)
     if options.missing then LowHealthFrame=nil else LowHealthFrame=native end
     if options.noRegistry then EventRegistry=nil end
     RA={PersonalTools={GetNativeSoundEligibility=Eligibility,IsNativeSoundOptedIn=function() return master and sound end}}
+    function RA:GetDB() return {personalTools=prefs} end
+    assert(loadfile('RCPArsenal/ReminderSounds.lua'))('RCPArsenal',RA)
     function RA:RegisterEvent(name,fn) events[name]=fn end
     function RA:RegisterCallback(name,fn) callbacks[name]=fn end
     function RA:RegisterInitializer(fn) initializers[#initializers+1]=fn end
@@ -109,12 +123,13 @@ check(events.UNIT_HEALTH==nil and events.UNIT_MAXHEALTH==nil and events.BAG_UPDA
 for i=1,20 do audio:GetStatusText() end
 check(Reads()==0 and #plays==0,'Status rendering read native state')
 events.CVAR_UPDATE('CVAR_UPDATE','doNotFlashLowHealthWarning')
-check(audio:GetStatusText()=='Reminder is off.' and Reads()==0,'Disabled CVar callback advertised enabled sound')
+check(audio:GetStatusText()=='Sound Effects - Reminder is off.' and Reads()==0,'Disabled CVar callback advertised enabled sound')
 check(audio:Preview() and #plays==1 and not master and native.hookCalls==0,'Preview changed opt-in/binding')
 for _,r in ipairs({false,secret,'error'}) do result=r;check(not audio:Preview(),'Preview claimed playback acceptance') end
 result=nil;check(not audio:Preview(),'Nil playback acceptance claimed success')
-local before=#plays;SOUNDKIT=nil;check(not audio:Preview() and #plays==before,'Missing kit tried playback')
-SOUNDKIT={ALARM_CLOCK_WARNING_3=secret};check(not audio:Preview() and #plays==before,'Secret kit tried playback')
+local before=#plays;local registrySounds=RA.ReminderSounds;RA.ReminderSounds=nil
+check(not audio:Preview() and #plays==before,'Missing registry tried playback')
+RA.ReminderSounds=registrySounds
 
 Setup({enabled=true})
 check(native.hookCalls==2 and #registry['UI.TopLevelParentShown']==1 and #plays==0,'One lazy additive binding required')
@@ -235,7 +250,7 @@ soundHandle=200;audio:Preview();local beforeStops=#stops
 native:Show();parent=false;ParentEvent('UI.TopLevelParentHidden');native:Fire('OnHide')
 parent=true;ParentEvent('UI.TopLevelParentShown');events.PLAYER_REGEN_DISABLED()
 check(#stops==beforeStops,'Automatic lifecycle stopped a manual preview with master OFF')
-check(audio:GetStatusText()=='Reminder is off.','Disabled parent callback advertised enabled sound')
+check(audio:GetStatusText()=='Sound Effects - Reminder is off.','Disabled parent callback advertised enabled sound')
 audio:Preview();check(#stops==beforeStops+1 and stops[#stops]==200,'A new manual preview did not stop only its own predecessor')
 
 Setup({enabled=true});result=false;native:Show();check(#plays==1,'Playback attempt missing')
@@ -244,4 +259,38 @@ native:Hide();native:Show();check(#plays==2,'Failure never recovered for a new e
 local before=#plays;audio:Preview();native:Fire('OnShow');check(#plays==before+1,'Preview rearmed the automatic latch')
 Setup({enabled=true});soundHandle=secret;native:Show();master=false;Option('consumableReminder')
 check(#stops==0,'Secret sound handle was stopped')
+-- Both request types share the selected asset and explicit route; selection
+-- is silent, does not rearm, and never reads game audio settings until play.
+Setup({enabled=true});native:Show();local before=#plays;local reads=Reads()
+prefs.reminderSoundChoice,prefs.reminderSoundChannel='sound_1','Master'
+Option('reminderSoundChoice');Option('reminderSoundChannel')
+check(#plays==before and Reads()==reads and audio:GetStatusText():find('Master',1,true),'Selection played/read native state or stale route')
+native:Fire('OnShow');check(#plays==before,'Selection rearmed a consumed native episode')
+native:Hide();native:Show()
+check(plays[#plays].kind=='file' and plays[#plays][2]=='Master' and plays[#plays][1]:find('RCP_Sound01.ogg',1,true),'Auto did not use selected file/route')
+audio:Preview();check(plays[#plays].kind=='file' and plays[#plays][2]=='Master','Preview differs from automatic selection')
+for _,id in ipairs({'builtin_alert','sound_1','sound_2','sound_3','sound_4','sound_5','sound_6'}) do
+    for _,route in ipairs({'SFX','Master'}) do
+        Setup();prefs.reminderSoundChoice,prefs.reminderSoundChannel=id,route
+        check(audio:Preview() and plays[#plays][2]==route,'Curated sound/channel preview failed')
+    end
+end
+for _,case in ipairs({'global off','master zero','sfx off','sfx zero'}) do
+    Setup();prefs.reminderSoundChannel='SFX'
+    if case=='global off' then audioCVars.Sound_EnableAllSound=false
+    elseif case=='master zero' then audioCVars.Sound_MasterVolume='0'
+    elseif case=='sfx off' then audioCVars.Sound_EnableSFX=false
+    else audioCVars.Sound_SFXVolume='0' end
+    local ok,feedback=audio:Preview()
+    check(not ok and #plays==0 and feedback:find('WoW',1,true),'Known mute was not diagnosed: '..case)
+end
+Setup();prefs.reminderSoundChannel='Master';audioCVars.Sound_EnableSFX=false;audioCVars.Sound_SFXVolume='0'
+check(audio:Preview() and #plays==1,'SFX mute incorrectly classified Master as muted')
+Setup();audioCVars.Sound_MasterVolume=secret;audioCVars.Sound_EnableAllSound=secret;result=false
+local ok,feedback=audio:Preview()
+check(not ok and feedback=='Sound Effects - playback request failed.','Unknown/error output falsely diagnosed mute')
+Setup({enabled=true});audioCVars.Sound_EnableAllSound=false;native:Show()
+check(#plays==0,'Known global mute attempted automatic playback')
+audioCVars.Sound_EnableAllSound=true;native:Fire('OnShow');check(#plays==0,'Unmute retried consumed episode')
+native:Hide();native:Show();check(#plays==1,'Unmuted new episode did not recover')
 print('PASS: '..checks..' native-warning audio assertions (actual module; offline mocks, native acceptance pending)')

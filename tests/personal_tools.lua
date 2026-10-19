@@ -9,6 +9,7 @@ local secret = setmetatable({}, {
 local frames, timers, tickers, events, callbacks, initializers, items
 local healthCalls, itemCalls, scans, accepted, hidden, notices, now
 local combat, encounter, raid, grouped, groupCount, groupCombat, exists
+local cooldownCalls, usabilityCalls, cooldownError
 local dead, petExistsUnknown, petCombatUnknown
 local offer, recovery, healthResult, healthError, itemError, healthRatio, reportedHealthRatio, nativeAlpha
 local profile, RA
@@ -63,7 +64,8 @@ for _, name in ipairs({ "UseItemByName", "UseInventoryItem", "CastSpellByName", 
     _G[name] = function() error("No item, spell, or binding action is allowed") end
 end
 local function timer(list, delay, fn)
-    local handle = { delay = delay, callback = fn, cancelled = false }
+    local handle = { delay = delay, cancelled = false }
+    handle.callback = function() handle.fired = true; fn() end
     function handle:Cancel() self.cancelled = true end
     list[#list + 1] = handle
     return handle
@@ -107,8 +109,16 @@ C_Container = {
     end,
 }
 C_Item = { GetItemCount = function() error("No separate counts") end,
-    IsUsableItem = function() error("No readiness check") end,
-    GetItemCooldown = function() error("No cooldown check") end }
+    IsUsableItem = function(id)
+        usabilityCalls = usabilityCalls + 1
+        if cooldownError then error("Item readiness unavailable") end
+        local item = items[id] or {}; return item.usable, item.noMana
+    end,
+    GetItemCooldown = function(id)
+        cooldownCalls = cooldownCalls + 1
+        if cooldownError then error("Item readiness unavailable") end
+        local item = items[id] or {}; return item.start, item.duration, item.enabled
+    end }
 function CreateFrame(kind, name, parent, template)
     check(kind == "Frame" and template == nil, "Visual must be nonsecure and noninteractive")
     local frame = { name = name, parent = parent, shown = true, scripts = {} }
@@ -132,7 +142,8 @@ function CreateFrame(kind, name, parent, template)
     function frame:SetFrameLevel(value) self.frameLevel = value end
     function frame:SetFrameStrata(value) end
     function frame:SetMovable(value) check(sample and value == true, "Only explicit sample can move") end
-    function frame:SetClampedToScreen(value) check(sample and value == true, "Only explicit sample can clamp") end
+    function frame:SetClampedToScreen(value) self.clamped=value end
+    function frame:SetClampRectInsets(...) self.clampInsets={...} end
     function frame:RegisterForDrag(button) check(sample and button == "LeftButton", "Only explicit sample accepts drag") end
     function frame:StartMoving() check(sample, "Live visual cannot move via mouse"); self.moving = true end
     function frame:StopMovingOrSizing() check(sample, "Live visual cannot move via mouse"); self.moving = false end
@@ -156,7 +167,7 @@ function CreateFrame(kind, name, parent, template)
     function frame:CreateFontString()
         local text = { SetPoint = function() end, SetText = function(self, text) self.text = text end,
             SetTextHeight = function(self, size) self.textHeight = size end,
-            SetWidth = function(self, width) self.width = width end, SetWordWrap = function() end }
+            SetWidth = function(self, width) self.width = width end, SetWordWrap = function(self, value) self.wrap = value end }
         self.strings = self.strings or {}; self.strings[#self.strings+1] = text
         return text
     end
@@ -186,6 +197,7 @@ end
 local coreTextRA = {}
 local coreTextEnv = setmetatable({ CreateFrame = function() return { RegisterEvent = function() end, SetScript = function() end } end }, {__index=_G})
 coreTextEnv._G = coreTextEnv
+assert(loadfile("RCPArsenal/ReminderSounds.lua"))("RCPArsenal", coreTextRA)
 local coreTextChunk = assert(loadfile("RCPArsenal/Core.lua"))
 setfenv(coreTextChunk, coreTextEnv); coreTextChunk("RCPArsenal", coreTextRA)
 local function loadTools(settings)
@@ -195,6 +207,7 @@ local function loadTools(settings)
     dead, petExistsUnknown, petCombatUnknown = false, false, false
     offer, recovery, healthResult, healthError, itemError = "Healer", 0, secret, false, false
     healthRatio, reportedHealthRatio, nativeAlpha = .35, nil, nil
+    cooldownCalls, usabilityCalls, cooldownError = 0, 0, false
     profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40 } }
     RA = {
         NormalizeReminderText = coreTextRA.NormalizeReminderText,
@@ -204,6 +217,7 @@ local function loadTools(settings)
         RegisterEvent = function(_, name, fn) events[name] = fn end,
         FireCallback = function(_, name) check(name == "PERSONAL_TOOLS_CHANGED", "Wrong callback"); notices = notices + 1 end,
     }
+    assert(loadfile("RCPArsenal/ReminderSounds.lua"))("RCPArsenal", RA)
     assert(loadfile("RCPArsenal/HealingSupplies.lua"))("RCPArsenal", RA)
     assert(loadfile("RCPArsenal/PersonalTools.lua"))("RCPArsenal", RA)
     for _, fn in ipairs(initializers) do fn() end
@@ -220,7 +234,7 @@ local function runTimers()
 end
 local function active(list)
     local count = 0
-    for _, handle in ipairs(list) do if not handle.cancelled then count = count + 1 end end
+    for _, handle in ipairs(list) do if not handle.cancelled and not handle.fired then count = count + 1 end end
     return count
 end
 
@@ -297,34 +311,70 @@ items[224464].count = 0; tools:Refresh()
 check(tools:GetState().itemID == 5512, "Standard stone fallback missing")
 items[5512].start, items[5512].duration, items[5512].usable = now, 100, false
 tools:Refresh()
-check(tools:GetState().itemID == 5512, "Carried stone must ignore cooldown/usability")
-items[5512].count = 0; tools:Refresh()
-check(tools:GetState().itemID == 271884, "Carried potion fallback missing")
-items[271884].count = 0; ready(271883); tools:Refresh()
-check(tools:GetState().itemID == 271883, "Concentrated lower rank missing")
-items[271883].count = 0; tools:Refresh()
-check(tools:GetState().itemID == 241304, "Silvermoon fallback missing")
-items[241304].count = 0; ready(241305); tools:Refresh()
-check(tools:GetState().itemID == 241305, "Silvermoon lower rank missing")
-items = {}; tools:Refresh()
-check(tools:GetState().itemID == nil and frames[1].shown and not frames[1].icon.shown and not frames[1].border.shown,
-    "Confirmed empty bags require text-only visual")
-check(frames[2].strings[1].text == "OUT OF POTIONS" and rawequal(frames[1].alpha,secret), "Empty warning must share native alpha sink")
+check(tools:GetState().itemID == 271884, "Cooling stone suppressed ready potion")
+check(active(timers)==1 and #tickers==0,"Public expiry must own one timer without polling")
+local priorBag,priorCD=itemCalls,cooldownCalls
+events.UNIT_HEALTH("UNIT_HEALTH","player")
+check(itemCalls==priorBag and cooldownCalls==priorCD,"Health event queried bags or cooldowns")
+items={};ready(5512).start=now;items[5512].duration=10
+ready(241304).start=now;items[241304].duration=2
+tools:Refresh()
+check(not frames[1].shown and tools:GetStatusText("consumableReminder"):find("carried"),"All cooling items became empty or visible")
+local wake=timers[#timers]
+check(math.abs(wake.delay-2.05)<.00001 and active(timers)==1,"Earliest public expiry not scheduled")
+local priorBag=itemCalls;now=102.05;wake.callback()
+check(itemCalls==priorBag and tools:GetState().itemID==241304 and active(timers)==1,"Expiry rescanned bags or failed ready-potion selection")
+local stoneWake=timers[#timers];now=110.05;stoneWake.callback()
+check(tools:GetState().itemID==5512 and active(timers)==0,"Distinct stone expiry failed or repeated elapsed deadline")
+items[5512].start,items[5512].duration=now,20
+items[241304].start,items[241304].duration=now,20
+tools:Refresh();check(not frames[1].shown,"OFF default showed cooling prompt")
+check(tools:SetOption("reminderShowOnCooldown",true) and tools:GetState().itemID==5512,"Show-on-cooldown did not allow carried item")
+items[5512].start=secret;items[241304].duration=0;tools:Refresh()
+check(tools:GetState().itemID==241304,"Unknown stone suppressed ready potion with override ON")
+items[241304].duration=20;tools:SetOption("reminderShowOnCooldown",false)
+check(not frames[1].shown and not tools:GetStatusText("consumableReminder"):find("OUT OF POTIONS"),"Unknown/cooling became empty")
+for _,field in ipairs({"start","duration","enabled","usable","noMana"}) do
+    items={};local item=ready(5512);item[field]=secret
+    tools:Refresh();check(not frames[1].shown and active(timers)==0,"Secret readiness accepted/scheduled: "..field)
+end
+for _,value in ipairs({1,-1}) do
+    items={};ready(5512).enabled=value;tools:Refresh();check(not frames[1].shown,"Numeric C_Item enabled accepted")
+end
+items={};ready(5512);cooldownError=true;tools:Refresh()
+check(not frames[1].shown and active(timers)==0,"Readiness API failure must stay unknown without retry")
+cooldownError=false;tools:Refresh();check(tools:GetState().itemID==5512,"Public readiness did not recover")
+-- Native payloads are ignored; cached candidates only are reconciled.
+for _,eventName in ipairs({"BAG_UPDATE_COOLDOWN","ACTION_USABLE_CHANGED","SPELL_UPDATE_USABLE","PLAYER_LEVEL_UP"}) do
+    local priorBag,priorCD=itemCalls,cooldownCalls
+    events[eventName](eventName,secret,secret,secret)
+    check(itemCalls==priorBag and cooldownCalls>priorCD,"Readiness event scanned bags or ignored cache: "..eventName)
+end
+-- New reconciliation/disable invalidates a captured public-expiry callback.
+items[5512].start,items[5512].duration=now,3;tools:Refresh();local stale=timers[#timers]
+tools:SetOption("consumableReminder",false);local bagBefore,cdBefore=itemCalls,cooldownCalls
+stale.callback();check(itemCalls==bagBefore and cooldownCalls==cdBefore and active(timers)==0,"Stale expiry did work after disable")
+tools:SetOption("consumableReminder",true);items={};tools:Refresh()
+check(tools:GetState().itemID==nil and frames[1].shown and not frames[1].icon.shown and not frames[1].border.shown,
+    "Confirmed empty bags require text only")
+check(frames[2].strings[1].text=="OUT OF POTIONS!" and frames[2].strings[1].textHeight==48
+    and frames[2].strings[1].width>=720 and frames[2].strings[1].wrap==false,"Empty warning default is small or clipped")
+local anchor=profile.personalTools.reminderPosition
+tools:SetOption("reminderTextSize",12);tools:SetOption("reminderEmptyTextSize",80)
+check(frames[2].strings[1].textHeight==80 and tools:GetState().reminderTextSize==12
+    and profile.personalTools.reminderPosition==anchor,"Empty size changed caption size/anchor")
+local beforeEmptyCD=cooldownCalls
 healthRatio=.7;events.UNIT_HEALTH("UNIT_HEALTH","player")
-check(frames[1].renderAlpha==0, "Empty warning did not hide natively on recovery")
+check(frames[1].renderAlpha==0 and cooldownCalls==beforeEmptyCD,"Empty recovery queried cooldowns or ignored native alpha")
 healthRatio=.35;events.UNIT_HEALTH("UNIT_HEALTH","player")
-check(frames[1].renderAlpha==1, "Empty warning did not reappear natively while low")
-ready(5512); items[5512].count=secret; tools:Refresh()
-check(not frames[1].shown, "Unknown inventory must never show definitive empty warning")
+check(frames[1].renderAlpha==1,"Large empty warning did not recover natively")
+ready(5512);items[5512].count=secret;tools:Refresh();check(not frames[1].shown,"Unknown inventory claimed empty")
 items[5512].count=1;items[5512].icon=secret;tools:Refresh()
-check(tools:GetState().itemID==5512 and frames[1].shown, "Missing icon must preserve known carriage")
-itemError=true;tools:Refresh();check(not frames[1].shown,"Inventory API failure must suppress visual")
-itemError=false;healthError=true;tools:Refresh()
-check(tools:GetState().itemID==nil and not frames[1].shown,"Native display failure must hide reminder")
-healthError=false;tools:Refresh();check(tools:GetState().itemID==5512,"Reminder failed to recover")
--- Native animation can be stopped independently of a stale Lua flag.
-frames[2].animation:Stop();events.UNIT_HEALTH("UNIT_HEALTH","player")
-check(frames[2].animation:IsPlaying(),"Native stopped bounce was not restarted")
+check(tools:GetState().itemID==5512,"Missing icon erased known ready item")
+itemError=true;tools:Refresh();check(not frames[1].shown,"Inventory failure claimed empty")
+itemError=false;healthError=true;tools:Refresh();check(not frames[1].shown,"Native sink failure did not hide")
+healthError=false;tools:Refresh();frames[2].animation:Stop();events.UNIT_HEALTH("UNIT_HEALTH","player")
+check(frames[2].animation:IsPlaying(),"Stopped native bounce did not recover")
 check(tools:SetOption("healthThreshold", 500) and tools:GetState().healthThreshold == 99, "Upper clamp missing")
 check(tools:SetOption("healthThreshold", -10) and tools:GetState().healthThreshold == 1, "Lower clamp missing")
 check(tools:SetOption("healthThreshold", 37.4) and tools:GetState().healthThreshold == 37, "Threshold rounding missing")
@@ -463,7 +513,7 @@ for _, mode in ipairs({"IN_COMBAT", "OUT_OF_COMBAT"}) do
     check(itemCalls==before and not frames[1].shown,"Hidden bag event scanned or showed reminder")
     combat=not combat
     events[combat and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED"](combat and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED")
-    check(tools:GetState().itemID==nil and frames[2].strings[1].text=="OUT OF POTIONS" and frames[1].shown,
+    check(tools:GetState().itemID==nil and frames[1].shown and frames[2].strings[1].text=="OUT OF POTIONS!",
         "Mode re-entry reused removed item from hidden cache")
 end
 -- Only a relevant genuinely pending bag item can trigger data reconciliation.
@@ -507,6 +557,59 @@ check(tools:GetNativeSoundEligibility(),"Enabled sound eligibility refused")
 tools:SetOption("reminderSound",false)
 check(not tools:GetNativeSoundEligibility(),"Saved sound OFF remained eligible")
 check(not tools:SetOption("reminderSound",secret) and not tools:SetOption("reminderSound",1),"Secret/nonboolean sound preference accepted")
+-- Audio choices/channel sanitation and migration are public preferences.
+tools=loadTools();local bagBefore,hpBefore=itemCalls,healthCalls
+check(tools:GetState().reminderSoundChannel=='SFX' and tools:GetState().reminderSoundChoice=='builtin_alert',"Legacy/unset sound defaults differ")
+check(tools:SetOption('reminderSoundChannel','Master') and tools:SetOption('reminderSoundChoice','sound_6'),"Curated audio preference rejected")
+check(itemCalls==bagBefore and healthCalls==hpBefore and #frames==0 and #timers==0,"Selection did gameplay/native display work")
+check(not tools:SetOption('reminderSoundChannel','Music') and not tools:SetOption('reminderSoundChoice','Interface\\bad.ogg')
+    and not tools:SetOption('reminderSoundChoice',secret),"Unallowlisted/secret audio preference accepted")
+local migrated=coreTextRA:CreateDefaultProfile()
+migrated.personalTools.reminderSoundChannel,migrated.personalTools.reminderSoundChoice,migrated.personalTools.reminderSound='Master','sound_6',false
+coreTextRA:NormalizeProfile(migrated)
+check(migrated.personalTools.reminderSoundChannel=='Master' and migrated.personalTools.reminderSoundChoice=='sound_6'
+    and migrated.personalTools.reminderSound==false,"Migration overwrote valid audio choice/channel/OFF")
+migrated.personalTools.reminderSoundChannel,migrated.personalTools.reminderSoundChoice='invalid','bad'
+coreTextRA:NormalizeProfile(migrated)
+check(migrated.personalTools.reminderSoundChannel=='SFX' and migrated.personalTools.reminderSoundChoice=='builtin_alert',"Malformed sound settings not sanitized")
+-- One native preview frame, full-text/animation clamp, saved anchor unchanged.
+tools=loadTools();tools:SetReminderPosition(800,-500);local saved=profile.personalTools.reminderPosition
+check(tools:PreviewReminder('empty'),"Empty warning sample failed")
+check(#frames==2 and not frames[1].icon.shown and frames[2].strings[1].text=='OUT OF POTIONS!'
+    and frames[2].strings[1].textHeight==48,"Large empty sample has an icon or wrong independent size")
+local inset=frames[1].clampInsets
+check(inset[1]<-300 and inset[2]>300 and inset[4]<-60 and inset[3]>=20,"Move clamp excludes text/header/animation")
+check(profile.personalTools.reminderPosition==saved,"Geometry clamp overwrote saved anchor")
+local width=UIParent.GetWidth;UIParent.GetWidth=function() return 320 end
+events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
+check(frames[2].strings[1].textHeight<48 and tools:GetState().reminderEmptyTextSize==48
+    and profile.personalTools.reminderPosition==saved,"Viewport fit clipped or changed saved size/anchor")
+local emptyCaption=frames[2].strings[1]
+RA.ApplyFont=function(_,label,size) label:SetTextHeight(math.max(6,math.floor(size+.5))) end
+function emptyCaption:GetStringWidth() return self.textHeight*17+25 end
+function emptyCaption:GetStringHeight() return self.textHeight*1.2 end
+events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
+check(emptyCaption.textHeight==16 and emptyCaption.width>=emptyCaption:GetStringWidth()+2
+    and emptyCaption.width<=304,"Fit used scaled metrics instead of measuring the applied whole-size font")
+inset=frames[1].clampInsets
+check(frames[1].width+inset[2]-inset[1]>=emptyCaption:GetStringWidth()+2
+    and -inset[4]>=emptyCaption:GetStringHeight()+11,"Final clamp excludes fitted glyphs/animation")
+UIParent.GetWidth=width
+events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
+check(frames[2].strings[1].textHeight==48,"Viewport growth did not restore configured size")
+-- Invalid readiness cannot schedule an expiry or masquerade as empty.
+tools=loadTools();local item=ready(5512);tools:SetOption('consumableReminder',true)
+for _,field in ipairs({'start','duration'}) do
+    for _,value in ipairs({-1,math.huge,0/0}) do
+        item=ready(5512);item[field]=value;tools:Refresh()
+        check(not frames[1].shown and active(timers)==0 and not tools:GetStatusText('consumableReminder'):find('OUT OF POTIONS'),"Invalid cooldown scheduled/claimed empty")
+    end
+end
+item=ready(5512);item.start,item.duration=now,1;tools:Refresh();local early=timers[#timers]
+early.callback();check(active(timers)==0,"Early callback repeated the same public deadline")
+item.start,item.duration=now,2;tools:Refresh();local old=timers[#timers]
+items={};events.BAG_UPDATE_DELAYED('BAG_UPDATE_DELAYED');local beforeCD=cooldownCalls;old.callback()
+check(cooldownCalls==beforeCD and active(timers)==0,"Inventory-invalidated expiry queried stale candidates")
 -- No artificial low-health wait: both player events write alpha in their
 -- own callback at a fixed clock, without timers, inventory or a bounce phase.
 tools=loadTools();ready(5512);healthRatio=.8

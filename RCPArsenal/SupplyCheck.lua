@@ -74,7 +74,7 @@ function Check:Query()
     serial = (serial + 1) % 65536
     local nonce = string.format("%x-%x-%x", math.floor(Now() * 1000) % 2147483647, serial, math.random(0, 16777215))
     -- Send before any inventory work: a refused query doesn't scan bags.
-    if not Send("Q|1|" .. nonce .. "|1", channel) then return false, "Client did not send the supply request." end
+    if not Send("Q|1|" .. nonce .. "|" .. RA.HealingSupplies.MAP_REVISION, channel) then return false, "Client did not send the supply request." end
     lastQuery = Now()
     snapshot = { rows = {}, status = "checking", queriedAt = Now(), mapRevision = RA.HealingSupplies.MAP_REVISION }
     request = { nonce = nonce, roster = roster, deadline = Now() + self.TIMEOUT }
@@ -104,9 +104,9 @@ local function Receive(_, prefix, packet, channel, senderName)
         or type(channel) ~= "string" or type(senderName) ~= "string" or #senderName > 128 or senderName:find("[%c|]") then return end
     -- Parse/reject unrelated or malformed traffic before any roster work.
     local kind, nonce, revision, stone, potion = packet:match("^([QR])|1|([%da-f]+%-[%da-f]+%-[%da-f]+)|(%d+)|?([01u]?)|?([01u]?)$")
-    if not kind or #nonce > 24 or revision ~= "1" or Restriction() or Bool(IsInRaid) ~= true then return end
-    if kind == "Q" and (packet ~= "Q|1|" .. nonce .. "|1" or channel == "WHISPER" or Now() - lastReply < Check.COOLDOWN) then return end
-    if kind == "R" and (packet ~= "R|1|" .. nonce .. "|1|" .. stone .. "|" .. potion or stone == "" or potion == ""
+    if not kind or #nonce > 24 or revision ~= tostring(RA.HealingSupplies.MAP_REVISION) or Restriction() or Bool(IsInRaid) ~= true then return end
+    if kind == "Q" and (packet ~= "Q|1|" .. nonce .. "|" .. revision or channel == "WHISPER" or Now() - lastReply < Check.COOLDOWN) then return end
+    if kind == "R" and (packet ~= "R|1|" .. nonce .. "|" .. revision .. "|" .. stone .. "|" .. potion or stone == "" or potion == ""
         or channel ~= "WHISPER" or not request or request.nonce ~= nonce or Now() >= request.deadline) then return end
     if kind == "Q" then
         -- At most eight incoming query identity checks per 20 seconds, and
@@ -138,7 +138,7 @@ local function Receive(_, prefix, packet, channel, senderName)
         if #seen.order > 8 then seen[table.remove(seen.order, 1)] = nil end
         lastReply = Now() -- Global responder limit, including failed sends.
         local bags = RA.HealingSupplies:Snapshot()
-        Send("R|1|" .. nonce .. "|1|" .. Flag(bags.stone) .. "|" .. Flag(bags.potion), "WHISPER", sender.name)
+        Send("R|1|" .. nonce .. "|" .. revision .. "|" .. Flag(bags.stone) .. "|" .. Flag(bags.potion), "WHISPER", sender.name)
     else
         if roster.fingerprint ~= request.roster.fingerprint then Invalidate("Raid roster changed; check again."); return end
         local expected = request.roster.byGUID[sender.guid]

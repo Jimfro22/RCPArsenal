@@ -1,5 +1,7 @@
 # Optional native warning sound - 0.15.3-alpha.4
 
+Historical implementation record. [Alpha.5 reminder selection and audio](REMINDER_SELECTION.md) supersedes selection, channel, empty-caption and supported-map details below.
+
 Owner choice: visual at the saved threshold; sound from Blizzard's native low-health warning, normally 35%. This is separate from a 60% visual setting. The native warning's settings and UI semantics apply; this proxy does not guarantee an exact health-only event in every client. No copyrighted clips, custom assets or broad sound library.
 
 Personal Tools > Reminder text & sound contains Low-health sound and Preview sound. The audio preference defaults ON when unset; the reminder master remains OFF for fresh profiles. Saved audio OFF, visual thresholds, text, sizes, positions, profiles and other tools are preserved. Automatic sound follows Both / In combat / Out of combat and requires a definitely alive player. Preview explicitly requests only the built-in alert, changes no preference/latch and needs no health or bags. Native/game volume settings can mute playback.
