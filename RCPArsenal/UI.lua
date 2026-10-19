@@ -180,7 +180,7 @@ local function ApplyReadableFont(fontString, size, weight, shadow)
 end
 
 local function CreateFontString(parent, size, color, weight, shadow)
-    local fs = parent:CreateFontString(nil, "OVERLAY")
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ApplyReadableFont(fs, size, weight or "REGULAR", shadow)
     fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
     fs:SetJustifyH("LEFT")
@@ -400,7 +400,7 @@ local function GetRowFrame(index)
     row.activeBadge:SetBackdropColor(0.05, 0.18, 0.15, 0.96)
     row.activeBadge:SetBackdropBorderColor(COLORS.active[1], COLORS.active[2], COLORS.active[3], 0.70)
     row.activeBadge.text = CreateFontString(row.activeBadge, 7, COLORS.active, "BOLD")
-    row.activeBadge.text:SetText("ACTIVE")
+    RA:SetVisualText(row.activeBadge.text, "ACTIVE")
     row.activeBadge.text:SetJustifyH("CENTER")
     SetPoint(row.activeBadge.text, "CENTER", row.activeBadge, "CENTER", 0, 0)
     row.activeBadge:Hide()
@@ -557,6 +557,13 @@ local function PositionPanicButton(anchorFrame)
     panicHUDButton:Show()
 end
 
+function RA:GetPanicVisibilityText()
+    if self:GetDB().leaderToolbox.panicEnabled ~= true then return "Off" end
+    if panicHUDButton and panicHUDButton:IsShown() then return "Visible" end
+    local reason = self.GetHUDVisibilityReason and self:GetHUDVisibilityReason() or nil
+    return "Waiting for visible HUD category" .. (reason and (" — " .. reason) or "")
+end
+
 local function ConfigureTileActions(tile, ability, owner)
     if InCombatLockdown() then
         return
@@ -623,7 +630,7 @@ local function GetCompactTile(index)
     tile.nameText:SetWordWrap(false)
 
     tile.cacheLabel = CreateFontString(tile.iconFrame, 8, COLORS.amber, "BOLD")
-    tile.cacheLabel:SetText("C")
+    RA:SetVisualText(tile.cacheLabel, "C")
     SetPoint(tile.cacheLabel, "TOPLEFT", tile.iconFrame, "TOPLEFT", 1, -1)
     tile.cacheLabel:Hide()
 
@@ -985,16 +992,16 @@ local function SetScanControlVisual(button, running, paused, incomplete)
     end
 
     if paused then
-        button.text:SetText(">")
+        RA:SetVisualText(button.text, ">")
         button.text:SetTextColor(COLORS.amber[1], COLORS.amber[2], COLORS.amber[3], 1)
     elseif running then
-        button.text:SetText("II")
+        RA:SetVisualText(button.text, "II")
         button.text:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], 1)
     elseif incomplete then
-        button.text:SetText("R")
+        RA:SetVisualText(button.text, "R")
         button.text:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     else
-        button.text:SetText("")
+        RA:SetVisualText(button.text, "")
     end
 end
 
@@ -1069,7 +1076,7 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
     headerMode:ClearAllPoints()
     headerLine:ClearAllPoints()
 
-    headerTitle:SetText("RCP ARSENAL")
+    RA:SetVisualText(headerTitle, "RCP ARSENAL")
     ApplyReadableFont(headerTitle, 11.0, "BOLD")
     SetPoint(headerTitle, "TOPLEFT", HUD, "TOPLEFT", 8, -8)
 
@@ -1092,26 +1099,26 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
     headerStatus:SetJustifyH("LEFT")
     SetPoint(headerStatus, "TOPLEFT", headerTitle, "BOTTOMLEFT", 0, -2)
     headerStatus:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
-    headerStatus:SetText(isDemo and "DEMO CAPABILITIES" or RA:FormatInspectionEvidenceSummary())
+    RA:SetVisualText(headerStatus, isDemo and "DEMO CAPABILITIES" or RA:FormatInspectionEvidenceSummary())
 
     SetHeight(headerLine, 1)
     SetPoint(headerLine, "TOPLEFT", HUD, "TOPLEFT", 7, -30)
     SetPoint(headerLine, "TOPRIGHT", HUD, "TOPRIGHT", -7, -30)
 
     if isDemo then
-        headerMode:SetText("DEMO")
+        RA:SetVisualText(headerMode, "DEMO")
         headerMode:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     elseif RA.InEncounter then
-        headerMode:SetText("PRE-PULL SNAPSHOT")
+        RA:SetVisualText(headerMode, "PRE-PULL SNAPSHOT")
         headerMode:SetTextColor(COLORS.active[1], COLORS.active[2], COLORS.active[3], 1)
     elseif paused then
-        headerMode:SetText("PAUSED")
+        RA:SetVisualText(headerMode, "PAUSED")
         headerMode:SetTextColor(COLORS.amber[1], COLORS.amber[2], COLORS.amber[3], 1)
     elseif scanning then
-        headerMode:SetText("SCAN")
+        RA:SetVisualText(headerMode, "SCAN")
         headerMode:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     else
-        headerMode:SetText("PRE-PULL")
+        RA:SetVisualText(headerMode, "PRE-PULL")
         headerMode:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
     end
 end
@@ -1124,7 +1131,7 @@ local function LayoutDetailedCategory(frame, categoryName, y, width)
     frame.label:ClearAllPoints()
     ApplyReadableFont(frame.label, DETAILED.categoryFont + 0.6, "BOLD")
     SetPoint(frame.label, "LEFT", frame, "LEFT", DETAILED.outerInset + 2, 0)
-    frame.label:SetText(string.upper(categoryName))
+    RA:SetVisualText(frame.label, string.upper(categoryName))
 
     frame.line:ClearAllPoints()
     SetHeight(frame.line, 1)
@@ -1171,13 +1178,13 @@ local function LayoutDetailedRow(row, ability, owners, y, width)
     else
         SetPoint(row.ownerText, "RIGHT", row, "RIGHT", -6, 0)
     end
-    row.ownerText:SetText(FormatOwners(owners, DETAILED.ownerMax))
+    RA:SetVisualText(row.ownerText, FormatOwners(owners, DETAILED.ownerMax))
 
     row.nameText:ClearAllPoints()
     ApplyReadableFont(row.nameText, DETAILED.nameFont + 0.5, "BOLD")
     SetPoint(row.nameText, "LEFT", row.iconBack, "RIGHT", DETAILED.iconNameGap, 0)
     SetPoint(row.nameText, "RIGHT", row.ownerText, "LEFT", -6, 0)
-    row.nameText:SetText(RA:GetAbilityName(ability))
+    RA:SetVisualText(row.nameText, RA:GetAbilityName(ability))
 
     if isActive then
         row:SetBackdropBorderColor(COLORS.active[1], COLORS.active[2], COLORS.active[3], 0.74)
@@ -1253,11 +1260,11 @@ local function RefreshDetailedHUD(db, ownersByAbility, inspected, total, isDemo,
         SetPoint(emptyState, "TOPRIGHT", HUD, "TOPRIGHT", -8, DETAILED.contentTop - 8)
 
         if scanning then
-            emptyState:SetText("Inspecting raid loadouts...")
+            RA:SetVisualText(emptyState, "Inspecting raid loadouts...")
         elseif inspected < total then
-            emptyState:SetText("No scanned tools yet")
+            RA:SetVisualText(emptyState, "No scanned tools yet")
         else
-            emptyState:SetText("No enabled raid tools")
+            RA:SetVisualText(emptyState, "No enabled raid tools")
         end
         y = DETAILED.contentTop - 34
     end
@@ -1284,12 +1291,12 @@ local function ConfigureCompactTile(tile, ability, owner, abbreviations, active,
     if metrics.nameLength > 0 then
         SetPoint(tile.nameText, "TOPLEFT", tile.iconFrame, "BOTTOMLEFT", -3, -1)
         SetPoint(tile.nameText, "TOPRIGHT", tile.iconFrame, "BOTTOMRIGHT", 3, -1)
-        tile.nameText:SetText(GetDisplayAbbreviation(abbreviations, owner.name, metrics.nameLength))
+        RA:SetVisualText(tile.nameText, GetDisplayAbbreviation(abbreviations, owner.name, metrics.nameLength))
         local r, g, b = RA:GetClassColor(owner.class)
         tile.nameText:SetTextColor(r, g, b, 1)
         tile.nameText:Show()
     else
-        tile.nameText:SetText("")
+        RA:SetVisualText(tile.nameText, "")
         tile.nameText:Hide()
     end
 
@@ -1340,13 +1347,13 @@ local function ConfigureScanToken(token, entry, abbreviations, paused, metrics)
     ApplyReadableFont(token.nameText, metrics.scanNameFont, "BOLD")
     SetPoint(token.nameText, "TOPLEFT", token.portraitFrame, "BOTTOMLEFT", -2, -1)
     SetPoint(token.nameText, "TOPRIGHT", token.portraitFrame, "BOTTOMRIGHT", 2, -1)
-    token.nameText:SetText(GetDisplayAbbreviation(abbreviations, entry.name, metrics.nameLength))
+    RA:SetVisualText(token.nameText, GetDisplayAbbreviation(abbreviations, entry.name, metrics.nameLength))
     local r, g, b = RA:GetClassColor(entry.class)
     token.nameText:SetTextColor(r, g, b, entry.state == "OFFLINE" and 0.45 or 0.92)
 
     local role = entry.role or "NONE"
     local roleColor = ROLE_COLORS[role] or ROLE_COLORS.NONE
-    token.roleText:SetText(ROLE_LETTERS[role] or "?")
+    RA:SetVisualText(token.roleText, ROLE_LETTERS[role] or "?")
     token.roleText:SetTextColor(roleColor[1], roleColor[2], roleColor[3], 1)
 
     token.sweepAnimation:Stop()
@@ -1392,7 +1399,7 @@ end
 local function LayoutScanShell(y, xOffset, abbreviations, inspected, total, isDemo, scanning, currentName, paused, metrics, pending)
     pending = pending or RA:GetPendingScanEntries()
     local incomplete = inspected < total
-    local show = metrics.scanVisible and not RA.InEncounter and total > 0 and (incomplete or scanning or paused or #pending > 0)
+    local show = metrics.scanVisible and not RA.InEncounter and total > 0 and (incomplete or scanning or #pending > 0)
 
     for i = 1, #scanTokenPool do
         local token = scanTokenPool[i]
@@ -1443,7 +1450,7 @@ local function LayoutScanShell(y, xOffset, abbreviations, inspected, total, isDe
     scanCountText:ClearAllPoints()
     ApplyReadableFont(scanCountText, metrics.scanStatusFont, "BOLD")
     SetPoint(scanCountText, "TOPLEFT", scanShell, "TOPLEFT", metrics.scanPadding, -5)
-    scanCountText:SetText(string.format("%d/%d", inspected, total))
+    RA:SetVisualText(scanCountText, string.format("%d/%d", inspected, total))
 
     scanControlButton:ClearAllPoints()
     SetPoint(scanControlButton, "TOPRIGHT", scanShell, "TOPRIGHT", -3, -3)
@@ -1456,16 +1463,16 @@ local function LayoutScanShell(y, xOffset, abbreviations, inspected, total, isDe
     SetPoint(scanCurrentText, "LEFT", scanCountText, "RIGHT", 5, 0)
     SetPoint(scanCurrentText, "RIGHT", scanControlButton, "LEFT", -4, 0)
     if paused then
-        scanCurrentText:SetText("PAUSED")
+        RA:SetVisualText(scanCurrentText, "PAUSED")
         scanCurrentText:SetTextColor(COLORS.amber[1], COLORS.amber[2], COLORS.amber[3], 1)
     elseif scanning and currentName then
-        scanCurrentText:SetText("SCAN " .. GetDisplayAbbreviation(abbreviations, currentName, metrics.nameLength))
+        RA:SetVisualText(scanCurrentText, "SCAN " .. GetDisplayAbbreviation(abbreviations, currentName, metrics.nameLength))
         scanCurrentText:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     elseif scanning then
-        scanCurrentText:SetText("SCANNING")
+        RA:SetVisualText(scanCurrentText, "SCANNING")
         scanCurrentText:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     else
-        scanCurrentText:SetText("RETRY")
+        RA:SetVisualText(scanCurrentText, "RETRY")
         scanCurrentText:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
     end
 
@@ -1539,9 +1546,9 @@ local function LayoutCompactLane(lane, category, entries, y, xOffset, tileStartI
         SetPoint(lane.label, "LEFT", lane, "LEFT", metrics.lanePadding, 0)
         SetSize(lane.label, metrics.labelWidth, laneHeight)
         if metrics.labelMode == "FULL" then
-            lane.label:SetText(string.upper(category.name))
+            RA:SetVisualText(lane.label, string.upper(category.name))
         else
-            lane.label:SetText(category.compactLabel or CATEGORY_COMPACT_LABELS[category.key] or string.upper(category.shortName or category.name))
+            RA:SetVisualText(lane.label, category.compactLabel or CATEGORY_COMPACT_LABELS[category.key] or string.upper(category.shortName or category.name))
         end
         local color = CATEGORY_LABEL_COLORS[category.key] or COLORS.muted
         lane.label:SetTextColor(color[1], color[2], color[3], 1)
@@ -1642,7 +1649,7 @@ local function RefreshCompactHUD(db, ownersByAbility, inspected, total, isDemo, 
         SetPoint(compactEmpty, "TOPLEFT", HUD, "TOPLEFT", xOffset, y)
         SetSize(compactEmpty, metrics.emptyWidth, metrics.emptyHeight)
         ApplyReadableFont(compactEmpty.text, math.max(8, metrics.nameFont), "BOLD")
-        compactEmpty.text:SetText("NO TOOLS")
+        RA:SetVisualText(compactEmpty.text, "NO TOOLS")
         compactEmpty:Show()
         maxContentWidth = math.max(maxContentWidth, metrics.emptyWidth)
         y = y - metrics.emptyHeight
@@ -1895,21 +1902,21 @@ local function RefreshScanVisualsOnly()
     local shellWidth = scanShell:GetWidth() or metrics.scanMinWidth
     local ratio = total > 0 and math.max(0, math.min(1, inspected / total)) or 0
     SetWidth(scanProgressFill, math.max(1, (shellWidth - 2) * ratio))
-    scanCountText:SetText(string.format("%d/%d", inspected, total))
+    RA:SetVisualText(scanCountText, string.format("%d/%d", inspected, total))
     SetScanControlVisual(scanControlButton, scanning, paused, inspected < total)
 
     if paused then
-        scanCurrentText:SetText("PAUSED")
+        RA:SetVisualText(scanCurrentText, "PAUSED")
         scanCurrentText:SetTextColor(COLORS.amber[1], COLORS.amber[2], COLORS.amber[3], 1)
     elseif scanning and currentName then
         local abbreviations = BuildAbbreviationMap(metrics.nameLength)
-        scanCurrentText:SetText("SCAN " .. GetDisplayAbbreviation(abbreviations, currentName, metrics.nameLength))
+        RA:SetVisualText(scanCurrentText, "SCAN " .. GetDisplayAbbreviation(abbreviations, currentName, metrics.nameLength))
         scanCurrentText:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     elseif scanning then
-        scanCurrentText:SetText("SCANNING")
+        RA:SetVisualText(scanCurrentText, "SCANNING")
         scanCurrentText:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     else
-        scanCurrentText:SetText("RETRY")
+        RA:SetVisualText(scanCurrentText, "RETRY")
         scanCurrentText:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
     end
 
@@ -2101,7 +2108,7 @@ local function CreateHUD()
     SetSize(panicHUDButton, 22, 22)
     SetRoundedFrame(panicHUDButton, CopyColor(TC.surfaceRaised or COLORS.row, 0.995), CopyColor(COLORS.danger, 0.86), true, 8)
     panicHUDButton.label = CreateFontString(panicHUDButton, 13.0, COLORS.danger, "BOLD")
-    panicHUDButton.label:SetText("!")
+    RA:SetVisualText(panicHUDButton.label, "!")
     SetPoint(panicHUDButton.label, "CENTER", panicHUDButton, "CENTER", 0, 0)
     panicHUDButton:SetScript("OnEnter", function(self)
         CancelPanicTooltip()
@@ -2156,7 +2163,7 @@ RA:RegisterCallback("VISUAL_ASSET_REFRESH", function()
     -- refresh in place without rebuilding the protected HUD or its geometry.
     if panicHUDButton and panicHUDButton.label then
         if RA.ApplyFont then RA:ApplyFont(panicHUDButton.label, 13, "BOLD", false) end
-        panicHUDButton.label:SetText("!")
+        RA:SetVisualText(panicHUDButton.label, "!")
         panicHUDButton.label:SetTextColor(COLORS.danger[1], COLORS.danger[2], COLORS.danger[3], 1)
     end
 end)

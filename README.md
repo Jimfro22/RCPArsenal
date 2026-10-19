@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for the Morning Brew raid hub. Current source is **0.15.2-alpha.3**, restoring direct access to familiar Arsenal settings after the owner's first native Windows/WoW feedback. It includes the separate **0.15.2-alpha.2** duplicate marker-binding header hotfix. Profile schema is 19; original assets/history and the prior marker alpha remain preserved. Navigation and warning acceptance still require the owner's in-game retest.
+This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.1**, repairing caption/font recovery and grouping the optional tools after expanded native testing of 0.15.2-alpha.3. Available Cooldowns has a fixed master above Categories and three other internal tabs; Addons & Versions shows all seven addons in one table. Profile schema remains 19. [Repair contract and native checks](docs/NATIVE_RENDERING_REPAIR.md) distinguish offline validation from pending native acceptance.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
@@ -21,10 +21,11 @@ python3 tools/package.py --output-dir dist --label local
 
 Use `--check-baseline` only when verifying the original baseline checkout; it correctly rejects this feature build. Keep the TOC and `RA.VERSION` versions in sync. A package label changes only the filename; it does not change the version seen in game. The ZIP includes exactly one `RCPArsenal/` root, addon code, assets, and inherited docs. Engineering tools and planning documents are outside the game payload. Each ZIP has a SHA-256 sidecar and a manifest containing file hashes and Git revision. ZIP entries use stable ordering, timestamps, and uncompressed storage for reproducible bytes across platforms.
 
-Packaging checks validate versions, manifest references, and ZIP contents. CI also installs Lua 5.1, parses all addon modules, and runs every `tests/*.lua` harness for actual-module profile/hub/quiet lifecycle, assets, readiness protocol, personal tools, and marker logic. These checks do not simulate WoW native hardware dispatch, taint, terrain, or permissions. The owner's first actual Windows/WoW run loaded the addon but failed usability acceptance and reported a duplicate marker-binding header warning. Native confirmation of this hotfix is pending; earlier offline/source checks did not establish usability.
+Packaging checks validate versions, manifest references, and ZIP contents. CI also installs Lua 5.1, parses all addon modules, and runs every `tests/*.lua` harness for actual-module profile/hub/quiet lifecycle, captions/assets, the combined addon table, inspection cache, readiness protocol, personal tools, and marker logic. These checks do not simulate native glyph rendering, hardware dispatch, taint, terrain, or permissions. Owner testing of alpha.3 confirmed the installation and markers work, but expanded testing exposed blank captions and grouping problems; cold-start verification of this correction remains required.
 
 ## Delivery documents
 
+- [Native rendering and feature grouping repair](docs/NATIVE_RENDERING_REPAIR.md)
 - [Inspection cache Windows tests](docs/INSPECTION_CACHE_WINDOWS_TESTS.md)
 - [Delivery plan](docs/DELIVERY_PLAN.md)
 - [Northern Sky adapter contract](docs/NSRT_ADAPTER_CONTRACT.md)

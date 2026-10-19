@@ -38,7 +38,7 @@ class IconDeliveryTests(unittest.TestCase):
         self.assertIn('RA:RegisterSpellIcon(row.icon, items[i].spellID)', leader)
         self.assertIn('Theme:RegisterAssetTexture(texture, asset, 134400, "LINEAR")', leader)
         self.assertIn('self:RegisterVisualFont(fontString, size, weight, shadow, applied)', media)
-        self.assertIn('panicHUDButton.label:SetText("!")', ui)
+        self.assertIn('RA:SetVisualText(panicHUDButton.label, "!")', ui)
         self.assertIn('splitButton.left = Font(', leader)
         self.assertIn('splitButton.right = Font(', leader)
         self.assertIn('missingButton.count = Font(', leader)
@@ -49,6 +49,15 @@ class IconDeliveryTests(unittest.TestCase):
         self.assertNotIn('OnUpdate', source)
         self.assertIn('result == false', source)
         self.assertIn('SPELL_DATA_LOAD_RESULT', source)
+
+    def test_optional_fonts_are_resolved_away_from_live_captions(self):
+        media = (ROOT / "RCPArsenal/Media.lua").read_text()
+        self.assertIn('pcall(CreateFont, "RCPArsenalResolvedFont"', media)
+        self.assertIn('NormalizePath(actualPath) == NormalizePath(candidates[i])', media)
+        self.assertNotIn('pcall(fontString.SetFont, fontString, candidates[i]', media)
+        assets = (ROOT / "RCPArsenal/Assets.lua").read_text()
+        self.assertIn('function RA:SetVisualText(region, text)', assets)
+        self.assertNotIn('local text = region:GetText()', assets)
 
 
 if __name__ == "__main__":

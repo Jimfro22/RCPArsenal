@@ -427,7 +427,9 @@ end
 
 function Theme:CreateIcon(parent, asset, size, color)
     local texture = parent:CreateTexture(nil, "ARTWORK")
-    self:RegisterAssetTexture(texture, asset)
+    -- The original RP artwork is intentionally retained. Explicit linear
+    -- filtering avoids a nearest-neighbor appearance at fractional UI scales.
+    self:RegisterAssetTexture(texture, asset, nil, "LINEAR")
     SetSize(texture, size or 20, size or 20)
     if color then texture:SetVertexColor(color[1], color[2], color[3], color[4] or 1) end
     return texture
