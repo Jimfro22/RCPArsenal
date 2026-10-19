@@ -164,6 +164,14 @@ end
 
 local function ApplyHealthAlpha()
     if not reminder or not selectedItem or not Enabled("consumableReminder") then return end
+    -- ReadBoolean rejects secret/unknown life state before Lua branches. This
+    -- guard also handles a death health event before PLAYER_DEAD is dispatched.
+    if ReadBoolean(UnitIsDeadOrGhost, "player") ~= false then
+        StopReadiness()
+        HideReminder("Player dead or life state unknown; visual suppressed.")
+        Notify()
+        return
+    end
     -- The live result exists only as an argument to its documented display
     -- sink. Never compare, format, convert, store, read back, or branch on it.
     local ok = pcall(function()
@@ -192,7 +200,7 @@ end
 function Tools:Refresh()
     local previousItem, previousReason, previousRes = selectedItem, reminderReason, resReason
     if not Enabled("autoRes") then CancelRes(); resReason = "Off."
-    elseif resReason == "Off." then resReason = "On. Battle res stays manual; client confirmation pending." end
+    elseif resReason == "Off." then resReason = "On. Combat/encounter offers stay manual; client confirmation pending." end
 
     if not Enabled("consumableReminder") then
         StopReadiness()
@@ -200,6 +208,9 @@ function Tools:Refresh()
     elseif not ReminderAPIsAvailable() then
         StopReadiness()
         HideReminder("Required Retail display/item APIs unavailable; visual suppressed.")
+    elseif ReadBoolean(UnitIsDeadOrGhost, "player") ~= false then
+        StopReadiness()
+        HideReminder("Player dead or life state unknown; visual suppressed.")
     else
         local settings = Settings()
         local now = Number(GetTime())
@@ -239,6 +250,10 @@ end
 local function NormalResIsSafe()
     if type(issecretvalue) ~= "function" then return false end
     if ReadBoolean(InCombatLockdown) ~= false or ReadBoolean(IsEncounterInProgress) ~= false then return false end
+    -- A dead player's local pet can remain in combat even while solo and
+    -- personal lockdown is false. Check it before the solo early return.
+    local petExists = ReadBoolean(UnitExists, "pet")
+    if petExists == nil or (petExists and ReadBoolean(UnitAffectingCombat, "pet") ~= false) then return false end
     local raid, grouped = ReadBoolean(IsInRaid), ReadBoolean(IsInGroup)
     if raid == nil or grouped == nil then return false end
     local prefix, count = "party", 4
@@ -249,7 +264,9 @@ local function NormalResIsSafe()
         if not size or size < 1 or size > 40 or size ~= math.floor(size) then return false end
         prefix, count = "raid", size
     elseif not grouped then return true end
-    -- Fixed group tokens only. No GUID, name, or UnitIsUnit comparison.
+    -- Fixed group tokens only. No GUID, name, or UnitIsUnit comparison. These
+    -- guards do not identify an offer's spell type; unknown combat state stays
+    -- manual. No universal battle-res classification is claimed.
     for index = 1, count do
         for _, unit in ipairs({ prefix .. index, prefix .. "pet" .. index }) do
             local exists = ReadBoolean(UnitExists, unit)
@@ -291,7 +308,7 @@ local function RequestNormalRes()
             resReason = "Offer left manual: unavailable offer or recovery delay."
         elseif pcall(AcceptResurrect) then
             for _, popup in ipairs(POPUPS) do StaticPopup_Hide(popup) end
-            resReason = "Normal resurrection acceptance requested; client confirmation pending."
+            resReason = "Resurrection acceptance requested outside detected combat; client confirmation pending."
         else
             resReason = "Offer left manual: acceptance unavailable."
         end
@@ -362,7 +379,8 @@ RA:RegisterInitializer(function() Tools:Refresh() end)
 RA:RegisterCallback("PROFILE_RESET", function() Tools:Refresh(); PositionReminder() end)
 RA:RegisterEvent("RESURRECT_REQUEST", RequestNormalRes)
 for _, event in ipairs({ "BAG_UPDATE_DELAYED", "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN",
-    "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ALIVE" }) do
+    "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ALIVE",
+    "PLAYER_DEAD", "PLAYER_UNGHOST" }) do
     RA:RegisterEvent(event, function() if Enabled("consumableReminder") then Tools:Refresh() end end)
 end
 for _, event in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH" }) do

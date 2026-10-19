@@ -9,6 +9,7 @@ local secret = setmetatable({}, {
 local frames, timers, tickers, events, callbacks, initializers, items
 local healthCalls, itemCalls, scans, accepted, hidden, notices, now
 local combat, encounter, raid, grouped, groupCount, groupCombat, exists
+local dead, petExistsUnknown, petCombatUnknown
 local offer, recovery, healthResult, healthError, itemError
 local profile, RA
 
@@ -20,8 +21,18 @@ function IsEncounterInProgress() return encounter end
 function IsInRaid() return raid end
 function IsInGroup() return grouped end
 function GetNumGroupMembers() return groupCount end
-function UnitExists(unit) scans = scans + 1; return exists[unit] == true end
-function UnitAffectingCombat(unit) return groupCombat[unit] or false end
+function UnitExists(unit)
+    scans = scans + 1
+    if unit == "pet" and petExistsUnknown then return nil end
+    local value = exists[unit]
+    if value == nil then return false end
+    return value
+end
+function UnitAffectingCombat(unit)
+    if unit == "pet" and petCombatUnknown then return nil end
+    return groupCombat[unit] or false
+end
+function UnitIsDeadOrGhost(unit) check(unit == "player", "Life-state guard must use fixed player token"); return dead end
 function ResurrectGetOfferer() return offer end
 function GetCorpseRecoveryDelay() return recovery end
 function AcceptResurrect() accepted = accepted + 1 end
@@ -133,6 +144,7 @@ local function loadTools(settings)
     frames, timers, tickers, events, callbacks, initializers, items = {}, {}, {}, {}, {}, {}, {}
     healthCalls, itemCalls, scans, accepted, hidden, notices, now = 0, 0, 0, 0, {}, 0, 100
     combat, encounter, raid, grouped, groupCount, groupCombat, exists = false, false, false, false, 0, {}, {}
+    dead, petExistsUnknown, petCombatUnknown = false, false, false
     offer, recovery, healthResult, healthError, itemError = "Healer", 0, secret, false, false
     profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40 } }
     RA = {
@@ -173,22 +185,33 @@ runTimers()
 check(accepted == 1 and table.concat(hidden, ",") == "RESURRECT,RESURRECT_NO_SICKNESS,RESURRECT_NO_TIMER",
     "Normal res acceptance or popup cleanup failed")
 check(#frames == 0 and #tickers == 0, "Auto res must not start the visual")
-for _, state in ipairs({ "combat", "encounter", "party", "raid", "pet", "secret", "unknown" }) do
+for _, state in ipairs({ "combat", "encounter", "party", "raid", "pet", "local pet", "secret pet existence",
+    "unknown pet existence", "secret pet combat", "unknown pet combat", "secret", "unknown" }) do
     combat, encounter, raid, grouped, groupCombat, exists = false, false, false, false, {}, {}
+    petExistsUnknown, petCombatUnknown = false, false
     if state == "combat" then combat = true
     elseif state == "encounter" then encounter = true
     elseif state == "party" then grouped = true; exists.party2 = true; groupCombat.party2 = true
     elseif state == "raid" then raid = true; grouped = true; groupCount = 20; exists.raid20 = true; groupCombat.raid20 = true
     elseif state == "pet" then grouped = true; exists.partypet1 = true; groupCombat.partypet1 = true
+    elseif state == "local pet" then exists.pet = true; groupCombat.pet = true
+    elseif state == "secret pet existence" then exists.pet = secret
+    elseif state == "unknown pet existence" then petExistsUnknown = true
+    elseif state == "secret pet combat" then exists.pet = true; groupCombat.pet = secret
+    elseif state == "unknown pet combat" then exists.pet = true; petCombatUnknown = true
     elseif state == "secret" then combat = secret
     elseif state == "unknown" then encounter = nil end
     events.RESURRECT_REQUEST(); runTimers()
     check(accepted == 1 and #hidden == 3, "Battle/unknown res must stay manual: " .. state)
 end
 combat, encounter, raid, grouped, exists, groupCombat = false, false, false, false, {}, {}
+petExistsUnknown, petCombatUnknown = false, false
 events.RESURRECT_REQUEST(); encounter = true; runTimers()
 check(accepted == 1, "Combat must be rechecked after defer")
 encounter = false
+events.RESURRECT_REQUEST(); exists.pet = true; groupCombat.pet = true; runTimers()
+check(accepted == 1, "Local pet combat must be rechecked after defer even while solo")
+exists, groupCombat = {}, {}
 events.RESURRECT_REQUEST(); tools:SetOption("autoRes", false); runTimers()
 check(accepted == 1 and active(timers) == 0, "Disable must cancel pending acceptance")
 tools:SetOption("autoRes", true)
@@ -273,4 +296,32 @@ tools:SetOption("consumableReminder", true)
 check(active(tickers) == 0 and not frames[1].shown and tools:GetStatusText("consumableReminder"):find("unavailable"),
     "Missing native APIs must gate reminder with an honest status")
 UnitHealthPercent = nativePercent
+
+-- Life-state suppression uses only a readable boolean guard, with unknown and
+-- secret state failing closed before item scans or the health display sink.
+tools = loadTools()
+ready(5512)
+tools:SetOption("consumableReminder", true)
+beforeItems, beforeHealth = itemCalls, healthCalls
+dead = true
+events.UNIT_HEALTH("UNIT_HEALTH", "player")
+check(not frames[1].shown and tools:GetState().itemID == nil and active(tickers) == 0,
+    "Death health event must immediately suppress the visual and stop readiness refresh")
+check(itemCalls == beforeItems and healthCalls == beforeHealth, "Dead guard must not query item or health data")
+dead = false; events.PLAYER_ALIVE()
+check(frames[1].shown and tools:GetState().itemID == 5512 and active(tickers) == 1,
+    "Returning alive must recover the enabled reminder")
+for _, state in ipairs({ "dead", "secret", "nil", "missing" }) do
+    dead = state == "dead" and true or state == "secret" and secret or nil
+    local lifeAPI = UnitIsDeadOrGhost
+    if state == "missing" then UnitIsDeadOrGhost = nil end
+    beforeItems, beforeHealth = itemCalls, healthCalls
+    tools:Refresh()
+    check(not frames[1].shown and active(tickers) == 0 and tools:GetState().itemID == nil,
+        "Dead/unknown life state must suppress reminder: " .. state)
+    check(itemCalls == beforeItems and healthCalls == beforeHealth, "Life-state suppression must precede item/health queries")
+    UnitIsDeadOrGhost = lifeAPI
+end
+dead = false; events.PLAYER_UNGHOST()
+check(frames[1].shown and active(tickers) == 1, "Unghost event must recover enabled reminder")
 print("PASS: " .. checks .. " personal tools assertions (offline Lua mocks; native threshold and raid validation pending)")
