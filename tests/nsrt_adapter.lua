@@ -397,4 +397,33 @@ engine.UpdateExistingFrames=function(self) renderGeometry(self);NSRT.Settings.Ex
 check(not A:SetPlacement("IconSettings",{Width=100},notes.context) and A:GetStatus().recovery.pending and A:GetRecoveryBackup(),
     "unexpected post-placement observation overflow returned success or discarded the old copyable state")
 check(NSRT.ReminderSettings.IconSettings.Width==80 and NSRT.Settings.ExtraPadding~=nil,"geometry failure clobbered unrelated native state or failed to revert its owned value")
+
+-- Recovery review descriptors select the right copyable artifact without
+-- reading an unavailable current NSRT state or inventing a profile export.
+recoveryOK,recoveryReason,recoveryData=A:GetRecoveryBackup()
+check(recoveryOK and recoveryData.kind=="placement" and recoveryData.placement.section=="IconSettings" and recoveryData.placement.label=="Spell icons",
+    "placement recovery lacked its kind or selected native section")
+check(recoveryData.placement.values.Anchor=="CENTER" and recoveryData.placement.values.relativeTo=="CENTER" and recoveryData.placement.values.xOffset==10
+    and recoveryData.placement.values.yOffset==20 and recoveryData.placement.values.Width==80 and recoveryData.placement.values.Height==80
+    and recoveryData.placement.values.FontSize==20 and recoveryData.placement.values.TimerFontSize==22 and recoveryData.placement.values.Size==nil
+    and recoveryData.placement.values.enabled==nil,"placement recovery did not expose only prior reviewed fields with nils retained")
+recoveryData.placement.values.Width=999
+local _,_,repeatRecovery=A:GetRecoveryBackup()
+check(repeatRecovery.placement.values.Width==80,"recovery review exposed mutable backup field references")
+local _,pendingPlacementReason=A:SetPlacement("IconSettings",{Width=120},A:GetStatus().context)
+check(pendingPlacementReason:find("placement",1,true) and pendingPlacementReason:find("coordinates",1,true),"unreadable pending placement recovery used a generic profile error")
+check(A:GetStatus().recovery.kind=="placement" and A:GetStatus().recovery.section=="IconSettings","status recovery descriptor disagreed with copyable placement backup")
+A=setup();local recoveryFire=engine.FireCallback
+engine.FireCallback=function(self,...) recoveryFire(self,...);self.Reminder="newer native note";NSRT.StoredSharedReminder=self.Reminder end
+check(not A:ApplyLocalNote("failed local draft",context()),"note recovery fixture failed")
+recoveryOK,recoveryReason,recoveryData=A:GetRecoveryBackup()
+check(recoveryOK and recoveryData.kind=="note" and recoveryData.placement==nil and recoveryData.shared=="Received runtime note" and recoveryData.personal=="My private note"
+    and recoveryData.originalExport==nil and A:GetStatus().recovery.kind=="note","note recovery looked like an unavailable profile export")
+local _,pendingNoteReason=A:ApplyLocalNote("another draft",context())
+check(pendingNoteReason:find("note change",1,true) and not pendingNoteReason:find("profile change",1,true),"pending note recovery used profile-specific wording")
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason);check(A:ApplyProfile("RaidPreset",notes.context),"profile review fixture failed")
+recoveryOK,recoveryReason,recoveryData=A:GetRecoveryBackup()
+check(recoveryOK and recoveryData.kind=="profile" and A:GetStatus().recovery.kind=="profile" and recoveryData.originalExport,"profile recovery kind did not default truthfully")
+A=setup();recoveryOK,recoveryReason=A:GetRecoveryBackup()
+check(not recoveryOK and not recoveryReason:find("profile",1,true),"no-record recovery wording claimed a profile-only contract")
 print("nsrt_adapter: "..checks.." checks passed")

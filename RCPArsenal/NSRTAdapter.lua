@@ -151,16 +151,22 @@ local function Observe()
     return current, nil, api, internal, db
 end
 local function Context() return "nsrt-" .. sequence end
+local function RecoveryReason()
+    local kind = recovery and recovery.kind or "profile"
+    if kind == "note" then return "A previous note change needs recovery review. Copy the saved note before releasing recovery or making further changes." end
+    if kind == "placement" then return "A previous placement change needs recovery review. Copy the saved coordinates and dimensions before releasing recovery or making further changes." end
+    return "A previous profile change needs recovery review. Copy the saved profile and notes before releasing recovery or making further changes."
+end
 local function Guard(expected, capability)
     local restriction = NativeRestriction()
     if restriction then return nil, restriction end
+    if recovery and recovery.pending then return nil, RecoveryReason() end
     local current, reason, api, internal, db = Observe()
     if not current then return nil, reason end
     if current.version ~= Adapter.SUPPORTED_VERSION then return nil, "This action supports stock Northern Sky " .. Adapter.SUPPORTED_VERSION .. "; open Northern Sky settings for other versions." end
     if applying then return nil, "A Northern Sky change is already in progress." end
     local ownerReason = NativeOwnershipReason()
     if ownerReason then return nil, ownerReason end
-    if recovery and recovery.pending then return nil, "A previous profile operation needs recovery review. Copy its backup and inspect Northern Sky settings before further changes." end
     if type(expected) == "table" then expected = expected.context end
     if expected ~= Context() then return nil, "Northern Sky changed after this view loaded. Refresh before applying." end
     if capability == "note" and (type(internal.InviteListFromReminder) ~= "function" or type(internal.ImportReminder) ~= "function" or type(internal.SetReminder) ~= "function" or type(internal.ProcessReminder) ~= "function" or type(internal.UpdateReminderFrame) ~= "function" or type(internal.FireCallback) ~= "function" or type(db.Reminders) ~= "table" or type(db.InviteList) ~= "table") then
@@ -289,7 +295,7 @@ function Adapter:Refresh()
         state.canRestoreNote, state.canRestoreProfile, state.canRestorePlacement = false, false, false
     end
     if recovery and recovery.pending then
-        state.reason = "A previous profile operation needs recovery review."
+        state.reason = RecoveryReason()
         caps.applyNote, caps.applyProfile, caps.setPlacement = false, false, false
         state.canRestoreNote, state.canRestoreProfile, state.canRestorePlacement = false, false, false
     end
@@ -327,7 +333,7 @@ function Adapter:GetStatus()
     result.canRestoreProfile = result.canRestoreProfile and profileBackup ~= nil or false
     result.canRestorePlacement = result.canRestorePlacement and placementBackup ~= nil or false
     if recovery then
-        result.recovery = {kind = recovery.kind, token = recovery.token, pending = recovery.pending == true, original = recovery.original, source = recovery.source,
+        result.recovery = {kind = recovery.kind or "profile", section = recovery.section, token = recovery.token, pending = recovery.pending == true, original = recovery.original, source = recovery.source,
             intendedClone = recovery.intendedClone, clone = recovery.clone, observedProfile = recovery.observedProfile, phase = recovery.phase, reason = recovery.reason}
     end
     return result
@@ -528,14 +534,25 @@ local function SameOwners(api, internal, db)
     return _G.NSAPI == api and _G.NorthernSkyRaidTools == internal and _G.NSRT == db
 end
 function Adapter:GetRecoveryBackup()
-    if not recovery then return false, "There is no profile recovery backup in this session." end
-    return true, nil, {original = recovery.original, source = recovery.source, observedProfile = recovery.observedProfile,
+    if not recovery then return false, "There is no recovery backup in this session." end
+    local result = {kind = recovery.kind or "profile", original = recovery.original, source = recovery.source, observedProfile = recovery.observedProfile,
         intendedClone = recovery.intendedClone, clone = recovery.clone, phase = recovery.phase, reason = recovery.reason,
         pending = recovery.pending == true, originalExport = recovery.originalExport,
         shared = recovery.before.shared, personal = recovery.before.personal,
         originalProfile = Clone(recovery.originalProfile), originalState = Clone(recovery.before.dbValues), runtime = Clone(recovery.before.runtime),
         preservation = Clone(recovery.preserved)}
+    if result.kind == "placement" and recovery.section then
+        local _, label = PlacementFields(recovery.section)
+        local settings = recovery.before.dbValues.ReminderSettings and recovery.before.dbValues.ReminderSettings[recovery.section]
+        if label and type(settings) == "table" then
+            local values = {}
+            for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "TimerFontSize", "Size"}) do values[key] = Clone(settings[key]) end
+            result.placement = {section = recovery.section, label = label, values = values}
+        end
+    end
+    return true, nil, result
 end
+
 function Adapter:ReleaseUndo(kind, expected)
     if type(expected) == "table" then expected = expected.context end
     if Secret(expected) or type(expected) ~= "string" then return false, "Refresh the backup review before releasing it." end
@@ -822,7 +839,7 @@ function Adapter:SetPlacement(section, values, expected)
         end
     end
     recoverySequence = recoverySequence + 1
-    recovery = {kind = "placement", token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-refresh-failed",
+    recovery = {kind = "placement", section = section, token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-refresh-failed",
         original = before.profile, observedProfile = String(db.CurrentProfile, 128), before = before,
         reason = "Northern Sky changed during placement refresh. Newer native state was preserved; copy the previous settings before releasing recovery."}
     placementBackup.recoveryToken = recovery.token
@@ -857,7 +874,7 @@ function Adapter:RestoreLastPlacement(expected)
     local restoredReport = ok and Observe() or nil
     if not ok or not restoredReport or not Equal(restoredReport, projected) then
         recoverySequence = recoverySequence + 1
-        recovery = {kind = "placement", token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-restore-failed",
+        recovery = {kind = "placement", section = backup.section, token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-restore-failed",
             original = backup.profile, observedProfile = String(db.CurrentProfile, 128), before = backup.reportBefore or current,
             reason = "Placement restore did not complete. Copy the previous settings before releasing recovery."}
         backup.recoveryToken = recovery.token
