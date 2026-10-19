@@ -21,6 +21,34 @@ RA.CLASS_CATALOG_REVISIONS = {
     MONK = 2,
 }
 
+-- Shared reminder limit: Unicode code points, never a byte cut inside UTF-8.
+-- Malformed saved input retains its valid prefix. Native edit-box limits use
+-- the same 60-character cap; getter, setter and migration call this helper.
+function RA:NormalizeReminderText(value)
+    if type(value) ~= "string" or (type(issecretvalue) == "function" and issecretvalue(value)) then return "" end
+    value = value:gsub("[\r\n]", " ")
+    local position, last = 1, 0
+    for count = 1, 60 do
+        local first = value:byte(position)
+        if not first then break end
+        local width = first < 128 and 1 or (first >= 194 and first <= 223 and 2)
+            or (first >= 224 and first <= 239 and 3) or (first >= 240 and first <= 244 and 4)
+        if not width then break end
+        local valid = true
+        for offset = 1, width - 1 do
+            local byte = value:byte(position + offset)
+            if not byte or byte < 128 or byte > 191 then valid = false; break end
+        end
+        local second = value:byte(position + 1)
+        if (first == 224 and second and second < 160) or (first == 237 and second and second > 159)
+            or (first == 240 and second and second < 144) or (first == 244 and second and second > 143) then valid = false end
+        if not valid then break end
+        last = position + width - 1
+        position = last + 1
+    end
+    return value:sub(1, last)
+end
+
 local eventFrame = CreateFrame("Frame")
 local eventHandlers = {}
 local initializers = {}
@@ -405,7 +433,7 @@ local function MigrateProfile(profile)
     for key, default in pairs({ reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion" }) do
         local value = personal[key]
         if type(value) ~= "string" then value = type(personal.reminderText) == "string" and personal.reminderText or default end
-        personal[key] = value:gsub("[\r\n]", " "):sub(1, 60)
+        personal[key] = RA:NormalizeReminderText(value)
     end
     personal.reminderIconSize = math.max(24, math.min(128, tonumber(personal.reminderIconSize) or 56))
     if personal.reminderTextSize ~= nil then personal.reminderTextSize = math.max(8, math.min(32, tonumber(personal.reminderTextSize) or 10)) end

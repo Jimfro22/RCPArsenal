@@ -73,7 +73,7 @@ local function ReminderText(kind)
     local text = settings[kind == "stone" and "reminderStoneText" or "reminderPotionText"]
     if type(text) ~= "string" or IsSecret(text) then text = settings.reminderText end
     if type(text) ~= "string" or IsSecret(text) then text = kind == "stone" and "Use Healthstone" or "Use healing potion" end
-    return string.sub(text:gsub("[\r\n]", " "), 1, 60)
+    return RA:NormalizeReminderText(text)
 end
 
 local function CombatMode()
@@ -377,7 +377,7 @@ function Tools:SetOption(key, value)
         value = Threshold(value)
     elseif key == "reminderStoneText" or key == "reminderPotionText" then
         if type(value) ~= "string" then return false, "Enter reminder text." end
-        value = string.sub(value:gsub("[\r\n]", " "), 1, 60)
+        value = RA:NormalizeReminderText(value)
     elseif key == "reminderIconSize" or key == "reminderTextSize" then
         local size = Number(value)
         if not size then return false, "Choose a numeric size." end

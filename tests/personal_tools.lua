@@ -182,6 +182,12 @@ function CreateFrame(kind, name, parent, template)
     frames[#frames + 1] = frame
     return frame
 end
+-- Load the actual shared Core normalizer without booting its event frame.
+local coreTextRA = {}
+local coreTextEnv = setmetatable({ CreateFrame = function() return { RegisterEvent = function() end, SetScript = function() end } end }, {__index=_G})
+coreTextEnv._G = coreTextEnv
+local coreTextChunk = assert(loadfile("RCPArsenal/Core.lua"))
+setfenv(coreTextChunk, coreTextEnv); coreTextChunk("RCPArsenal", coreTextRA)
 local function loadTools(settings)
     frames, timers, tickers, events, callbacks, initializers, items = {}, {}, {}, {}, {}, {}, {}
     healthCalls, itemCalls, scans, accepted, hidden, notices, now = 0, 0, 0, 0, {}, 0, 100
@@ -191,6 +197,7 @@ local function loadTools(settings)
     healthRatio, nativeAlpha = .35, nil
     profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40 } }
     RA = {
+        NormalizeReminderText = coreTextRA.NormalizeReminderText,
         GetDB = function() return profile end,
         RegisterInitializer = function(_, fn) initializers[#initializers + 1] = fn end,
         RegisterCallback = function(_, name, fn) callbacks[name] = fn end,
@@ -480,4 +487,35 @@ check(itemCalls==before,"Cached unrecognized potion was left pending")
 tools=loadTools()
 check(tools:SetOption("reminderStoneText", "|Tbad:60|t\nGo"), "Literal text option failed")
 check(tools:PreviewReminder("stone") and frames[2].strings[1].text == "||Tbad:60||t Go", "Message interpreted markup or retained newline")
+-- No artificial low-health wait: both player events write alpha in their
+-- own callback at a fixed clock, without timers, inventory or a bounce phase.
+tools=loadTools();ready(5512);healthRatio=.8
+tools:SetOption("healthThreshold",60);tools:SetOption("consumableReminder",true)
+check(frames[1].renderAlpha==0,"Above-threshold setup failed")
+for _,eventName in ipairs({"UNIT_HEALTH","UNIT_MAXHEALTH"}) do
+    local beforeItems,beforeHealth,beforeTime=itemCalls,healthCalls,now
+    healthRatio=.59;events[eventName](eventName,"player")
+    check(frames[1].renderAlpha==1 and healthCalls==beforeHealth+1 and now==beforeTime,
+        "Player health event deferred its native alpha write")
+    check(itemCalls==beforeItems and #timers==0 and #tickers==0,"Health event scanned or queued a refresh")
+    healthRatio=.8;events[eventName](eventName,"player")
+    check(frames[1].renderAlpha==0,"Recovery waited for a timer/animation phase")
+end
+-- UTF-8 limits agree across setter/getter and the actual profile normalizer.
+for _, entry in ipairs({
+    {string.rep("界",21), string.rep("界",21)},
+    {"A"..string.rep("界",60), "A"..string.rep("界",59)},
+    {string.rep("é",61), string.rep("é",60)},
+    {string.rep("😀",21), string.rep("😀",21)},
+    {string.rep("😀",61), string.rep("😀",60)},
+}) do
+    check(tools:SetOption("reminderStoneText",entry[1]) and profile.personalTools.reminderStoneText==entry[2], "Setter split/truncated a UTF-8 character")
+    profile.personalTools.reminderPotionText=entry[1]
+    check(tools:GetState().reminderPotionText==entry[2], "Getter UTF-8 limit differs")
+    local normalized=coreTextRA:CreateDefaultProfile()
+    normalized.personalTools.reminderStoneText,normalized.personalTools.reminderPotionText=entry[1],entry[1]
+    coreTextRA:NormalizeProfile(normalized)
+    check(normalized.personalTools.reminderStoneText==entry[2] and normalized.personalTools.reminderPotionText==entry[2],"Profile normalization split/truncated UTF-8")
+end
+check(coreTextRA:NormalizeReminderText("valid"..string.char(240,159))=="valid", "Incomplete UTF-8 tail retained")
 print("PASS: " .. checks .. " personal tools assertions (offline Lua mocks; native threshold and raid validation pending)")
