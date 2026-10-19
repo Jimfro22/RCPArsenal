@@ -4,9 +4,11 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.14.2-alpha.1"
+RA.VERSION = "0.15.0-alpha.1"
+RA.BUILD = RA.VERSION
+RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
-RA.PROFILE_SCHEMA = 18
+RA.PROFILE_SCHEMA = 19
 RA.InEncounter = false
 RA.Initialized = false
 RA.DebugEnabled = false
@@ -27,7 +29,8 @@ local callbacks = {}
 local DEFAULTS = {
     profile = {
         schemaVersion = RA.PROFILE_SCHEMA,
-        shown = true,
+        hudEnabled = false,
+        shown = false,
         locked = false,
         mode = "COMPACT",
 
@@ -36,10 +39,10 @@ local DEFAULTS = {
         detailedWidth = 286,
         scale = 1.25,
         opacity = 0.96,
-        autoShowEncounter = true,
+        autoShowEncounter = false,
         hideWhenSolo = false,
         leaderOnly = false,
-        demoMode = true,
+        demoMode = false,
         accentPreset = "SUNSET", -- SUNSET, CRIMSON, BERRY
         hudDirection = "RIGHT", -- AUTO, RIGHT, LEFT, DOWN, UP
 
@@ -75,20 +78,20 @@ local DEFAULTS = {
         },
 
         scan = {
-            showStrip = true,
+            showStrip = false,
             scale = 1.10,
             wrapAfter = 9,
-            demoPreview = true,
+            demoPreview = false,
         },
 
         actions = {
             -- Exactly one primary left-click channel is used at a time. This
             -- prevents one hardware click from emitting multiple chat lines
             -- and tripping Blizzard's chat throttle during rapid calls.
-            leftClickMode = "WHISPER", -- WHISPER, SAY, OFF
+            leftClickMode = "OFF", -- WHISPER, SAY, OFF
             sayEnabled = false,        -- legacy mirror for older profiles
-            whisperEnabled = true,     -- legacy mirror for older profiles
-            raidWarningEnabled = true,
+            whisperEnabled = false,     -- legacy mirror for older profiles
+            raidWarningEnabled = false,
             sayTemplate = "{name} - {spell}",
             whisperTemplate = "RAID LEAD: USE {spell}",
             raidWarningTemplate = "{name} - {spell}",
@@ -97,6 +100,8 @@ local DEFAULTS = {
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false },
+        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40 },
+        readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
         -- default it is visible to every raid member; users can optionally
@@ -105,15 +110,15 @@ local DEFAULTS = {
         -- Its placement is intentionally local and is not part of portable
         -- profile import/export.
         leaderToolbox = {
-            enabled = true,
+            enabled = false,
             showForNonLeaders = true,
             closeDelay = 1.0,
             tooltipDelay = 0.75,
             puckSize = 30,
             countdownSeconds = 15,
             flyoutDirection = "AUTO", -- AUTO, RIGHT, LEFT, DOWN, UP
-            showMissing = true,
-            panicEnabled = true,
+            showMissing = false,
+            panicEnabled = false,
             panicMessage = "PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!",
             position = {
                 point = "LEFT",
@@ -373,6 +378,34 @@ local function MigrateProfile(profile)
     end
     profile.worldMarkers = RA:NormalizeWorldMarkerSettings(profile.worldMarkers)
 
+    if schema < 19 then
+        -- One-time hub rollout: inherited true defaults were not explicit
+        -- consent. Preserve positions, content, templates and visual prefs.
+        profile.hudEnabled, profile.shown = false, false
+        profile.autoShowEncounter, profile.demoMode = false, false
+        profile.scan = profile.scan or {}
+        profile.scan.showStrip, profile.scan.demoPreview = false, false
+        profile.leaderToolbox = profile.leaderToolbox or {}
+        profile.leaderToolbox.enabled, profile.leaderToolbox.panicEnabled = false, false
+        profile.leaderToolbox.showMissing = false
+        profile.actions = profile.actions or {}
+        profile.actions.leftClickMode, profile.actions.sayEnabled = "OFF", false
+        profile.actions.whisperEnabled, profile.actions.raidWarningEnabled = false, false
+        schema = 19
+    end
+    profile.hudEnabled = profile.hudEnabled == true
+    profile.demoMode = profile.hudEnabled and profile.demoMode == true
+    if not profile.hudEnabled then profile.shown = false end
+    profile.personalTools = type(profile.personalTools) == "table" and profile.personalTools or {}
+    profile.personalTools.autoRes = profile.personalTools.autoRes == true
+    profile.personalTools.consumableReminder = profile.personalTools.consumableReminder == true
+    profile.personalTools.healthThreshold = math.max(1, math.min(99, tonumber(profile.personalTools.healthThreshold) or 40))
+    profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
+    profile.readiness.targets = type(profile.readiness.targets) == "table" and profile.readiness.targets or {}
+    profile.readiness.revision = math.max(0, tonumber(profile.readiness.revision) or 0)
+    profile.readiness.updatedAt = tonumber(profile.readiness.updatedAt) or 0
+    profile.readiness.origin = type(profile.readiness.origin) == "string" and profile.readiness.origin or ""
+
     profile.schemaVersion = RA.PROFILE_SCHEMA
     profile.scale = math.max(0.75, math.min(2.0, tonumber(profile.scale) or 1.25))
     profile.opacity = math.max(0.25, math.min(1.0, tonumber(profile.opacity) or 0.96))
@@ -429,12 +462,12 @@ local function MigrateProfile(profile)
     profile.scan = scan
     scan.scale = scan.scale or compact.scanScale or 1.10
     if scan.showStrip == nil then
-        scan.showStrip = compact.showScanStrip ~= false
+        scan.showStrip = compact.showScanStrip == true
     end
     scan.wrapAfter = scan.wrapAfter or compact.wrapAfter or 9
     scan.scale = math.max(0.75, math.min(2.0, tonumber(scan.scale) or 1.10))
     scan.wrapAfter = math.max(4, math.min(14, tonumber(scan.wrapAfter) or 9))
-    if scan.demoPreview == nil then scan.demoPreview = true end
+    if scan.demoPreview == nil then scan.demoPreview = false end
 
     profile.abilityOrder = profile.abilityOrder or {}
 
@@ -450,14 +483,11 @@ local function MigrateProfile(profile)
 
     local leaderToolbox = profile.leaderToolbox or {}
     profile.leaderToolbox = leaderToolbox
-    if leaderToolbox.enabled == nil then leaderToolbox.enabled = true end
-    leaderToolbox.enabled = leaderToolbox.enabled ~= false
+    leaderToolbox.enabled = leaderToolbox.enabled == true
     if leaderToolbox.showForNonLeaders == nil then leaderToolbox.showForNonLeaders = true end
     leaderToolbox.showForNonLeaders = leaderToolbox.showForNonLeaders ~= false
-    if leaderToolbox.showMissing == nil then leaderToolbox.showMissing = true end
-    leaderToolbox.showMissing = leaderToolbox.showMissing ~= false
-    if leaderToolbox.panicEnabled == nil then leaderToolbox.panicEnabled = true end
-    leaderToolbox.panicEnabled = leaderToolbox.panicEnabled ~= false
+    leaderToolbox.showMissing = leaderToolbox.showMissing == true
+    leaderToolbox.panicEnabled = leaderToolbox.panicEnabled == true
     leaderToolbox.panicMessage = tostring(leaderToolbox.panicMessage or "PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!")
     leaderToolbox.closeDelay = math.max(0.15, math.min(3.0, tonumber(leaderToolbox.closeDelay) or 1.0))
     leaderToolbox.tooltipDelay = math.max(0.20, math.min(2.5, tonumber(leaderToolbox.tooltipDelay) or 0.75))
@@ -477,7 +507,7 @@ local function MigrateProfile(profile)
     if not validLeftClickModes[actions.leftClickMode] then
         if actions.sayEnabled == true and actions.whisperEnabled == false then
             actions.leftClickMode = "SAY"
-        elseif actions.whisperEnabled ~= false then
+        elseif actions.whisperEnabled == true then
             actions.leftClickMode = "WHISPER"
         elseif actions.sayEnabled == true then
             actions.leftClickMode = "SAY"
@@ -489,8 +519,7 @@ local function MigrateProfile(profile)
     -- but never permit both channels to be armed on the same click.
     actions.sayEnabled = actions.leftClickMode == "SAY"
     actions.whisperEnabled = actions.leftClickMode == "WHISPER"
-    if actions.raidWarningEnabled == nil then actions.raidWarningEnabled = true end
-    actions.raidWarningEnabled = actions.raidWarningEnabled ~= false
+    actions.raidWarningEnabled = actions.raidWarningEnabled == true
     actions.sayTemplate = tostring(actions.sayTemplate or "{name} - {spell}")
     actions.whisperTemplate = tostring(actions.whisperTemplate or "RAID LEAD: USE {spell}")
     actions.raidWarningTemplate = tostring(actions.raidWarningTemplate or "{name} - {spell}")
@@ -556,6 +585,38 @@ end
 
 function RA:GetDB()
     return RaidArsenalDB and RaidArsenalDB.profile
+end
+
+function RA:IsHUDEnabled()
+    local db = self:GetDB()
+    return db and db.hudEnabled == true or false
+end
+
+function RA:IsInspectionEnabled()
+    return self:IsHUDEnabled()
+end
+
+function RA:SetHUDEnabled(enabled)
+    if InCombatLockdown() then return false, "Change this after combat." end
+    local db = self:GetDB()
+    db.hudEnabled, db.shown = enabled == true, enabled == true
+    if not enabled then
+        db.demoMode = false
+        if self.StopInspectionScan then self:StopInspectionScan() end
+    elseif self.ScheduleInspectionScan then
+        self:ScheduleInspectionScan("HUD explicitly enabled", 0.1, false)
+    end
+    self:FireCallback("TOOLS_CHANGED")
+    if self.RefreshHUD then self:RefreshHUD() end
+    return true
+end
+
+function RA:SetQuickBarEnabled(enabled)
+    if InCombatLockdown() then return false, "Change this after combat." end
+    self:GetDB().leaderToolbox.enabled = enabled == true
+    if self.RaidLeaderToolbox then self.RaidLeaderToolbox:Refresh() end
+    self:FireCallback("TOOLS_CHANGED")
+    return true
 end
 
 function RA:GetClassCatalogRevision(classFile)
@@ -710,6 +771,15 @@ function RA:ApplyImportedProfile(profile)
         profile.position = current.position
         profile.positionAnchorVersion = current.positionAnchorVersion
         profile.shown = current.shown
+        profile.hudEnabled = current.hudEnabled
+        profile.demoMode, profile.autoShowEncounter = current.demoMode, current.autoShowEncounter
+        profile.personalTools, profile.readiness = current.personalTools, current.readiness
+        profile.scan = profile.scan or {}
+        profile.scan.showStrip, profile.scan.demoPreview = current.scan.showStrip, current.scan.demoPreview
+        profile.actions = profile.actions or {}
+        for _, key in ipairs({"leftClickMode", "sayEnabled", "whisperEnabled", "raidWarningEnabled"}) do
+            profile.actions[key] = current.actions[key]
+        end
 
         -- World-marker opt-in and sequence are local. Keybindings belong to
         -- Blizzard, never to portable profiles. Imports cannot enable this tool.
@@ -717,6 +787,9 @@ function RA:ApplyImportedProfile(profile)
 
         profile.leaderToolbox = profile.leaderToolbox or {}
         local currentToolbox = current.leaderToolbox or {}
+        profile.leaderToolbox.enabled = currentToolbox.enabled
+        profile.leaderToolbox.panicEnabled = currentToolbox.panicEnabled
+        profile.leaderToolbox.showMissing = currentToolbox.showMissing
         profile.leaderToolbox.position = currentToolbox.position
         profile.leaderToolbox.positionAnchorVersion = currentToolbox.positionAnchorVersion
     end
@@ -738,25 +811,6 @@ function RA:ResetProfile()
     end
     self:FireCallback("PROFILE_RESET")
 end
-
-local function RefreshColdLoginVisuals()
-    if not RA.Initialized then return end
-    if RA.Theme and RA.Theme.RefreshAllAssets then RA.Theme:RefreshAllAssets() end
-    RA:FireCallback("VISUAL_ASSET_REFRESH")
-end
-
-RA:RegisterEvent("PLAYER_LOGIN", function()
-    -- Custom textures/spell icons can be unavailable for a few frames on a
-    -- true client launch even though they are immediately available on /reload.
-    -- Two one-shot refreshes fix that initialization-order race without adding
-    -- permanent polling or changing combat behavior.
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.25, RefreshColdLoginVisuals)
-        C_Timer.After(1.50, RefreshColdLoginVisuals)
-    else
-        RefreshColdLoginVisuals()
-    end
-end)
 
 RA:RegisterEvent("ADDON_LOADED", function(_, loadedAddon)
     if loadedAddon ~= ADDON_NAME then
