@@ -1716,6 +1716,7 @@ local function CreateWorldMarkersPane(parent)
     end
     RefreshEditor = function(detail)
         if not editorOverlay then return end
+        SetWidth(drainHint, math.max(1, math.min(580, UIParent:GetWidth() - 32)))
         local edit = bindings:GetPending()
         if not edit then
             editorVisual:Hide()
@@ -1727,6 +1728,9 @@ local function CreateWorldMarkersPane(parent)
             editorOverlay:SetShown(held ~= nil)
             return
         end
+        -- Config refits on every reopen. Only the visual follows its scale;
+        -- the preconfigured UIParent input guard is never scaled/reconfigured.
+        editorVisual:SetScale(RA.ConfigFrame:GetScale())
         drainHint:Hide(); editorVisual:Show()
         RA:SetVisualText(editorTitle, "Bind " .. edit.label)
         RA:SetVisualText(editorInfo, (edit.slot == 1 and "Primary" or "Alternate") .. " slot: " .. (edit.currentKey or "Unbound") .. " - " .. edit.scopeLabel)
@@ -1775,6 +1779,15 @@ local function CreateWorldMarkersPane(parent)
     parent:HookScript("OnHide", CancelEditor)
     RA.ConfigFrame:HookScript("OnHide", CancelEditor)
     RA:RegisterCallback("MARKER_BINDINGS_CHANGED", function() if RefreshEditor then RefreshEditor() end end)
+    local function ViewportChanged()
+        if not editorOverlay or not editorOverlay:IsShown() then return end
+        local ok, combat = pcall(InCombatLockdown)
+        if ok and type(issecretvalue) == "function" and not issecretvalue(combat) and combat == false
+            and RA.ConfigFrame:IsShown() and RA.ConfigFrame.FitToScreen then RA.ConfigFrame.FitToScreen() end
+        RefreshEditor()
+    end
+    RA:RegisterEvent("DISPLAY_SIZE_CHANGED", ViewportChanged)
+    RA:RegisterEvent("UI_SCALE_CHANGED", ViewportChanged)
     local state = Font(parent, 10, TC.orange, "REGULAR")
     SetPoint(state, "TOPLEFT", parent, "TOPLEFT", 0, -616)
     SetWidth(state, 950)
@@ -2354,6 +2367,7 @@ local function CreateConfig()
         local scale = math.min(1, availableWidth / FRAME_WIDTH, availableHeight / FRAME_HEIGHT)
         frame:SetScale(scale)
     end
+    frame.FitToScreen = FitToScreen
 
     frame.UpdatePreview = UpdatePreview
     frame:SetScript("OnShow", function()

@@ -811,6 +811,19 @@ for _,path in ipairs({'hide','tab','combat','external','reset','import','cancel'
     if path=='combat' then combat=false;event('PLAYER_REGEN_ENABLED') end
 end
 -- Recreate the actual Config module's locals while retaining SavedVariables,
+-- Capture visuals refit after reopening and while shown at a new viewport.
+RA:CloseConfig();UIParent:SetSize(320,480);RA:OpenConfig('WORLDMARKERS');keyButton('F8'):Fire('OnClick')
+input=named.RCPArsenalMarkerBindingEditor
+local captureVisual
+for _,obj in ipairs(objects) do if obj.parent==input and obj.kind=='Frame' and obj.allPoints==RA.ConfigFrame then captureVisual=obj end end
+check(captureVisual and captureVisual:GetScale()==RA.ConfigFrame:GetScale() and 580*captureVisual:GetScale()<=UIParent:GetWidth(), 'Reopened key dialog retained first-open scale')
+local inputScale,inputPropagation=input:GetScale(),input.propagationChanges
+UIParent:SetSize(640,480);event('DISPLAY_SIZE_CHANGED')
+check(captureVisual:GetScale()==RA.ConfigFrame:GetScale() and 580*captureVisual:GetScale()<=UIParent:GetWidth()
+    and input:GetScale()==inputScale and input.propagationChanges==inputPropagation,'Shown resize changed input guard or failed to refit visual')
+check(clickVisible('CANCEL'),'Resize sample did not close')
+UIParent:SetSize(1920,1080);RA:CloseConfig()
+-- Recreate the actual Config module's locals while retaining SavedVariables,
 -- modeling a reload without relying on its prior activeTab in memory.
 RA:OpenConfig('HUD'); RA:CloseConfig()
 local savedNavigation=RaidArsenalDB.navigation
