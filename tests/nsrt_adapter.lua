@@ -19,7 +19,7 @@ local function advance(seconds)
     clock=stop
 end
 local function placement(width,height,font,size) return {TimerFontSize=22,Anchor="CENTER",relativeTo="CENTER",xOffset=10,yOffset=20,Width=width,Height=height,FontSize=font,Size=size,Font="Original",enabled=true} end
-local function setup(missing)
+local function setup(missing, quiet)
     combat,encounter,restricted,clock=false,false,false,10
     timers,calls,events,callbacks,init,exports={},{},{},{},{},{}
     notices,version=0,"12.1.32"
@@ -114,11 +114,40 @@ local function setup(missing)
     assert(loadfile("RCPArsenal/NSRTAdapter.lua"))("RCPArsenal",RA)
     adapter=RA.NSRTAdapter
     for _,fn in ipairs(init) do fn() end
+    if not quiet then adapter:SetObserving(true) end -- Existing transactions model deliberate pane use.
     return adapter
 end
 local function context() local ok,reason,data=adapter:GetNotes();check(ok,reason);return data.context end
 local function notesBundle() local out={};for _,key in ipairs({"Reminders","PersonalReminders","SharedNotes","PersonalNotes","ActiveReminder","ActivePersonalReminder","StoredSharedReminder","StoredPersonalReminder","AutoLoadNote","InviteList"}) do out[key]=copy(NSRT[key]) end;return out end
-local A=setup()
+local A=setup(false,true)
+local refreshCount=0;local actualRefresh=A.Refresh
+A.Refresh=function(self,...)refreshCount=refreshCount+1;return actualRefresh(self,...)end
+check(#timers==0 and callbacks.NSRT_REMINDER_CHANGED==nil,'Unopened integration scheduled work or hooked native changes')
+for i=1,5 do event('PLAYER_ENTERING_WORLD');event('PLAYER_REGEN_ENABLED');event('ADDON_LOADED','NorthernSkyRaidTools') end
+check(refreshCount==0 and #timers==0,'Inactive integration lifecycle queried native state')
+A:SetObserving(true);check(refreshCount>0 and callbacks.NSRT_REMINDER_CHANGED,'Visible integration did not activate observation')
+A:SetObserving(false);local afterHide=refreshCount
+for i=1,5 do event('PLAYER_ENTERING_WORLD');event('PLAYER_REGEN_ENABLED') end
+check(refreshCount==afterHide and callbacks.NSRT_REMINDER_CHANGED==nil,'Hidden integration kept native observation active')
+A:SetObserving(true);check(refreshCount>afterHide,'Reopening integration failed to refresh')
+A:SetObserving(false)
+A=setup(false,true)
+local registerCallback=NSAPI.RegisterCallback
+local registrations,quietRefreshes=0,0
+NSAPI.RegisterCallback=function(...) registrations=registrations+1;return registerCallback(...) end
+NSAPI.UnregisterCallback=function() return false end
+local nativeRefresh=A.Refresh
+A.Refresh=function(...)quietRefreshes=quietRefreshes+1;return nativeRefresh(...)end
+A:SetObserving(true);A:SetObserving(false)
+local retainedCallback=callbacks.NSRT_REMINDER_CHANGED
+local refreshesWhileHidden=quietRefreshes
+retainedCallback('NSRT_REMINDER_CHANGED')
+check(quietRefreshes==refreshesWhileHidden,'Failed native unregister left hidden observation active')
+A:SetObserving(true)
+check(registrations==1 and callbacks.NSRT_REMINDER_CHANGED==retainedCallback and quietRefreshes>refreshesWhileHidden,
+    'Reopening after failed native unregister duplicated the retained callback or lost freshness')
+A:SetObserving(false)
+A=setup()
 check(A:GetStatus().compatible and A:GetStatus().capabilities.applyNote and A:GetStatus().capabilities.applyProfile,"reviewed API capabilities unavailable")
 check(#calls==0,"adapter wrote Northern Sky on login/refresh")
 local ok,reason,notes=A:GetNotes()

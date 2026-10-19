@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.6**. Generic opens restore the last valid tab/subtab, and World Markers has an in-window two-slot key editor using the current native Account/Character binding scope. Reminder polish adds Sound 6 / Master defaults for missing preferences, a fixed 35% Healthstone border glow, and a default-OFF permission to play through game-effects mute on Master. [Current navigation, bindings and reminder contract](docs/NAVIGATION_KEYBINDS.md) records guarded capture/cancellation, policy limits and native acceptance. The [alpha.5 reminder contract](docs/REMINDER_SELECTION.md) retains the ready-item map, map-2 raid compatibility, large empty warning and bounded cooldown expiry detail. All existing valid choices, font/logo, native health gate/audio latch and other tools remain intact. Profile schema remains 19.
+This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.7**. Optional reminder/inspection events now follow their master switches, HUD and Quick Bar frames are created on demand, and hidden settings/inactive Northern Sky integration avoid refresh work. ZIP compression reduces the download without changing artwork or sound bytes. The [optimization contract](docs/OPTIMIZATION.md) records measured offline counters, reporting guarantees and native profiling still required. [Navigation, bindings and reminder behavior](docs/NAVIGATION_KEYBINDS.md) and the [reminder selection contract](docs/REMINDER_SELECTION.md) remain intact. Profile schema remains 19.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
@@ -19,12 +19,13 @@ python3 -m unittest discover -s tests -v
 python3 tools/package.py --output-dir dist --label local
 ```
 
-Use `--check-baseline` only when verifying the original baseline checkout; it correctly rejects this feature build. Keep the TOC and `RA.VERSION` versions in sync. A package label changes only the filename; it does not change the version seen in game. The ZIP includes exactly one `RCPArsenal/` root, addon code, assets, and inherited docs. Engineering tools and planning documents are outside the game payload. Each ZIP has a SHA-256 sidecar and a manifest containing file hashes and Git revision. ZIP entries use stable ordering, timestamps, and uncompressed storage for reproducible bytes across platforms.
+Use `--check-baseline` only when verifying the original baseline checkout; it correctly rejects this feature build. Keep the TOC and `RA.VERSION` versions in sync. A package label changes only the filename; it does not change the version seen in game. The ZIP includes exactly one `RCPArsenal/` root, addon code, assets, and inherited docs. Engineering tools and planning documents are outside the game payload. Each ZIP has a SHA-256 sidecar and a manifest containing file hashes and Git revision. ZIP entries use stable ordering, timestamps, permissions and lossless level-9 deflate. Repeat builds with the same compressor produce identical bytes; different zlib versions may produce different ZIP checksums, so CI records its actual checksum and extracted payload hashes.
 
 Packaging checks validate versions, manifest references, and ZIP contents. CI also installs Lua 5.1, parses all addon modules, and runs every `tests/*.lua` harness for actual-module profile/hub/quiet lifecycle, captions/assets, the combined addon table, inspection cache, readiness protocol, personal tools, and marker logic. These checks do not simulate native glyph rendering, hardware dispatch, taint, terrain, or permissions. Owner testing of alpha.3 confirmed the installation and markers work, but expanded testing exposed blank captions and grouping problems; cold-start verification of this correction remains required.
 
 ## Delivery documents
 
+- [Optimization and native profiling acceptance](docs/OPTIMIZATION.md)
 - [Native rendering and feature grouping repair](docs/NATIVE_RENDERING_REPAIR.md)
 - [Inspection cache Windows tests](docs/INSPECTION_CACHE_WINDOWS_TESTS.md)
 - [Delivery plan](docs/DELIVERY_PLAN.md)

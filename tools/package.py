@@ -131,14 +131,15 @@ def main():
         raise ValueError("Output must be outside the addon directory")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"RCPArsenal-{meta['Version']}-{args.label}.zip"
-    # Fixed timestamp, ordering, permissions, and uncompressed storage produce
-    # identical bytes across platforms without a zlib version dependency.
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as z:
+    # Stable metadata and explicit lossless deflate. Supplying a ZipInfo to
+    # writestr otherwise retains its default STORED method. Reproducible with
+    # the same compressor; CI records the final cross-platform ZIP checksum.
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, data in payload.items():
             info = zipfile.ZipInfo(name, date_time=(2026, 10, 18, 0, 0, 0))
             info.create_system = 3
             info.external_attr = 0o100644 << 16
-            z.writestr(info, data)
+            z.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
     with zipfile.ZipFile(archive) as z:
         if z.testzip() is not None or set(z.namelist()) != set(payload):
             raise ValueError("Packaged ZIP failed CRC or layout validation")

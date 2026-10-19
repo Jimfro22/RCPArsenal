@@ -14,6 +14,7 @@ local snapshot, request, replyQueue
 local registered, nonceCounter, generation = false, 0, 0
 local lastQuery, lastReply = -math.huge, -math.huge
 local recentQueries, receiveCounts = {}, {}
+local ingressCounts, ingressNames, ingressAt = {}, 0, -math.huge
 local rosterFingerprint
 
 local function Secret(value)
@@ -24,6 +25,19 @@ local function Plain(value, limit)
     return value
 end
 local function Now() return GetTime and GetTime() or 0 end
+local function AdmitIngress(senderName)
+    local now = Now()
+    if now - ingressAt >= 15 then ingressCounts, ingressNames, ingressAt = {}, 0, now end
+    local key = senderName:lower()
+    local count = ingressCounts[key]
+    if not count then
+        if ingressNames >= 128 then return false end
+        ingressNames = ingressNames + 1
+        count = 0
+    end
+    ingressCounts[key] = count + 1
+    return count < 24
+end
 local function Combat()
     return (InCombatLockdown and InCombatLockdown())
         or (IsEncounterInProgress and IsEncounterInProgress())
@@ -400,13 +414,9 @@ local function BeginReply(roster, sender, nonce)
     end
     queue.timer = C_Timer.NewTimer(0.10 + math.random(0, 80) / 100, Next)
 end
-local function ReceiveResponse(fields, sender)
-    if #fields ~= 8 or not request or snapshot.status ~= "checking" or Now() >= request.deadline
-        or fields[3] ~= request.nonce or request.generation ~= generation then return end
-    local expected = request.roster.byGUID[sender.guid]
-    if not expected or expected.name ~= sender.name or expected.online == false or expected.isPlayer then return end
-    local member, id = snapshot.byGUID[sender.guid], fields[4]
-    if not member or not Catalog:GetEntry(id) or member.addons[id].receivedAt then return end
+local function DecodeResponse(fields)
+    if #fields ~= 8 or not Catalog:GetEntry(fields[4]) then return nil end
+    local id = fields[4]
     if not fields[5]:match("^[01u][01u][01u]$") then return end
     local version, versionOK = Unhex(fields[6], 64)
     local build, buildOK = Unhex(fields[7], 32)
@@ -420,6 +430,16 @@ local function ReceiveResponse(fields, sender)
     elseif fields[7] ~= "-" or fields[8] ~= "-" then return end
     if fields[5]:sub(1, 1) == "0" and (fields[5] ~= "000" or version or build) then return end
     if fields[5]:sub(1, 1) == "u" and (fields[5] ~= "uuu" or version or build) then return end
+    return {id = id, version = version, build = build, protocol = protocol}
+end
+local function ReceiveResponse(fields, sender, decoded)
+    if #fields ~= 8 or not request or snapshot.status ~= "checking" or Now() >= request.deadline
+        or fields[3] ~= request.nonce or request.generation ~= generation then return end
+    local expected = request.roster.byGUID[sender.guid]
+    if not expected or expected.name ~= sender.name or expected.online == false or expected.isPlayer then return end
+    local member, id = snapshot.byGUID[sender.guid], fields[4]
+    if not member or not Catalog:GetEntry(id) or member.addons[id].receivedAt then return end
+    local version, build, protocol = decoded.version, decoded.build, decoded.protocol
     member.addons[id] = { id = id, installed = Bool(fields[5]:sub(1, 1)), enabled = Bool(fields[5]:sub(2, 2)),
         loaded = Bool(fields[5]:sub(3, 3)), version = version, build = build, protocol = protocol, receivedAt = Now() }
     member.receivedCount, member.respondedAt = member.receivedCount + 1, Now()
@@ -458,8 +478,24 @@ local function OnMessage(_, prefix, message, channel, senderName)
     if Secret(prefix) or Secret(message) or Secret(channel) or Secret(senderName) then return end
     if type(prefix) ~= "string" or prefix ~= Readiness.PREFIX or type(message) ~= "string"
         or #message == 0 or #message > Readiness.MAX_PACKET_BYTES or message:find("%c")
-        or type(channel) ~= "string" or not Plain(senderName, 128)
-        or Readiness:GetRestrictionReason() then return end
+        or type(channel) ~= "string" or not Plain(senderName, 128) then return end
+    -- Name-keyed budget limits ingress cost only; it never authenticates a
+    -- sender. Current roster/GUID authorization and its separate rate bound
+    -- remain mandatory. Malformed packets still consume the sender's budget.
+    if not AdmitIngress(senderName) then return end
+    -- Reject bounded pure-format errors before any roster/identity walk. All
+    -- authorization, nonce, snapshot, restriction and rate checks still follow.
+    local fields = Split(message)
+    if not fields or fields[2] ~= "1" or not fields[3] or #fields[3] < 3 or #fields[3] > 24
+        or not fields[3]:match("^[%da-f]+%-[%da-f]+%-[%da-f]+$") then return end
+    local decoded
+    if fields[1] == "Q" then
+        if #fields ~= 3 or channel ~= GroupChannel() then return end
+    elseif fields[1] == "R" and channel == "WHISPER" then
+        decoded = DecodeResponse(fields)
+        if not decoded then return end
+    else return end
+    if Readiness:GetRestrictionReason() then return end
     local roster = ValidateRoster()
     if not roster then return end
     local sender = ResolveSender(roster, senderName)
@@ -468,12 +504,10 @@ local function OnMessage(_, prefix, message, channel, senderName)
     if not bucket or Now() - bucket.at >= 15 then bucket = { at = Now(), count = 0 }; receiveCounts[sender.guid] = bucket end
     bucket.count = bucket.count + 1
     if bucket.count > 24 then return end
-    local fields = Split(message)
-    if not fields or fields[2] ~= "1" or not fields[3] or #fields[3] < 3 or #fields[3] > 24 or not fields[3]:match("^[%da-f]+%-[%da-f]+%-[%da-f]+$") then return end
     if fields[1] == "Q" then
-        if #fields ~= 3 or channel ~= GroupChannel() or not (sender.leader or sender.assistant) then return end
+        if not (sender.leader or sender.assistant) then return end
         BeginReply(roster, sender, fields[3])
-    elseif fields[1] == "R" and channel == "WHISPER" then ReceiveResponse(fields, sender) end
+    else ReceiveResponse(fields, sender, decoded) end
 end
 
 local function Decorate(row, targets)

@@ -1593,22 +1593,32 @@ function RA:InvalidateTrackedPlayer(unitOrName, reason, delay)
     return true
 end
 
+local inspectionEvents = {}
+local function SyncInspectionEvents()
+    for _, subscription in ipairs(inspectionEvents) do subscription:SetEnabled(RA:IsInspectionEnabled()) end
+end
+local function InspectionEvent(name, callback)
+    inspectionEvents[#inspectionEvents + 1] = RA:RegisterOptionalEvent(name, callback)
+end
+RA:RegisterCallback("TOOLS_CHANGED", SyncInspectionEvents)
+
 RA:RegisterInitializer(function()
+    SyncInspectionEvents()
     if not RA:IsInspectionEnabled() then return end
     RA:RefreshRoster()
     RA:PruneReports()
     RA:StoreLocalReport()
 end)
 
-RA:RegisterEvent("PLAYER_LOGIN", function()
+InspectionEvent("PLAYER_LOGIN", function()
     RA:ScheduleInspectionScan("login", 1.0, false)
 end)
 
-RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+InspectionEvent("PLAYER_ENTERING_WORLD", function()
     RA:ScheduleInspectionScan("entering world", 0.8, false)
 end)
 
-RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
+InspectionEvent("GROUP_ROSTER_UPDATE", function()
     if not RA:IsInspectionEnabled() then return end
     local changes = RA:RefreshRoster()
     RA:PruneReports()
@@ -1639,21 +1649,21 @@ RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
     -- Pure removals never rescan unchanged players.
 end)
 
-RA:RegisterEvent("SPELLS_CHANGED", function()
+InspectionEvent("SPELLS_CHANGED", function()
     if not RA:IsInspectionEnabled() then return end
     localTalentSignal = true
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
 
-RA:RegisterEvent("TRAIT_CONFIG_UPDATED", function()
+InspectionEvent("TRAIT_CONFIG_UPDATED", function()
     if not RA:IsInspectionEnabled() then return end
     localTalentSignal = true
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
 
-RA:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
+InspectionEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
     if not RA:IsInspectionEnabled() then return end
     if unit == "player" then
         RA:StoreLocalReport()
@@ -1668,12 +1678,12 @@ RA:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
     end
 end)
 
-RA:RegisterEvent("READY_CHECK", function()
+InspectionEvent("READY_CHECK", function()
     -- Ready checks only fill holes. Existing GUID-matched reports are retained.
     RA:RequestInspectionScan("ready check", false)
 end)
 
-RA:RegisterEvent("INSPECT_READY", function(_, guid)
+InspectionEvent("INSPECT_READY", function(_, guid)
     if not RA:IsInspectionEnabled() then return end
     local item = inspectState.current
     if IsSecret(guid) or type(guid) ~= "string" or not item or guid ~= item.guid then
@@ -1685,13 +1695,13 @@ RA:RegisterEvent("INSPECT_READY", function(_, guid)
     C_Timer.After(0.02, ProcessInspectionQueue)
 end)
 
-RA:RegisterEvent("PLAYER_REGEN_DISABLED", function()
+InspectionEvent("PLAYER_REGEN_DISABLED", function()
     if not RA:IsInspectionEnabled() then return end
     resumeMissingAfterCombat = resumeMissingAfterCombat or inspectState.running or RA:HasMissingReports()
     RA:StopInspectionScan()
 end)
 
-RA:RegisterEvent("PLAYER_REGEN_ENABLED", function()
+InspectionEvent("PLAYER_REGEN_ENABLED", function()
     if not RA:IsInspectionEnabled() then return end
     if not manualPaused and not RA.InEncounter and (resumeMissingAfterCombat or RA:HasMissingReports()) then
         resumeMissingAfterCombat = false
@@ -1726,6 +1736,7 @@ RA:RegisterEvent("ENCOUNTER_END", function()
 end)
 
 RA:RegisterCallback("PROFILE_RESET", function()
+    SyncInspectionEvents()
     if not RA:IsInspectionEnabled() then
         resumeMissingAfterCombat = false
         RA:StopInspectionScan()

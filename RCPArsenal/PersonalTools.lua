@@ -19,6 +19,7 @@ local VALID_POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true,
     CENTER = true, RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
 
 local reminder, bounce, curve, curveThreshold, glowCurve35, resTimer
+local reminderEvents, resurrectionEvent = {}, nil
 local readinessTimer, readinessGeneration, lastExpiry = nil, 0, nil
 local reminderLabel, previewCaption
 local COMBAT_MODES = { BOTH = true, IN_COMBAT = true, OUT_OF_COMBAT = true }
@@ -174,6 +175,12 @@ end
 local function Enabled(key)
     local settings = Settings()
     return settings and settings[key] == true
+end
+
+local function SyncEventDemand()
+    local enabled = Enabled("consumableReminder") == true
+    for _, subscription in ipairs(reminderEvents) do subscription:SetEnabled(enabled) end
+    if resurrectionEvent then resurrectionEvent:SetEnabled(Enabled("autoRes") == true) end
 end
 
 local function Notify(option)
@@ -434,6 +441,7 @@ local function ScheduleExpiry(deadline, now, snapshot)
 end
 
 function Tools:Refresh(refreshInventory)
+    SyncEventDemand()
     CancelReadiness()
     -- Invalidate before visibility/life guards, without scanning hidden bags.
     if refreshInventory ~= false then inventory, lastExpiry = nil, nil end
@@ -763,16 +771,18 @@ end
 
 RA:RegisterInitializer(function() Tools:Refresh() end)
 RA:RegisterCallback("PROFILE_RESET", function() Tools:StopReminderPreview(); Tools:Refresh(); PositionReminder() end)
-RA:RegisterEvent("RESURRECT_REQUEST", RequestNormalRes)
-RA:RegisterEvent("ITEM_DATA_LOAD_RESULT", function(_, itemID, success)
+resurrectionEvent = RA:RegisterOptionalEvent("RESURRECT_REQUEST", RequestNormalRes)
+local function ReminderEvent(event, callback, unit)
+    reminderEvents[#reminderEvents + 1] = RA:RegisterOptionalEvent(event, callback, unit)
+end
+ReminderEvent("ITEM_DATA_LOAD_RESULT", function(_, itemID, success)
     if Enabled("consumableReminder") and Number(itemID) and not IsSecret(success) and success == true
         and inventory and inventory.pending and inventory.pending[itemID] then Tools:Refresh() end
 end)
 for _, event in ipairs({ "BAG_UPDATE_DELAYED",
     "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ALIVE",
     "PLAYER_DEAD", "PLAYER_UNGHOST" }) do
-    RA:RegisterEvent(event, function(eventName)
-        if eventName == "PLAYER_REGEN_DISABLED" then Tools:StopReminderPreview() end
+    ReminderEvent(event, function(eventName)
         if Enabled("consumableReminder") then
             Tools:Refresh(eventName == "BAG_UPDATE_DELAYED" or eventName == "PLAYER_ENTERING_WORLD")
         end
@@ -780,15 +790,16 @@ for _, event in ipairs({ "BAG_UPDATE_DELAYED",
 end
 -- Signals only: payloads are ignored. No bag enumeration on these events.
 for _, event in ipairs({"BAG_UPDATE_COOLDOWN", "ACTION_USABLE_CHANGED", "SPELL_UPDATE_USABLE", "PLAYER_LEVEL_UP"}) do
-    RA:RegisterEvent(event, function()
+    ReminderEvent(event, function()
         if Enabled("consumableReminder") then Tools:Refresh(false) end
     end)
 end
 for _, event in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH" }) do
-    RA:RegisterEvent(event, function(_, unit)
+    ReminderEvent(event, function(_, unit)
         if Enabled("consumableReminder") and not IsSecret(unit) and unit == "player" then ApplyHealthAlpha() end
-    end)
+    end, "player")
 end
+RA:RegisterEvent("PLAYER_REGEN_DISABLED", function() Tools:StopReminderPreview() end)
 
 -- Public viewport changes only: no health, readiness or bag work.
 for _, event in ipairs({"DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED"}) do
