@@ -81,10 +81,30 @@ def main():
                         help="Write a ZIP, checksum, and build manifest here")
     parser.add_argument("--label", default="local",
                         help="Filename label only; does not change the addon version")
+    parser.add_argument("--release-tag",
+                        help="Require a clean tagged commit matching the addon version")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.label):
         parser.error("--label must be filename-safe")
     payload, files, meta, load_order, unchanged = collect(args.check_baseline)
+    commit = git("rev-parse", "HEAD")
+    dirty = bool(git("status", "--porcelain", "--untracked-files=normal"))
+    if args.release_tag:
+        base_tag = "v" + meta["Version"]
+        baseline_suffix = args.release_tag.removeprefix(base_tag + "-")
+        if args.release_tag == base_tag:
+            args.label = "release"
+        elif (args.release_tag.startswith(base_tag + "-")
+              and re.fullmatch(r"baseline\.[1-9][0-9]*", baseline_suffix)):
+            if not unchanged:
+                raise ValueError("A baseline release must match every original addon byte")
+            args.label = baseline_suffix
+        else:
+            raise ValueError("Release tag does not match the TOC/Core version")
+        if dirty:
+            raise ValueError("Release builds require a clean working tree")
+        if git("rev-parse", f"refs/tags/{args.release_tag}^{{commit}}") != commit:
+            raise ValueError("Release tag must point at the checked-out commit")
     print(f"Validated {len(files)} payload files; {len(load_order)} TOC entries; "
           f"version {meta['Version']}; original baseline match: {unchanged}.")
     if args.output_dir is None:
@@ -112,8 +132,10 @@ def main():
     manifest = {
         "addon": "RCPArsenal", "addon_version": meta["Version"],
         "toc_interface": meta.get("Interface"), "package_label": args.label,
-        "git_commit": git("rev-parse", "HEAD"),
-        "git_worktree_dirty": bool(git("status", "--porcelain", "--untracked-files=normal")),
+        "git_commit": commit,
+        "git_worktree_dirty": dirty,
+        "release_tag": args.release_tag,
+        "original_source_zip_sha256": json.loads(BASELINE.read_text())["original_source_zip_sha256"],
         "original_baseline_match": unchanged, "zip": archive.name,
         "zip_sha256": digest, "toc_load_order": load_order, "files": files,
         "verification_scope": "Static manifest and payload validation; no Lua syntax or WoW runtime test",

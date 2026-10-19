@@ -1,0 +1,52 @@
+name: Publish alpha
+
+on:
+  push:
+    tags: ['v*-alpha*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'Jimfro22/RCPArsenal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a commit on main and versioned release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          test -f "docs/releases/$RELEASE_TAG.md"
+      - name: Test packaging safeguards
+        run: python3 -m unittest discover -s tests -v
+      - name: Build a clean tagged install ZIP
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 tools/package.py --output-dir dist --release-tag "$RELEASE_TAG"
+      - name: Upload all release assets to a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.zip dist/*.zip.sha256 dist/*.manifest.json \
+            --verify-tag --draft --prerelease --title "RCP Arsenal $RELEASE_TAG" \
+            --notes-file "docs/releases/$RELEASE_TAG.md"
+      - name: Publish the complete alpha release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false

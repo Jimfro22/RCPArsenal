@@ -6,7 +6,7 @@ The first commit imports all 49 original files. `provenance/baseline-0.14.1.json
 
 ## Validate and build
 
-Python 3 and Git are the only local packaging requirements. From this directory:
+Python 3.9 or newer and Git are the only local packaging requirements. From this directory:
 
 ```sh
 python3 tools/package.py --check-baseline
@@ -21,8 +21,10 @@ These checks validate versions, manifest references, source identity, and ZIP co
 
 - [Delivery plan](docs/DELIVERY_PLAN.md)
 - [Windows smoke test](docs/WINDOWS_SMOKE_TEST.md)
-- [Draft validation workflow](docs/ci/validate-package.yml.example)
+- [Alpha release process](docs/RELEASING.md)
+- [Packaging validation workflow](.github/workflows/validate-package.yml)
+- [Tagged alpha workflow](.github/workflows/release-alpha.yml)
 
-The draft workflow is inactive and creates workflow artifacts only when installed in a future remote repo. GitHub release publishing and CurseForge setup remain follow-up work. No remote is configured. The addon source has no supplied project license; the owner must choose its publication license. Do not copy Northern Sky code or package external addons into Arsenal.
+The public source destination is [Jimfro22/RCPArsenal](https://github.com/Jimfro22/RCPArsenal). Validation produces test artifacts, and pushed alpha tags produce prereleases with an install ZIP, checksum, and Git/file provenance. CurseForge setup is separate; no CurseForge upload is activated. The addon source has no supplied project license. Publication does not add a license grant; an open-source license remains an owner policy choice. Do not copy Northern Sky code or package external addons into Arsenal.
 
 Use the current Lua source for actual controls; inherited addon docs contain older click descriptions. Preserve the existing Obsidian Ember theme, artwork, local overlay positions, SavedVariables name, static-in-combat capability model, and role → class → spec → movement split priority.
