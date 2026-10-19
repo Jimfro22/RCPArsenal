@@ -40,7 +40,7 @@ r=S:Snapshot();check(r.potion==true and r.itemID==99999,'Audited use-spell famil
 for _,spec in ipairs({{0,1,999}, {0,1,1236648}, {0,1,1236994}, {0,1,1236616}, {2,1,1295247}}) do
     setup();put(99999);metadata[99999]={spec[1],spec[2]};cached[99999]=true;spells[99999]=spec[3]
     r=S:Snapshot();check(r.potion~=true and not r.itemID,'Unrelated family falsely healing')
-    if spec[3]==999 then check(r.potion==nil,'Unrecognized potion became zero') end
+    if spec[3]==999 then check(r.potion==nil and not r.pending[99999],'Cached unrecognized potion became zero or pending') end
 end
 for _,case in ipairs({'missing metadata','missing spell','uncached','secret count','missing count','secret class','secret id','failed id','failed info'}) do
     setup();put(99999);metadata[99999]={0,1};cached[99999]=true;spells[99999]=1295247

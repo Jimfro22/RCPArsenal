@@ -207,8 +207,9 @@ local function BuildCurve(threshold)
         value:SetType(Enum.LuaCurveType.Step)
         local boundary = threshold / 100
         -- Step promotes the next point on equality. Keep the boundary at 1,
-        -- then place 0 one float-precision step above it (the curve's native
-        -- point precision), so an exact threshold still displays the reminder.
+        -- then place 0 one expected binary32 precision step above it. Native
+        -- point readback checks the constant, not UnitHealth input precision;
+        -- threshold equality still needs target-client acceptance.
         local _, exponent = math.frexp(boundary)
         local above = boundary + math.ldexp(1, exponent - 24)
         value:AddPoint(0, 1)

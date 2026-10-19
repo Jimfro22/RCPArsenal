@@ -25,15 +25,15 @@ local function Kind(id)
     if not C_Item or type(C_Item.GetItemInfoInstant) ~= "function" then return "unknown" end
     local ok, _, _, _, _, _, class, subclass = pcall(C_Item.GetItemInfoInstant, id)
     class, subclass = Integer(class, 0, 100), Integer(subclass, 0, 100)
-    if not ok or not class or not subclass then return "unknown" end
+    if not ok or not class or not subclass then return "unknown", nil, true end
     -- Enum.ItemClass.Consumable = 0, Enum.ItemConsumableSubclass.Potion = 1.
     if class ~= 0 or subclass ~= 1 then return "other" end
     if type(C_Item.IsItemDataCachedByID) ~= "function" or type(C_Item.GetItemSpell) ~= "function" then return "unknown" end
     local cached, ready = pcall(C_Item.IsItemDataCachedByID, id)
-    if not cached or Secret(ready) or ready ~= true then return "unknown" end
+    if not cached or Secret(ready) or ready ~= true then return "unknown", nil, true end
     local got, _, spell = pcall(C_Item.GetItemSpell, id)
     spell = Integer(spell, 1, 2147483647)
-    if not got or not spell then return "unknown" end
+    if not got or not spell then return "unknown", nil, true end
     if healingSpells[spell] then return "potion", 100 end
     if otherSpells[spell] then return "other" end
     return "unknown"
@@ -66,10 +66,12 @@ function Supplies:Snapshot()
                     else
                         local entry = classification[id]
                         if not entry then
-                            local kind, rank = Kind(id)
-                            entry = { kind = kind, rank = rank }; classification[id] = entry
+                            local kind, rank, pending = Kind(id)
+                            entry = { kind = kind, rank = rank, pending = pending }; classification[id] = entry
                         end
-                        if entry.kind == "unknown" then unknownPotion = true; result.pending[id] = true
+                        if entry.kind == "unknown" then
+                            unknownPotion = true
+                            if entry.pending then result.pending[id] = true end
                         elseif entry.kind == "stone" or entry.kind == "potion" then
                             local infoOK, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
                             info = infoOK and not Secret(info) and type(info) == "table" and info or nil

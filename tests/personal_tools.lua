@@ -459,6 +459,24 @@ for _, mode in ipairs({"IN_COMBAT", "OUT_OF_COMBAT"}) do
     check(tools:GetState().itemID==nil and frames[2].strings[1].text=="OUT OF POTIONS" and frames[1].shown,
         "Mode re-entry reused removed item from hidden cache")
 end
+-- Only a relevant genuinely pending bag item can trigger data reconciliation.
+tools=loadTools();ready(99999)
+C_Item.GetItemInfoInstant=function(id) return id,nil,nil,nil,nil,0,1 end
+C_Item.IsItemDataCachedByID=function() return false end
+C_Item.GetItemSpell=function() return nil,1295247 end
+tools:SetOption("consumableReminder",true)
+local before=itemCalls
+for i=1,5 do events.ITEM_DATA_LOAD_RESULT("ITEM_DATA_LOAD_RESULT",100000+i,true) end
+check(itemCalls==before,"Unrelated item-data events rescanned bags")
+C_Item.IsItemDataCachedByID=function() return true end
+events.ITEM_DATA_LOAD_RESULT("ITEM_DATA_LOAD_RESULT",99999,true)
+check(itemCalls==before+1 and tools:GetState().itemID==99999,"Relevant pending result did not cause one needed refresh")
+events.ITEM_DATA_LOAD_RESULT("ITEM_DATA_LOAD_RESULT",99999,true)
+check(itemCalls==before+1,"Resolved item-data result rescanned again")
+C_Item.GetItemSpell=function() return nil,99999 end
+tools:Refresh();before=itemCalls
+events.ITEM_DATA_LOAD_RESULT("ITEM_DATA_LOAD_RESULT",99999,true)
+check(itemCalls==before,"Cached unrecognized potion was left pending")
 tools=loadTools()
 check(tools:SetOption("reminderStoneText", "|Tbad:60|t\nGo"), "Literal text option failed")
 check(tools:PreviewReminder("stone") and frames[2].strings[1].text == "||Tbad:60||t Go", "Message interpreted markup or retained newline")
