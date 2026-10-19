@@ -248,9 +248,9 @@ local function GetToolboxDB()
     if not db then return nil end
     db.leaderToolbox = db.leaderToolbox or {}
     local t = db.leaderToolbox
-    if t.enabled == nil then t.enabled = true end
+    if t.enabled == nil then t.enabled = false end
     if t.showForNonLeaders == nil then t.showForNonLeaders = true end
-    if t.showMissing == nil then t.showMissing = true end
+    if t.showMissing == nil then t.showMissing = false end
     t.closeDelay = math.max(0.15, math.min(3.0, tonumber(t.closeDelay) or CLOSE_DELAY_DEFAULT))
     t.tooltipDelay = math.max(0.20, math.min(2.5, tonumber(t.tooltipDelay) or 0.75))
     t.puckSize = math.floor(math.max(24, math.min(44, tonumber(t.puckSize) or PUCK_SIZE)) + 0.5)
@@ -613,7 +613,7 @@ local function RefreshMissingData()
         missingButton.count:SetText(tostring(missingData.total))
         local color = missingData.total == 0 and TC.success or TC.magenta
         missingButton.count:SetTextColor(color[1], color[2], color[3], color[4] or 1)
-        missingButton.label:SetText(missingData.total == 0 and "COVERED" or "MISSING")
+        missingButton.label:SetText(missingData.total == 0 and "PROVIDERS" or "MISSING")
     end
 
     if missingBadge then
@@ -696,7 +696,7 @@ local function LayoutMissingPanel()
     missingPanel.sectionTwo:Hide()
 
     if missingData.total == 0 then
-        missingPanel.empty:SetText("ALL MAJOR RAID BUFFS / DEBUFFS COVERED")
+        missingPanel.empty:SetText("ALL MAJOR PROVIDER CLASSES PRESENT")
         missingPanel.empty:SetTextColor(TC.success[1], TC.success[2], TC.success[3], 1)
         missingPanel.empty:Show()
         SetHeight(missingPanel, 82)
@@ -1626,6 +1626,13 @@ local function TryStartMode(mode, allowScan, sourceButton)
     if plan then StartSortFromPlan(plan, sourceButton); return end
 
     if err == "unknown roles" and unknown and #unknown > 0 then
+        if not RA:IsInspectionEnabled() then
+            pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
+            SetActionButtonState(sourceButton, "NEED SPEC", "WARNING")
+            ResetActionButtonSoon(sourceButton, 3.5)
+            RA:Print("This layout needs specialization data. Enable Capability HUD + talent inspection on My tools to collect it.")
+            return
+        end
         pendingMode = mode
         pendingSourceButton = sourceButton
         pendingUnknownCount = #unknown
@@ -1732,8 +1739,7 @@ local function UpdateVisibility()
     -- opt to hide it unless they are raid lead/assist; privileged actions are
     -- still independently permission-gated when the bar is visible.
     local canSeeAsMember = IsInRaid() and ((db and db.showForNonLeaders ~= false) or IsLeaderOrAssistant())
-    local shouldShow = db and db.enabled ~= false and (demoVisible or canSeeAsMember)
-    local becameVisible = shouldShow and not toolboxWasVisible
+    local shouldShow = db and db.enabled == true and (demoVisible or canSeeAsMember)
     toolboxWasVisible = shouldShow and true or false
 
     if shouldShow then
@@ -1746,13 +1752,13 @@ local function UpdateVisibility()
         RefreshAccessAppearance()
         RefreshMissingData()
         RefreshPanicButton()
-        if becameVisible and IsInRaid() and IsLeaderOrAssistant() and RA.ScheduleInspectionScan then
-            RA:ScheduleInspectionScan("raid leader toolbox", 0.20, false)
-        end
     else
         if sortState.active then StopSort("Raid sorting stopped.", "WARNING") end
         pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
-        CloseDock()
+        CloseDock(true)
+        dockPinned = false
+        if puck.pinDot then puck.pinDot:Hide() end
+        if missingBadge then missingBadge:Hide() end
         puck:Hide()
         RefreshPanicButton()
     end
@@ -2203,6 +2209,7 @@ end)
 RA:RegisterEvent("PLAYER_REGEN_ENABLED", UpdateVisibility)
 
 RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+    if GetToolboxDB().enabled ~= true then return end
     C_Timer.After(0.35, function()
         if RA.Initialized then
             -- The anchor persists through zone/loading transitions; update
@@ -2217,7 +2224,7 @@ RA:RegisterCallback("REPORTS_UPDATED", function()
     RefreshMissingData()
     if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end
 
-    if pendingMode and not sortState.active and not InCombatLockdown() then
+    if pendingMode and RA:IsInspectionEnabled() and not sortState.active and not InCombatLockdown() then
         local plan, err, unknown = BuildSortPlan(pendingMode)
         if plan then
             StartSortFromPlan(plan, pendingSourceButton or sortButton)

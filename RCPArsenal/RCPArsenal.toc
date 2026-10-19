@@ -8,14 +8,19 @@
 ## Category-enUS: Raid
 
 Core.lua
+Assets.lua
 Media.lua
 Theme.lua
 Layout.lua
 Catalog.lua
 ProfileIO.lua
 WorldMarkers.lua
+AddonCatalog.lua
+Readiness.lua
+PersonalTools.lua
 Inspect.lua
 RaidLeader.lua
 UI.lua
+HubUI.lua
 Config.lua
 Commands.lua

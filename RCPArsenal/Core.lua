@@ -763,11 +763,13 @@ function RA:ApplyImportedProfile(profile)
         return false
     end
 
+    -- Normalize donor settings before restoring local intent. Old schema
+    -- migrations must never undo switches explicitly chosen on this client.
+    MigrateProfile(profile)
     local current = RaidArsenalDB and RaidArsenalDB.profile or nil
     if current then
-        -- Portable profiles intentionally do not move or unexpectedly reveal
-        -- another user's HUD. Keep only local placement/visibility while
-        -- allowing portable Raid Leader Dock preferences to import normally.
+        -- Portable appearance/content preferences do not change local tool
+        -- activation, targets, placement, or marker/keybinding choices.
         profile.position = current.position
         profile.positionAnchorVersion = current.positionAnchorVersion
         profile.shown = current.shown
@@ -794,7 +796,6 @@ function RA:ApplyImportedProfile(profile)
         profile.leaderToolbox.positionAnchorVersion = currentToolbox.positionAnchorVersion
     end
 
-    MigrateProfile(profile)
     RaidArsenalDB.profile = profile
     if self.Theme and self.Theme.SetAccentPreset then
         self.Theme:SetAccentPreset(profile.accentPreset, false)

@@ -85,7 +85,7 @@ local function click(frame, down)
 end
 RaidArsenalDB = {profile = {schemaVersion = 17}}
 local RA, cycle, clear = loadAddon()
-check(RA.PROFILE_SCHEMA == 18, 'Schema migration missing')
+check(RA.PROFILE_SCHEMA == 19, 'Schema migration missing')
 check(not RA:GetDB().worldMarkers.enabled and #RA:GetDB().worldMarkers.order == 8, 'Legacy profile must start off')
 check(cycle:GetAttribute('type') == nil and clear:GetAttribute('type') == nil, 'Disabled actions armed')
 check(cycle.width == 1 and cycle.height == 1 and cycle.mouse == false, 'Action frames must be quiet and mouse-transparent')

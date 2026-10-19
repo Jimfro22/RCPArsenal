@@ -1,279 +1,37 @@
-# RCP Arsenal — v0.14.2-alpha.1
+# RCP Arsenal — 0.15.0-alpha.1
 
-## Optional world marker cycler
+Open **`/rcp`** for Morning Brew. The four sections are **Addons**, **My tools**, **Raid tools**, and **Settings**. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
 
-Open **Quick Bar → World markers** or `/rcpa markers`. The new tool starts off with no assigned keys and adds no login overlay. Click the eight-marker palette to build a unique numbered order; select a slot to move or remove it. An empty order stays empty and disables placement.
+## Quiet startup
 
-Enable the tool when ready, then use **Open Key Bindings → AddOns → RCP Arsenal — World markers** to assign **Place next world marker** and **Clear all world markers**. Blizzard owns conflicts, account/character binding choices, and saved keys. Arsenal never assigns or overrides keys. Disabling makes both actions inactive but retains your chosen bindings; unbind them in Blizzard settings if you want those keys for another action.
+Fresh and reset profiles start with optional tools off. The one-time schema-19 migration turns inherited HUD/demo/scan/Quick Bar/callout defaults off while retaining content choices, templates, appearance, and positions. Existing schema-18 world-marker opt-in and order are preserved. Choices you make after this migration persist.
 
-Each hardware press attempts the next ground marker at your cursor and wraps after the last slot. Ground markers are different from target/unit icons. Clear all removes world markers and restarts the local sequence without changing your order. Enabling, changing the order, and reloading also restart at slot 1. An attempt advances even if Blizzard rejects placement due to permission or terrain.
+**My tools → Capability HUD + talent inspection** is the explicit inspection switch. Switching it off stops the scan queue. Quick Bar is independent and does not start scans. Opening settings or resetting an overlay position does not enable it. Imported profiles preserve local tool switches, positions, marker order, and addon comparison targets.
 
-Setup changes apply outside combat. Unexpected profile changes during combat are deferred, with the current effective state reported until combat ends. Reloading during combat defers initialization and keys may remain unavailable until combat ends. In raids, placement and clearing require leader or assist; the game checks other restrictions.
+## Addons and group versions
 
-This alpha uses source-reviewed secure actions and has offline syntax/logic checks. Actual cursor placement, binding dispatch, group permissions, and combat behavior still need Windows WoW testing. Existing HUD defaults and raid engines are unchanged. UniversalMarkerCycler is only a behavior reference; none of its source is bundled.
+The shelf detects Arsenal, Northern Sky Raid Tools, RCLootCouncil, Simulationcraft, WowUtils, AutoPotion, and BigWigs. Installed, configured enabled, loaded, and version are separate facts. An enabled addon may still be unloaded; an addon disabled pending reload may still be running. Links are for manual copying into your browser. Arsenal never installs or updates other addons.
 
+On **Raid tools**, select an addon, enter an exact local target, or deliberately capture your enabled addon versions. These account-local profile targets are your comparison baseline, not a claim about the latest web release or a shared guild policy. Capturing skips missing, disabled, and unknown versions without erasing previous targets.
 
-## v0.14.1 highlights
+A party/raid leader or assistant can click **Check group versions** outside combat and communication restrictions. Other players need Arsenal running to report their local metadata; their optional tools can all be off. Non-response is unknown, offline stays offline, and missing requires an explicit valid reply. Partial replies and unknown versions are not treated as success. Ordered numeric versions distinguish older/newer; suffixes and incompatible schemes use exact-match/different states. Snapshots expire visibly and roster changes invalidate remote results. No periodic network query runs.
 
-### Smarter raid splits
+## Personal tools
 
-Split planning now uses a strict priority ladder:
+**Accept normal resurrection** is off by default. It requests acceptance only outside detected player, pet, group combat, and encounters, with a second safety check after deferral. Combat/encounter offers and unknown states stay manual. The event does not identify the offered spell; this is conservative combat exclusion, not universal battle-res spell classification.
 
-1. **Roles first** — Tanks, Healers, Melee DPS, and Ranged DPS are split as evenly as mathematically possible.
-2. **Classes second** — duplicate classes are spread across the two sides whenever role balance allows, helping distribute class buffs and utility such as gateways/debuff coverage.
-3. **Specs third** — duplicate specializations are split after class balance is already optimal.
-4. **Movement last** — only after the above priorities are tied does the planner prefer keeping players on their current side/group.
+**Healthstone / potion reminder** is an experimental, independent opt-in visual. It prefers a present, usable, ready Healthstone, then a known health potion. It uses a native health curve directly for alpha and performs no health-value arithmetic or branching in Lua. It never uses an item or presses a key. **Press your item/macro key yourself.** Dead/ghost/unknown life state suppresses the reminder. Unsupported or restricted item data shows nothing.
 
-After a split fully finishes, players whose **side** changed are whispered their old and new side. Players moved only between groups on the same side are not whispered.
+The threshold is editable (initial implementation default 40%). **Preview**, **Move**, **Stop**, and **Reset** let you arrange a separate labeled sample without enabling the live reminder. Moving saves the position; closing/navigating away from the hub removes the sample. Native threshold equality and raid item behavior still need client validation.
 
-### Cold-login icon repair
+## Existing raid tools
 
-A true game launch can make custom addon artwork or spell icons initialize before WoW has fully settled its media/spell state. v0.14 performs two one-shot visual refreshes after `PLAYER_LOGIN`, reapplying custom textures, the Panic `!` glyph, and HUD spell icons. This does not add permanent polling and does not change `/reload` behavior.
+The HUD lists pre-pull capability ownership and freezes its encounter snapshot; it does not track live cooldown availability. Quick Bar retains ready checks/countdowns, sorting, and role → class → spec → movement split priority. Layouts needing unknown specializations explain the inspection dependency. Major coverage means provider-class presence, not active buff/debuff aura coverage.
 
-## v0.13.4 highlights
+The optional world-marker cycler is under **My tools → World markers** or `/rcp markers`. Configure a unique numbered order outside combat, enable it, and assign native **AddOns → RCP Arsenal — World markers** bindings for **Place next world marker** and **Clear all world markers**. Each hardware press attempts the next cursor ground marker and wraps. Clear restarts the sequence without changing its order. Empty order disables placement. Disable retains Blizzard-owned keys but makes actions inactive. The game enforces permissions and terrain; a rejected attempt can still advance the local sequence.
 
-- Quick Bar now has **Show when not Leader/Assist** under Settings -> Quick Bar.
-- The setting defaults ON, preserving the always-visible-in-raid behavior from v0.13.3.
-- Turning it OFF automatically hides the puck unless you are raid leader or assistant.
-- Restricted Quick Bar actions remain permission-gated regardless of visibility.
+## Install and test
 
+Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.0-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
 
-## v0.13.3 highlights
-
-### Quick Bar visible for all raid members
-
-- The checkmark puck now remains visible to every raid member, not only raid leaders/assistants.
-- **Middle click** pin/unpin and missing-coverage viewing remain usable by everyone.
-- Raid-leader-only actions stay protected:
-  - **Left click puck:** countdown / cancel
-  - **Right click puck:** ready check
-  - **Sort / Split:** raid subgroup changes
-- Sort and Split are dimmed when unavailable. Clicking a restricted action gives a clear `raid lead or assist required` message instead of silently failing.
-- Tooltips identify which actions require raid lead/assist.
-
-## v0.13.1 highlights
-
-### Puck pull countdown
-
-- Left-click the Quick Bar puck to start the configured player countdown (15 seconds by default), equivalent to `/countdown <seconds>`.
-- Left-click again before that countdown window ends to cancel it, equivalent to `/countdown 0`.
-- The puck itself does not animate or change appearance.
-- Configure the duration under **Quick Bar -> Puck Countdown**.
-- Dragging the puck never starts or cancels a countdown.
-
-## v0.13 highlights
-
-v0.13 is the Raid Leader Quick Bar interaction pass. It keeps the stable-anchor work from v0.12.1 and finishes the current usability queue without adding any in-combat cooldown tracking.
-
-### Quick Bar launcher
-
-The launcher now uses a simplified **RCP checkmark-only** asset. The hexagon and `R / P` lettering were removed from the tiny puck because they did not survive WoW's small-texture rendering cleanly.
-
-The puck supports:
-
-- **Hover:** open the Quick Bar immediately.
-- **Middle click:** pin/unpin the Quick Bar.
-- **Right click:** start a Ready Check when you have raid lead/assist permission.
-- **Mouse leave:** close after the configured grace delay.
-- **Click anywhere outside the puck, bar, or active flyout:** close immediately.
-
-A small magenta pin dot appears while the bar is pinned.
-
-### Missing-coverage badge
-
-The badge occupying the old Panic-button position is now the number of missing major raid buffs/debuffs:
-
-- **0 missing:** badge hidden.
-- **1-2 missing:** amber treatment.
-- **3+ missing:** urgent treatment.
-
-Hovering the badge opens the Quick Bar and missing-coverage panel. Only missing entries are listed.
-
-### Panic belongs to the encounter HUD
-
-The emergency **!** control no longer overlaps the Quick Bar puck. It is attached immediately beside the first visible ability category instead.
-
-One hardware click sends exactly one preconfigured Raid Warning:
-
-```text
-PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!
-```
-
-There is no mass-whisper fan-out.
-
-### Undo Last Raid Sort
-
-Before RCP Arsenal starts a successful subgroup arrangement, it stores the eligible raid members' original subgroups for the current session.
-
-Right-click **Sort** to open Sort Options and choose:
-
-```text
-UNDO LAST SORT
-```
-
-Undo is intentionally conservative. It refuses when the relevant roster changed or when the operation is not safe to perform. Undo is out-of-combat only, like every subgroup mutation.
-
-### Direction controls
-
-The UI can now grow away from its anchor in different directions.
-
-**Quick Bar flyout direction:**
-
-- Auto
-- Right
-- Left
-- Down
-- Up
-
-**Main HUD direction:**
-
-- Auto
-- Right
-- Left
-- Down
-- Up
-
-`Auto` chooses the side with the most available screen space. The default HUD direction remains **Right** so existing layouts do not unexpectedly flip after upgrading.
-
-### Lower overlay strata
-
-The mover tab, Quick Bar, badge, and flyouts use normal HUD-level strata rather than sitting above major Blizzard dialogs such as the Group Finder.
-
-### Dedicated Quick Bar settings page
-
-The sidebar now presents **Quick Bar** directly under HUD. This page owns launcher/flyout preferences:
-
-- Enable Quick Bar
-- Missing raid coverage badge
-- Flyout direction
-- Puck size
-- Tooltip delay
-- Mouse-out close delay
-- Reset Quick Bar position
-
-The page also documents middle-click pinning, right-click settings, click-away dismissal, and badge severity.
-
-### Delayed help tooltips
-
-Quick Bar control help and Panic help do not appear immediately. They use the configurable tooltip delay and cancel if the pointer leaves before the delay expires.
-
-### Stable positioning retained
-
-The main capability HUD and Quick Bar puck still use dedicated unscaled UIParent anchors. Scan completion, category wrapping, world transitions, frame-size changes, and Quick Bar geometry changes do not intentionally rewrite the saved anchor position.
-
-## Existing Quick Bar tools
-
-### Sort
-
-- **Left click:** Tanks -> Melee -> Ranged -> Healers.
-- **Right click:** Sort Options, including Undo Last Sort.
-
-### Split
-
-- **Left click:** balanced odd/even split.
-- **Right click:** balanced G1+G2 / G3+G4-style adjacent split.
-
-### Missing
-
-Shows missing major raid composition coverage.
-
-Current coverage list:
-
-**Buffs**
-- Mark of the Wild
-- Blessing of the Bronze
-- Devotion Aura — 3% damage reduction
-- Arcane Intellect
-- Power Word: Fortitude
-- Skyfury
-- Battle Shout
-
-**Debuffs**
-- Hunter's Mark — target takes 3% increased damage
-- Chaos Brand
-- Mystic Touch
-
-Coverage means an online provider class exists in a tracked raid group. It does **not** mean the buff/debuff is currently applied.
-
-## Capability tile callouts
-
-Left click uses exactly one configured primary channel:
-
-- **Whisper** — default
-- **Say**
-- **Off**
-
-Say and Whisper are mutually exclusive so one ability click cannot generate two chat lines. Right click remains optional Raid Warning.
-
-## Product scope
-
-RCP Arsenal tells a raid leader what the tracked raid **brought** and who owns each tool. During an encounter the capability list is a static reference plus user-driven secure callouts. It does not infer remote cooldown readiness, usage, or remaining cooldown time.
-
-## Installation
-
-Delete the existing addon folder and extract the new `RCPArsenal` folder into:
-
-```text
-World of Warcraft/_retail_/Interface/AddOns/
-```
-
-Then:
-
-```text
-/reload
-/rcpa config
-```
-
-SavedVariables remains `RaidArsenalDB`, so existing profiles and inspection reports migrate forward.
-
-## Commands
-
-```text
-/rcpa                 open settings
-/rcpa config          open settings
-/rcpa show            show capability HUD
-/rcpa hide            hide capability HUD
-/rcpa recover         recover/recenter HUD
-/rcpa scan            scan missing/stale players
-/rcpa rescan          force tracked-roster rescan
-/rcpa clearcache      clear inspection reports
-/rcpa pause           pause inspection queue
-/rcpa resume          resume inspection queue
-/rcpa compact         Compact HUD mode
-/rcpa detailed        Detailed HUD mode
-/rcpa scale 125       set overall HUD scale
-/rcpa demo            toggle demo mode
-/rcpa demoscan        toggle demo scan strip
-/rcpa export          export portable settings
-/rcpa import          import portable settings
-/rcpa status          print scan coverage
-/rcpa sort            normal role sort
-/rcpa split           odd/even balanced split
-/rcpa groupsplit      adjacent-half balanced split
-/rcpa missing         open missing coverage
-```
-
-Legacy aliases `/arsenal` and `/raidarsenal` remain available.
-
-## Expressway font
-
-Font files are **not distributed** with RCP Arsenal. Expressway is used when available through LibSharedMedia or when the user supplies their own licensed local copies. Blizzard Arial Narrow remains the fallback.
-
-## v0.13 live-test checklist
-
-1. Hover the checkmark puck and confirm the dock opens immediately.
-2. Middle-click the puck and confirm the dock remains pinned; middle-click again to release it.
-3. Right-click the puck and confirm Settings opens directly to Quick Bar.
-4. Open the dock, click elsewhere in the game world, and confirm it dismisses immediately.
-5. Move out normally without clicking and confirm the configured close delay still applies.
-6. Confirm the missing badge hides at zero, is amber at 1-2, and becomes urgent at 3+.
-7. Confirm Panic appears beside the first visible ability category rather than on the puck.
-8. Right-click Sort, run a real arrangement, then test Undo Last Sort.
-9. Test Quick Bar flyout directions near several screen edges.
-10. Test HUD direction changes without the saved position creeping after scans/reloads/zoning.
-11. Open Group Finder and confirm the mover/Quick Bar do not render over the major Blizzard window.
-12. Confirm no full roster rescan occurs solely because of this update.
-
-## Alpha status
-
-All packaged Lua files are syntax-checked before release. Real-client verification is still required for protected subgroup operations, secure chat delivery, click-away timing, direction behavior at unusual UI scales, and Blizzard-window strata interactions.
+Offline Lua, packaging, and source reviews do not establish native rendering, secure hardware dispatch, taint, communication, resurrection acceptance, or combat behavior. Follow the release's Windows validation checklist before treating this alpha as accepted. External addons remain separately installed; none is bundled or controlled through an unverified adapter.

@@ -7,7 +7,7 @@ RA.AddonCatalog = Catalog
 Catalog.Entries = {
     { id = "arsenal", name = "RCP Arsenal", priority = "Core", folders = { "RCPArsenal" },
       description = "The raid's shared setup hub and passive readiness reporter.",
-      url = "https://www.readycheckpull.com", source = "RCPArsenal.toc", internal = true },
+      url = "https://github.com/Jimfro22/RCPArsenal/releases", source = "RCPArsenal.toc", internal = true },
     { id = "northernsky", name = "Northern Sky Raid Tools", priority = "Core", folders = { "NorthernSkyRaidTools" },
       description = "Raid reminders, assignments, and encounter tools from Northern Sky.",
       url = "https://www.curseforge.com/wow/addons/northern-sky-raid-tools",

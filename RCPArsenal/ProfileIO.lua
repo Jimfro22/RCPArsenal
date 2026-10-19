@@ -164,7 +164,7 @@ function RA:ExportProfileString()
     AddField(fields, "scan.demoPreview", Bool(scan.demoPreview ~= false))
 
     local actions = db.actions or {}
-    AddField(fields, "actions.leftClickMode", actions.leftClickMode or "WHISPER")
+    AddField(fields, "actions.leftClickMode", actions.leftClickMode or "OFF")
     AddField(fields, "actions.sayEnabled", Bool(actions.leftClickMode == "SAY"))
     AddField(fields, "actions.whisperEnabled", Bool(actions.leftClickMode == "WHISPER"))
     AddField(fields, "actions.raidWarningEnabled", Bool(actions.raidWarningEnabled ~= false))

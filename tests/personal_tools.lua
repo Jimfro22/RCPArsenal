@@ -107,6 +107,7 @@ function CreateFrame(kind, name, parent, template)
     function frame:SetPoint(...) self.point = { ... } end
     function frame:ClearAllPoints() self.point = nil end
     function frame:EnableMouse(value) check(value == false or sample, "Live visual cannot capture clicks"); self.mouse = value end
+    function frame:SetFrameLevel(value) self.frameLevel = value end
     function frame:SetFrameStrata(value) end
     function frame:SetMovable(value) check(sample and value == true, "Only explicit sample can move") end
     function frame:SetClampedToScreen(value) check(sample and value == true, "Only explicit sample can clamp") end

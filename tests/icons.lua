@@ -293,4 +293,10 @@ check(pending() == 0 and scanCalls == 0, 'Manual visual callback scheduled engin
 -- Reusing an already registered texture must not continually restart retries.
 RA:RegisterVisualTexture(cold, cold.__raAssetPath or 'Interface\\AddOns\\RCPArsenal\\Media\\DockSort', 134400, 'LINEAR')
 check(pending() == 0, 'Identical registration restarted exhausted recovery')
+-- A repeated layout while the parent HUD is already hidden must not expose
+-- its separately UIParent-owned PANIC control.
+combat = false
+db.hideWhenSolo, db.demoMode = true, false
+RA:RefreshHUD(); RA:RefreshHUD()
+check(not named.RCPArsenalHUD:IsShown() and not panic:IsShown(), 'Repeated hidden HUD layout exposed PANIC alone')
 print('PASS: ' .. checks .. ' asset/font/actual-frame assertions (offline Lua harness; no WoW runtime claim)')
