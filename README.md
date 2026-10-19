@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for the Morning Brew raid hub. The current feature alpha is **0.15.1-alpha.1**: a quiet `/rcp` hub, honest local addon shelf, leader version matrix, cold-login visual recovery, opt-in personal tools, and guarded stock Northern Sky setup. Profile schema is 19; original assets/history and the prior marker alpha remain preserved.
+This is the editable source checkout for the Morning Brew raid hub. The current feature alpha is **0.15.2-alpha.1**: a quiet `/rcp` hub, honest local addon shelf, leader version matrix, cold-login visual recovery, opt-in personal tools, and guarded stock Northern Sky setup, and bounded inspection snapshots across reload/login. Profile schema is 19; original assets/history and the prior marker alpha remain preserved.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
@@ -19,6 +19,7 @@ Packaging checks validate versions, manifest references, and ZIP contents. CI al
 
 ## Delivery documents
 
+- [Inspection cache Windows tests](docs/INSPECTION_CACHE_WINDOWS_TESTS.md)
 - [Delivery plan](docs/DELIVERY_PLAN.md)
 - [Northern Sky adapter contract](docs/NSRT_ADAPTER_CONTRACT.md)
 - [Northern Sky Windows tests](docs/NSRT_WINDOWS_TESTS.md)

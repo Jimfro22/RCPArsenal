@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.1-alpha.1"
+RA.VERSION = "0.15.2-alpha.1"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -625,14 +625,43 @@ end
 
 function RA:GetFullUnitName(unit)
     local name, realm = UnitFullName(unit)
-    if not name then
+    if (issecretvalue and (issecretvalue(name) or issecretvalue(realm))) or type(name) ~= "string" or name == "" then
         return nil
     end
-
-    if realm and realm ~= "" then
+    if not realm or realm == "" then
+        realm = GetNormalizedRealmName and GetNormalizedRealmName() or (GetRealmName and GetRealmName())
+        if issecretvalue and issecretvalue(realm) then return nil end
+        if type(realm) == "string" then realm = realm:gsub("%s", "") end
+    end
+    if type(realm) == "string" and realm ~= "" then
         return name .. "-" .. realm
     end
     return name
+end
+
+function RA:FormatInspectionEvidenceSummary(summary)
+    summary = summary or self:GetScanSummary()
+    return string.format("%d confirmed · %d cached · %d unknown", summary.confirmed or summary.inspected or 0, summary.cached or 0, summary.unknown or 0)
+end
+
+function RA:GetInspectionEvidenceText(report)
+    if not report then return "Specialization and talents unknown." end
+    if report.source == "DEMO" then return "Demo data." end
+    local cached = report.cached == true or report.source == "PERSISTED_CACHE"
+    local text = cached and "Saved inspection; not confirmed this session."
+        or (report.sessionVerified == true and (report.originalSource == "LOCAL" and "Observed locally this session." or "Inspected this session.") or "Inspection evidence unavailable.")
+    local stamp = report.confirmedAt
+    if type(stamp) == "number" and not (issecretvalue and issecretvalue(stamp)) and stamp > 0 then
+        local clock = GetServerTime or time
+        local ok, now = false, nil
+        if clock then ok, now = pcall(clock) end
+        if ok and type(now) == "number" and not (issecretvalue and issecretvalue(now)) and now >= stamp then
+            local age = now - stamp
+            local elapsed = age < 60 and "under 1m" or (age < 3600 and (math.floor(age / 60) .. "m") or (age < 86400 and (math.floor(age / 3600) .. "h") or (math.floor(age / 86400) .. "d")))
+            text = text .. " Last confirmed " .. elapsed .. " ago."
+        end
+    end
+    return text .. " Talents may have changed; /rcp rescan refreshes them."
 end
 
 function RA:GetShortName(fullName)

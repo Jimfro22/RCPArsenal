@@ -1,4 +1,4 @@
-# RCP Arsenal — 0.15.1-alpha.1
+# RCP Arsenal — 0.15.2-alpha.1
 
 Open **`/rcp`** for Morning Brew. The four sections are **Addons**, **My tools**, **Raid tools**, and **Settings**. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
 
@@ -7,6 +7,14 @@ Open **`/rcp`** for Morning Brew. The four sections are **Addons**, **My tools**
 Fresh and reset profiles start with optional tools off. The one-time schema-19 migration turns inherited HUD/demo/scan/Quick Bar/callout defaults off while retaining content choices, templates, appearance, and positions. Existing schema-18 world-marker opt-in and order are preserved. Choices you make after this migration persist.
 
 **My tools → Capability HUD + talent inspection** is the explicit inspection switch. Switching it off stops the scan queue. Quick Bar is independent and does not start scans. Opening settings or resetting an overlay position does not enable it. Imported profiles preserve local tool switches, positions, marker order, and addon comparison targets.
+
+## Inspections across reload and login
+
+A successful scan now saves the last useful spec/talent snapshot outside portable profiles. The first scan in this build seeds it. Matching GUID, qualified name/realm, class and catalog data restore before HUD reconciliation. Storage is capped at 160 entries and 30 days from the original observation; a normal reload does not renew the age or force a new inspection.
+
+**C** on compact tiles and **[C]** on detailed names mark cached providers. Tooltips show their original age; status separates confirmed-this-session, cached and unknown facts. Cached talents may have changed. Automatic scans target genuinely new, missing or positively changed members, while unknown startup APIs do not erase a compatible snapshot. Off and puck-only still do no inspection work.
+
+Use **`/rcp scan`** for holes, **`/rcp rescan`** or **Full Rescan** to confirm tracked members again, and **`/rcp clearcache`** to deliberately forget saved reports and scan. A failed manual refresh does not turn historical data into fresh evidence. Existing sorting/splitting can reuse the same compatible last-known specs after reload, with a saved-data notice. Known changes and genuinely missing/invalid records still need refresh; reload alone does not add a new full-rescan requirement.
 
 ## Addons and group versions
 
@@ -42,6 +50,6 @@ The optional world-marker cycler is under **My tools → World markers** or `/rc
 
 ## Install and test
 
-Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.1-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
+Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.2-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
 
 Offline Lua, packaging, and source reviews do not establish native rendering, secure hardware dispatch, taint, communication, resurrection acceptance, or combat behavior. Follow the release's Windows validation checklist before treating this alpha as accepted. External addons remain separately installed; none is bundled or controlled through an unverified adapter.

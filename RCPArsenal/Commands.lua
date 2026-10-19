@@ -11,7 +11,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
     print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
     print("  |cff3aa7ff/rcp rescan|r - force a full tracked-roster refresh")
-    print("  |cff3aa7ff/rcp clearcache|r - clear inspected roster data and scan again")
+    print("  |cff3aa7ff/rcp clearcache|r - clear saved inspections and scan again")
     print("  |cff3aa7ff/rcp pause|r or |cff3aa7ff/rcp resume|r - pause/resume the inspect queue")
     print("  |cff3aa7ff/rcp compact|r or |cff3aa7ff/rcp detailed|r - change HUD mode")
     print("  |cff3aa7ff/rcp scale 125|r - set overall HUD scale from 75 to 200 percent")
@@ -67,7 +67,7 @@ local function PrintStatus()
     elseif running then
         extra[#extra + 1] = currentName and ("scanning " .. RA:GetShortName(currentName)) or "scanning"
     end
-    if summary.inspected > 0 then extra[#extra + 1] = summary.inspected .. " inspected" end
+    extra[#extra + 1] = RA:FormatInspectionEvidenceSummary(summary)
     if summary.filtered > 0 then extra[#extra + 1] = summary.filtered .. " class-skipped" end
     if summary.ignored > 0 then extra[#extra + 1] = summary.ignored .. " ignored" end
     if summary.pending > 0 then extra[#extra + 1] = summary.pending .. " pending" end
@@ -76,7 +76,7 @@ local function PrintStatus()
     if summary.failed > 0 then extra[#extra + 1] = summary.failed .. " failed" end
 
     local suffix = #extra > 0 and (" · " .. table.concat(extra, " · ")) or ""
-    RA:Print(string.format("%d/%d tracked players inspected%s.", ready, total, suffix))
+    RA:Print(string.format("%d/%d tracked players resolved%s. Cached talents may have changed; /rcp rescan refreshes them.", ready, total, suffix))
 end
 
 local function HandleSlash(raw)

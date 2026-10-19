@@ -21,6 +21,8 @@ RA.FrozenVerifiedCount = nil
 RA.InspectFailures = {}
 RA.InspectStatus = {}
 RA.IgnoredRosterCount = 0
+local Cache = RA.InspectionCache
+local reportRevisions = {}
 
 local INSPECT_INTERVAL_MIN = 0.55
 local INSPECT_INTERVAL_DEFAULT = 0.70
@@ -39,6 +41,7 @@ local scanRestartPending = false
 local scanRestartFull = false
 local resumeMissingAfterCombat = false
 local manualPaused = false
+local localTalentSignal = false
 
 local inspectState = {
     running = false,
@@ -57,6 +60,49 @@ local function IsSecret(value)
     return issecretvalue and issecretvalue(value) or false
 end
 
+local function KnownClass(value)
+    if Cache then return Cache:IsKnownClass(value) end
+    return not IsSecret(value) and type(value) == "string" and value ~= "" and value ~= "UNKNOWN"
+end
+local function KnownRole(value)
+    return not IsSecret(value) and (value == "TANK" or value == "HEALER" or value == "DAMAGER")
+end
+local function Epoch() return Cache and Cache:Now() or (time and time()) end
+local function UnitNameWithRealm(unit, allowSaved)
+    if UnitFullName then
+        local base, realm = UnitFullName(unit)
+        if IsSecret(base) or IsSecret(realm) then return nil end
+        if type(base) == "string" and base ~= "" and (realm == nil or realm == "") then
+            local guid = UnitGUID(unit)
+            local previous = Cache and (allowSaved == true or RA:IsInspectionEnabled()) and Cache:ResolveName(guid, base)
+            if previous then return previous end
+            if not IsSecret(guid) and type(guid) == "string" then
+                for name, info in pairs(RA.Roster or {}) do
+                    if info.guid == guid and name:match("^([^%-]+)%-") == base then return name end
+                end
+            end
+        end
+    end
+    local name = RA:GetFullUnitName(unit)
+    if IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    if name:find("-", 1, true) then return name end
+    local realm = GetNormalizedRealmName and GetNormalizedRealmName() or (GetRealmName and GetRealmName())
+    if IsSecret(realm) or type(realm) ~= "string" or realm == "" then return nil end
+    return name .. "-" .. realm:gsub("%s", "")
+end
+function RA:GetInspectionUnitName(unit, allowSaved)
+    return UnitNameWithRealm(unit, allowSaved)
+end
+local function InvalidateGUID(guid)
+    if IsSecret(guid) or type(guid) ~= "string" then return end
+    reportRevisions[guid] = (reportRevisions[guid] or 0) + 1
+    if Cache then Cache:Invalidate(guid) end
+end
+local function ObservedSpec(unit)
+    if not C_SpecializationInfo or type(C_SpecializationInfo.GetInspectSpecialization) ~= "function" then return nil end
+    local ok, spec = pcall(C_SpecializationInfo.GetInspectSpecialization, unit)
+    return ok and not IsSecret(spec) and type(spec) == "number" and spec > 0 and spec == math.floor(spec) and spec or nil
+end
 local function GetInspectConfigID()
     if Constants and Constants.TraitConsts and Constants.TraitConsts.INSPECT_TRAIT_CONFIG_ID then
         return Constants.TraitConsts.INSPECT_TRAIT_CONFIG_ID
@@ -65,15 +111,11 @@ local function GetInspectConfigID()
 end
 
 local function GetPlayerSpecID()
-    if not C_SpecializationInfo then
-        return 0
-    end
-
-    local specIndex = C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
-    if specIndex and C_SpecializationInfo.GetSpecializationInfo then
-        return select(1, C_SpecializationInfo.GetSpecializationInfo(specIndex)) or 0
-    end
-    return 0
+    if not C_SpecializationInfo or type(C_SpecializationInfo.GetSpecialization) ~= "function" then return 0 end
+    local ok, index = pcall(C_SpecializationInfo.GetSpecialization)
+    if not ok or IsSecret(index) or type(index) ~= "number" or index <= 0 or type(C_SpecializationInfo.GetSpecializationInfo) ~= "function" then return 0 end
+    local specOK, spec = pcall(C_SpecializationInfo.GetSpecializationInfo, index)
+    return specOK and not IsSecret(spec) and type(spec) == "number" and spec > 0 and spec == math.floor(spec) and spec or 0
 end
 
 local function BuildCapabilitySet(indexes)
@@ -102,6 +144,12 @@ local function CopyReport(report)
         classRevision = report.classRevision,
         verified = report.verified,
         source = report.source,
+        originalSource = report.originalSource,
+        cached = report.cached,
+        sessionVerified = report.sessionVerified,
+        confirmedAt = report.confirmedAt,
+        observerGUID = report.observerGUID,
+        cacheRestoredAt = report.cacheRestoredAt,
         updatedAt = report.updatedAt,
         generation = report.generation,
         capabilities = CopyTable(report.capabilities),
@@ -180,28 +228,29 @@ local function AddSpellAlias(spellSet, spellID, specID)
     MergeSpellSet(spellSet, cached)
 end
 
-local function AddEntrySpell(spellSet, configID, entryID, specID)
+local function AddEntrySpell(spellSet, configID, entryID, specID, requireReadable)
     if type(entryID) ~= "number" or not C_Traits then
-        return false
+        return false, false
     end
 
     local cacheKey = tostring(specID or 0) .. ":" .. tostring(entryID)
     local cached = entryAliasCache[cacheKey]
+    -- A prior partial local read must not stand in for currently readable
+    -- selected entries when deciding whether startup data is complete.
+    if requireReadable then cached = nil end
     if cached == false then
-        return false
+        return false, true
     end
 
     if not cached then
         local okEntry, entryInfo = pcall(C_Traits.GetEntryInfo, configID, entryID)
         if not okEntry or not entryInfo or not entryInfo.definitionID then
-            entryAliasCache[cacheKey] = false
-            return false
+            return false, false
         end
 
         local okDefinition, definitionInfo = pcall(C_Traits.GetDefinitionInfo, entryInfo.definitionID)
         if not okDefinition or not definitionInfo then
-            entryAliasCache[cacheKey] = false
-            return false
+            return false, false
         end
 
         cached = {}
@@ -209,13 +258,13 @@ local function AddEntrySpell(spellSet, configID, entryID, specID)
         AddSpellAlias(cached, definitionInfo.overriddenSpellID, specID)
         if not next(cached) then
             entryAliasCache[cacheKey] = false
-            return false
+            return false, true
         end
         entryAliasCache[cacheKey] = cached
     end
 
     MergeSpellSet(spellSet, cached)
-    return true
+    return true, true
 end
 
 local function HasValidInspectData()
@@ -227,16 +276,16 @@ local function HasValidInspectData()
     return ok and valid == true
 end
 
-local function BuildInspectSpellSet(specID)
+local function BuildInspectSpellSet(specID, localConfigID)
     if not C_Traits or not C_ClassTalents or not C_SpecializationInfo then
         return nil, nil, "talent APIs unavailable"
     end
 
-    if not HasValidInspectData() then
+    if not localConfigID and not HasValidInspectData() then
         return nil, nil, "inspect data incomplete"
     end
 
-    local configID = GetInspectConfigID()
+    local configID = localConfigID or GetInspectConfigID()
     local treeID = C_ClassTalents.GetTraitTreeForSpec and C_ClassTalents.GetTraitTreeForSpec(specID)
     local treeNodes = treeNodesCache[specID]
     if not treeNodes and treeID and C_Traits.GetTreeNodes then
@@ -303,7 +352,9 @@ local function BuildInspectSpellSet(specID)
                 end
 
                 for entryID in pairs(selectedEntries) do
-                    if AddEntrySpell(selectedSpellSet, configID, entryID, specID) then
+                    local included, available = AddEntrySpell(selectedSpellSet, configID, entryID, specID, localConfigID ~= nil)
+                    if localConfigID and not available then return nil, nil, "local talent definitions unavailable" end
+                    if included then
                         selectedEntryCount = selectedEntryCount + 1
                     end
                 end
@@ -311,7 +362,7 @@ local function BuildInspectSpellSet(specID)
         end
     end
 
-    if readableNodeCount == 0 or selectedEntryCount == 0 then
+    if readableNodeCount == 0 or selectedEntryCount == 0 or (localConfigID and readableNodeCount ~= #treeNodes) then
         return nil, nil, "inspect talent nodes unavailable"
     end
 
@@ -323,7 +374,10 @@ function RA:IsRaidGroupIgnored(subgroup)
     return db and db.ignoredRaidGroups and db.ignoredRaidGroups[subgroup] == true
 end
 
-function RA:RefreshRoster()
+function RA:RefreshRoster(restoreSaved)
+    -- Explicit roster planning may reuse saved facts with the HUD disabled.
+    -- This only reconciles ordinary identity/facts; it never schedules scans.
+    local allowSaved = self:IsInspectionEnabled() or restoreSaved == true
     local previousRoster = self.Roster or {}
     local roster = {}
     local order = {}
@@ -334,13 +388,28 @@ function RA:RefreshRoster()
             return
         end
 
-        local fullName = self:GetFullUnitName(unit)
+        local fullName = UnitNameWithRealm(unit, allowSaved)
         local guid = UnitGUID(unit)
         if not fullName or not guid or IsSecret(fullName) or IsSecret(guid) then
             return
         end
 
         local _, classFile = UnitClass(unit)
+        local role = UnitGroupRolesAssigned(unit)
+        classFile = KnownClass(classFile) and classFile or nil
+        role = KnownRole(role) and role or nil
+        local old = self.Reports[fullName]
+        if old and old.guid ~= guid then old = nil end
+        if old and ((classFile and old.class ~= classFile) or (role and old.role and old.role ~= role)) then
+            InvalidateGUID(guid)
+            self.Reports[fullName], self.InspectFailures[fullName] = nil, nil
+            old = nil
+        end
+        local prior = previousRoster[fullName]
+        if prior and prior.guid ~= guid then prior = nil end
+        local saved = Cache and allowSaved and Cache:Get(guid, fullName, classFile, role) or nil
+        classFile = classFile or (old and old.class) or (saved and saved.class) or (prior and prior.class)
+        role = role or (old and old.role) or (saved and saved.role) or (prior and prior.role)
         local connected = true
         if UnitIsConnected then
             local value = UnitIsConnected(unit)
@@ -357,7 +426,7 @@ function RA:RefreshRoster()
             name = fullName,
             shortName = self:GetShortName(fullName),
             class = classFile,
-            role = UnitGroupRolesAssigned(unit),
+            role = role,
             connected = connected,
         }
 
@@ -398,7 +467,8 @@ function RA:RefreshRoster()
         if not previous or previous.guid ~= info.guid then
             changes.added[name] = true
             changes.addedCount = changes.addedCount + 1
-        elseif previous.role ~= info.role or previous.class ~= info.class then
+        elseif (KnownRole(previous.role) and KnownRole(info.role) and previous.role ~= info.role)
+            or (KnownClass(previous.class) and KnownClass(info.class) and previous.class ~= info.class) then
             changes.changed[name] = true
             changes.changedCount = changes.changedCount + 1
         end
@@ -415,10 +485,16 @@ function RA:RefreshRoster()
     self.Roster = roster
     self.RosterOrder = order
     self.IgnoredRosterCount = ignoredCount
+    if Cache and allowSaved then
+        Cache:RestoreRoster(roster, self.Reports)
+        for name, report in pairs(self.Reports) do
+            if report.cached and roster[name] and not self.InspectStatus[name] then SetInspectStatus(name, "CACHED", "last confirmed in an earlier lifecycle") end
+        end
+    end
     return changes
 end
 
-function RA:IsReportFresh(report, rosterInfo)
+function RA:IsReportUsable(report, rosterInfo)
     if not report or not report.verified then
         return false
     end
@@ -427,7 +503,13 @@ function RA:IsReportFresh(report, rosterInfo)
         return true
     end
 
-    if not rosterInfo or report.guid ~= rosterInfo.guid then
+    if report.cached and Cache then
+        local now = Epoch()
+        if not now or type(report.confirmedAt) ~= "number" or now - report.confirmedAt > Cache.RETENTION_SECONDS then return false end
+    end
+
+    if not rosterInfo or report.guid ~= rosterInfo.guid or report.name ~= rosterInfo.name
+        or (KnownClass(rosterInfo.class) and report.class ~= rosterInfo.class) then
         return false
     end
 
@@ -445,13 +527,16 @@ function RA:IsReportFresh(report, rosterInfo)
 
     -- Role changes are an immediate, no-inspect signal that a same-GUID player
     -- may have changed specialization (for example Ret -> Holy).
-    if report.role and rosterInfo.role and report.role ~= rosterInfo.role then
+    if KnownRole(report.role) and KnownRole(rosterInfo.role) and report.role ~= rosterInfo.role then
         return false
     end
 
     return true
 end
 
+function RA:IsReportFresh(report, rosterInfo)
+    return self:IsReportUsable(report, rosterInfo) and report.cached ~= true and report.sessionVerified ~= false
+end
 function RA:PruneReports()
     for name, report in pairs(self.Reports) do
         local rosterInfo = self.Roster[name]
@@ -470,6 +555,8 @@ function RA:ClearInspectionCache()
     end
 
     self:StopInspectionScan()
+    if Cache then Cache:Clear() end
+    for _, info in pairs(self.Roster) do InvalidateGUID(info.guid) end
     wipe(self.Reports)
     wipe(self.InspectFailures)
     wipe(self.InspectStatus)
@@ -497,9 +584,9 @@ function RA:OnIgnoredRaidGroupsChanged()
     return true
 end
 
-function RA:StoreLocalReport()
+function RA:StoreLocalReport(forceRefresh)
     if not self:IsInspectionEnabled() then return end
-    local name = self:GetFullUnitName("player")
+    local name = UnitNameWithRealm("player")
     local guid = UnitGUID("player")
     if not name or not guid then
         return nil
@@ -507,22 +594,52 @@ function RA:StoreLocalReport()
 
     local _, classFile = UnitClass("player")
     local specID = GetPlayerSpecID()
-    local indexes = self:ScanLocalCapabilities(specID)
+    if IsSecret(guid) or type(guid) ~= "string" or not KnownClass(classFile) or specID <= 0 then return self.Reports[name] end
+    local previous = self.Reports[name]
+    if previous and (previous.guid ~= guid or previous.class ~= classFile or previous.specID ~= specID) then
+        InvalidateGUID(previous.guid)
+        self.Reports[name] = nil
+        previous = nil
+    end
+    local role = UnitGroupRolesAssigned("player")
+    role = KnownRole(role) and role or nil
+    local indexes, evidence = {}, {}
+    if self:ClassNeedsCapabilityInspection(classFile) then
+        -- A restored self report is useful before the local spellbook/talents
+        -- finish loading. An ordinary talent/spell event (or explicit refresh)
+        -- permits a new read, but only a populated, completely readable active
+        -- configuration can replace those historical facts.
+        if previous and previous.cached and not localTalentSignal and not forceRefresh then return previous end
+        if not C_ClassTalents or type(C_ClassTalents.GetActiveConfigID) ~= "function" then return previous end
+        local ok, configID = pcall(C_ClassTalents.GetActiveConfigID)
+        if not ok or IsSecret(configID) or type(configID) ~= "number" or configID <= 0 then return previous end
+        if type(C_ClassTalents.IsConfigPopulated) == "function" then
+            local populatedOK, populated = pcall(C_ClassTalents.IsConfigPopulated, configID)
+            if not populatedOK or IsSecret(populated) or populated ~= true then return previous end
+        end
+        local built, selected, baseline = pcall(BuildInspectSpellSet, specID, configID)
+        if not built or not selected then return previous end
+        indexes, evidence = self:BuildCapabilitiesFromSpellSet(classFile, specID, selected, baseline)
+    else
+        evidence.roleOnly = true
+    end
     local report = {
         name = name,
         guid = guid,
         class = classFile,
         specID = specID,
-        role = UnitGroupRolesAssigned("player"),
+        role = role,
         classRevision = self:GetClassCatalogRevision(classFile),
         verified = true,
         source = "LOCAL",
+        originalSource = "LOCAL", cached = false, sessionVerified = true, confirmedAt = Epoch(), observerGUID = guid,
         updatedAt = GetTime(),
         capabilities = BuildCapabilitySet(indexes),
-        evidence = {},
+        evidence = evidence,
     }
 
     self.Reports[name] = report
+    if Cache then Cache:Store(report) end
     self.InspectFailures[name] = nil
     SetInspectStatus(name, "SCANNED")
     return report
@@ -563,11 +680,11 @@ function RA:ClassNeedsAnyInspection(classFile)
 end
 
 function RA:HasMissingReports()
-    local playerName = self:GetFullUnitName("player")
+    local playerName = UnitNameWithRealm("player")
     for name, rosterInfo in pairs(self.Roster) do
         if name ~= playerName
             and self:ClassNeedsAnyInspection(rosterInfo.class)
-            and not self:IsReportFresh(self.Reports[name], rosterInfo) then
+            and not self:IsReportUsable(self.Reports[name], rosterInfo) then
             return true
         end
     end
@@ -576,6 +693,7 @@ end
 
 local function StoreInspectedReport(item)
     local rosterInfo = RA.Roster[item.name]
+    if item.revision ~= (reportRevisions[item.guid] or 0) then return false, "loadout changed while inspecting", "FAILED" end
     if not rosterInfo or rosterInfo.guid ~= item.guid then
         return false, "unit changed", "FAILED"
     end
@@ -585,8 +703,8 @@ local function StoreInspectedReport(item)
         return false, "unit changed", "FAILED"
     end
 
-    local okSpec, specID = pcall(C_SpecializationInfo.GetInspectSpecialization, unit)
-    if not okSpec or type(specID) ~= "number" or specID <= 0 or IsSecret(specID) then
+    local specID = ObservedSpec(unit)
+    if not specID or not KnownClass(rosterInfo.class) then
         return false, "specialization unavailable", "FAILED"
     end
 
@@ -621,12 +739,15 @@ local function StoreInspectedReport(item)
         classRevision = RA:GetClassCatalogRevision(rosterInfo.class),
         verified = true,
         source = "INSPECT",
+        originalSource = "INSPECT", cached = false, sessionVerified = true, confirmedAt = Epoch(),
+        observerGUID = UnitGUID("player"),
         updatedAt = GetTime(),
         generation = inspectState.generation,
         capabilities = BuildCapabilitySet(indexes),
         evidence = evidence or {},
     }
 
+    if Cache then Cache:Store(RA.Reports[item.name]) end
     RA.InspectFailures[item.name] = nil
     SetInspectStatus(item.name, "SCANNED")
     return true
@@ -808,6 +929,12 @@ ProcessInspectionQueue = function()
         return
     end
 
+    if item.revision ~= (reportRevisions[item.guid] or 0) then
+        inspectState.processed = inspectState.processed + 1
+        scanRestartPending = true
+        C_Timer.After(0, ProcessInspectionQueue)
+        return
+    end
     item.unit = rosterInfo.unit
     if rosterInfo.connected == false then
         inspectState.current = item
@@ -870,7 +997,7 @@ end
 
 function RA:GetPendingScanEntries()
     local entries = {}
-    local playerName = self:GetFullUnitName("player")
+    local playerName = UnitNameWithRealm("player")
     local currentName = inspectState.current and inspectState.current.name or nil
     local queuePosition = {}
 
@@ -884,7 +1011,7 @@ function RA:GetPendingScanEntries()
     for rosterIndex = 1, #self.RosterOrder do
         local info = self.RosterOrder[rosterIndex]
         if info and info.name ~= playerName and self:ClassNeedsAnyInspection(info.class) then
-            local reportCurrent = self:IsReportFresh(self.Reports[info.name], info)
+            local reportCurrent = self:IsReportUsable(self.Reports[info.name], info)
             local status = self.InspectStatus[info.name]
             local state = status and status.state or nil
             local activelyQueued = currentName == info.name or queuePosition[info.name] ~= nil
@@ -915,6 +1042,12 @@ function RA:GetPendingScanEntries()
                     queuePosition = queuePosition[info.name],
                     rosterIndex = rosterIndex,
                     cachedSpecID = report and report.specID or nil,
+                    cached = report and report.cached == true or false,
+                    sessionVerified = report and report.sessionVerified == true or false,
+                    confirmedAt = report and report.confirmedAt,
+                    originalSource = report and report.originalSource,
+                    source = report and report.source,
+                    observerGUID = report and report.observerGUID,
                 }
             end
         end
@@ -984,11 +1117,11 @@ function RA:SetInspectionPaused(paused)
         end
 
         if not inspectState.running then
-            local playerName = self:GetFullUnitName("player")
+            local playerName = UnitNameWithRealm("player")
             for name, rosterInfo in pairs(self.Roster) do
                 if name ~= playerName
                     and self:ClassNeedsAnyInspection(rosterInfo.class)
-                    and not self:IsReportFresh(self.Reports[name], rosterInfo) then
+                    and not self:IsReportUsable(self.Reports[name], rosterInfo) then
                     SetInspectStatus(name, "PAUSED", "manual")
                 end
             end
@@ -1020,9 +1153,11 @@ function RA:ToggleInspectionPaused()
 end
 
 function RA:GetScanSummary()
+    if self.InEncounter and self.FrozenScanSummary then return CopyTable(self.FrozenScanSummary) end
     local summary = {
         scanned = 0,
         inspected = 0,
+        confirmed = 0, cached = 0, unknown = 0,
         filtered = 0,
         total = 0,
         ignored = self.IgnoredRosterCount or 0,
@@ -1035,16 +1170,19 @@ function RA:GetScanSummary()
     for name, rosterInfo in pairs(self.Roster) do
         summary.total = summary.total + 1
 
-        local reportCurrent = self:IsReportFresh(self.Reports[name], rosterInfo)
+        local reportCurrent = self:IsReportUsable(self.Reports[name], rosterInfo)
         local needsInspection = self:ClassNeedsAnyInspection(rosterInfo.class)
         if reportCurrent then
             summary.scanned = summary.scanned + 1
-            summary.inspected = summary.inspected + 1
+            if self.Reports[name].cached then summary.cached = summary.cached + 1
+            else summary.confirmed = summary.confirmed + 1; summary.inspected = summary.inspected + 1 end
         elseif not needsInspection then
             -- Resolved from class + current filters; this class has no ability
             -- that could appear in the selected HUD view.
             summary.scanned = summary.scanned + 1
             summary.filtered = summary.filtered + 1
+        else
+            summary.unknown = summary.unknown + 1
         end
 
         local status = self.InspectStatus[name]
@@ -1097,7 +1235,7 @@ function RA:StopInspectionScan()
 
     for name in pairs(interrupted) do
         local rosterInfo = self.Roster[name]
-        if self:IsReportFresh(self.Reports[name], rosterInfo) then
+        if self:IsReportUsable(self.Reports[name], rosterInfo) then
             SetInspectStatus(name, "SCANNED")
         else
             SetInspectStatus(name, "PAUSED", "combat")
@@ -1115,17 +1253,17 @@ function RA:RequestInspectionScan(reason, fullRefresh)
     if not self:IsInspectionEnabled() then return false end
     self:RefreshRoster()
     self:PruneReports()
-    self:StoreLocalReport()
+    self:StoreLocalReport(fullRefresh == true)
 
     if manualPaused then
         pendingScanReason = reason or pendingScanReason or "manual resume"
         pendingFullRefresh = pendingFullRefresh or fullRefresh == true
 
-        local playerName = self:GetFullUnitName("player")
+        local playerName = UnitNameWithRealm("player")
         for name, rosterInfo in pairs(self.Roster) do
             if name ~= playerName
                 and self:ClassNeedsAnyInspection(rosterInfo.class)
-                and (fullRefresh == true or not self:IsReportFresh(self.Reports[name], rosterInfo)) then
+                and (fullRefresh == true or not self:IsReportUsable(self.Reports[name], rosterInfo)) then
                 SetInspectStatus(name, "PAUSED", "manual")
             end
         end
@@ -1160,14 +1298,14 @@ function RA:RequestInspectionScan(reason, fullRefresh)
     inspectState.processed = 0
     inspectState.failed = 0
 
-    local playerName = self:GetFullUnitName("player")
+    local playerName = UnitNameWithRealm("player")
     for i = 1, #self.RosterOrder do
         local info = self.RosterOrder[i]
         if info.name == playerName then
             SetInspectStatus(info.name, "SCANNED")
         else
             local report = self.Reports[info.name]
-            local reportCurrent = self:IsReportFresh(report, info)
+            local reportCurrent = self:IsReportUsable(report, info)
             local classNeedsInspection = self:ClassNeedsAnyInspection(info.class)
             local needsInspection = classNeedsInspection and (fullRefresh == true or not reportCurrent)
 
@@ -1176,6 +1314,7 @@ function RA:RequestInspectionScan(reason, fullRefresh)
                     unit = info.unit,
                     guid = info.guid,
                     name = info.name,
+                    revision = reportRevisions[info.guid] or 0,
                 }
                 SetInspectStatus(info.name, "QUEUED")
             elseif classNeedsInspection then
@@ -1255,7 +1394,7 @@ function RA:FreezeReports(useExistingRoster)
     for name, rosterInfo in pairs(self.Roster) do
         rosterCount = rosterCount + 1
         local report = self.Reports[name]
-        if self:IsReportFresh(report, rosterInfo) then
+        if self:IsReportUsable(report, rosterInfo) then
             frozen[name] = CopyReport(report)
             verifiedCount = verifiedCount + 1
         elseif not self:ClassNeedsAnyInspection(rosterInfo.class) then
@@ -1265,8 +1404,11 @@ function RA:FreezeReports(useExistingRoster)
         end
     end
 
+    self.FrozenScanSummary = self:GetScanSummary()
     self.FrozenRosterCount = rosterCount
-    self.FrozenVerifiedCount = verifiedCount
+    self.FrozenResolvedCount = verifiedCount
+    self.FrozenVerifiedCount = self.FrozenScanSummary.confirmed
+    self.FrozenCachedCount = self.FrozenScanSummary.cached
     self.FrozenReports = frozen
     self:FireCallback("REPORTS_FROZEN")
 end
@@ -1275,6 +1417,7 @@ function RA:UnfreezeReports()
     self.FrozenReports = nil
     self.FrozenRosterCount = nil
     self.FrozenVerifiedCount = nil
+    self.FrozenCachedCount, self.FrozenResolvedCount, self.FrozenScanSummary = nil, nil, nil
     self:FireCallback("REPORTS_UPDATED")
 end
 
@@ -1352,14 +1495,14 @@ function RA:GetVerificationStatus()
     end
 
     if self.InEncounter and self.FrozenRosterCount then
-        return self.FrozenVerifiedCount or 0, self.FrozenRosterCount, false
+        return self.FrozenResolvedCount or 0, self.FrozenRosterCount, false
     end
 
     local rosterCount = 0
     local verifiedCount = 0
     for name, rosterInfo in pairs(self.Roster) do
         rosterCount = rosterCount + 1
-        if self:IsReportFresh(reports[name], rosterInfo)
+        if self:IsReportUsable(reports[name], rosterInfo)
             or not self:ClassNeedsAnyInspection(rosterInfo.class) then
             verifiedCount = verifiedCount + 1
         end
@@ -1376,7 +1519,7 @@ function RA:BuildAbilityOwners()
         local usable = report.verified
         if usable and not isDemo and not self.InEncounter then
             local rosterInfo = self.Roster[name]
-            usable = rosterInfo ~= nil and self:IsReportFresh(report, rosterInfo)
+            usable = rosterInfo ~= nil and self:IsReportUsable(report, rosterInfo)
         end
 
         if usable then
@@ -1391,6 +1534,11 @@ function RA:BuildAbilityOwners()
                         specID = report.specID,
                         verified = true,
                         source = report.source,
+                        originalSource = report.originalSource,
+                        cached = report.cached == true,
+                        sessionVerified = report.sessionVerified == true,
+                        confirmedAt = report.confirmedAt,
+                        observerGUID = report.observerGUID,
                     }
                 end
             end
@@ -1414,7 +1562,7 @@ function RA:InvalidateTrackedPlayer(unitOrName, reason, delay)
         name = unitOrName
         rosterInfo = self.Roster[name]
     elseif type(unitOrName) == "string" and UnitExists(unitOrName) then
-        local fullName = self:GetFullUnitName(unitOrName)
+        local fullName = UnitNameWithRealm(unitOrName)
         rosterInfo = fullName and self.Roster[fullName] or nil
         name = rosterInfo and fullName or nil
     end
@@ -1423,13 +1571,14 @@ function RA:InvalidateTrackedPlayer(unitOrName, reason, delay)
         return false
     end
 
-    local playerName = self:GetFullUnitName("player")
+    local playerName = UnitNameWithRealm("player")
     if name == playerName then
         self:StoreLocalReport()
         self:FireCallback("REPORTS_UPDATED")
         return true
     end
 
+    InvalidateGUID(rosterInfo.guid)
     self.Reports[name] = nil
     self.InspectFailures[name] = nil
     SetInspectStatus(name, "QUEUED", reason or "specialization changed")
@@ -1469,7 +1618,9 @@ RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
     for name in pairs(changes.changed or {}) do
         local report = RA.Reports[name]
         local rosterInfo = RA.Roster[name]
-        if report and rosterInfo and (report.role ~= rosterInfo.role or report.class ~= rosterInfo.class) then
+        if report and rosterInfo and ((KnownRole(report.role) and KnownRole(rosterInfo.role) and report.role ~= rosterInfo.role)
+            or (KnownClass(report.class) and KnownClass(rosterInfo.class) and report.class ~= rosterInfo.class)) then
+            InvalidateGUID(rosterInfo.guid)
             RA.Reports[name] = nil
             RA.InspectFailures[name] = nil
             SetInspectStatus(name, "QUEUED", "role or class changed")
@@ -1490,12 +1641,14 @@ end)
 
 RA:RegisterEvent("SPELLS_CHANGED", function()
     if not RA:IsInspectionEnabled() then return end
+    localTalentSignal = true
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
 
 RA:RegisterEvent("TRAIT_CONFIG_UPDATED", function()
     if not RA:IsInspectionEnabled() then return end
+    localTalentSignal = true
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
@@ -1508,7 +1661,10 @@ RA:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
     else
         -- Blizzard supplies the changed unit token. Clear only that player's
         -- cached tools and queue a targeted refresh after talents settle.
-        RA:InvalidateTrackedPlayer(unit, "specialization changed", 0.75)
+        local name = type(unit) == "string" and UnitNameWithRealm(unit)
+        local report = name and RA.Reports[name]
+        local spec = type(unit) == "string" and ObservedSpec(unit)
+        if spec and (not report or report.specID ~= spec) then RA:InvalidateTrackedPlayer(unit, "specialization changed", 0.75) end
     end
 end)
 
@@ -1520,7 +1676,7 @@ end)
 RA:RegisterEvent("INSPECT_READY", function(_, guid)
     if not RA:IsInspectionEnabled() then return end
     local item = inspectState.current
-    if not item or guid ~= item.guid then
+    if IsSecret(guid) or type(guid) ~= "string" or not item or guid ~= item.guid then
         return
     end
 
