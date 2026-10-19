@@ -378,4 +378,23 @@ A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
 engine.UpdateExistingFrames=function() error("render failure during apply and rollback") end
 ok,reason,notes=A:ApplyProfile("RaidPreset",notes.context)
 check(not ok and notes.partial and A:GetStatus().recovery.pending and A:GetRecoveryBackup(),"failed rollback discarded its recoverable original state")
+
+A=setup()
+local low,high=1900000,2097152
+while low<high do
+    local middle=math.floor((low+high+1)/2)
+    NSRT.Settings.BoundaryPadding=string.rep("p",middle)
+    if A:GetNotes() then low=middle else high=middle-1 end
+end
+NSRT.Settings.BoundaryPadding=string.rep("p",low)
+local geometryContext=context();local oldAnchor=NSRT.ReminderSettings.IconSettings.Anchor
+callsBefore=#calls
+check(not A:SetPlacement("IconSettings",{Anchor="BOTTOMRIGHT"},geometryContext) and NSRT.ReminderSettings.IconSettings.Anchor==oldAnchor and #calls==callsBefore and A:GetNotes(),
+    "near-cap geometry write exceeded the complete observation budget")
+A=setup();ok,reason,notes=A:GetPlacement("IconSettings");check(ok,reason)
+local renderGeometry=engine.UpdateExistingFrames
+engine.UpdateExistingFrames=function(self) renderGeometry(self);NSRT.Settings.ExtraPadding=string.rep("e",2100000) end
+check(not A:SetPlacement("IconSettings",{Width=100},notes.context) and A:GetStatus().recovery.pending and A:GetRecoveryBackup(),
+    "unexpected post-placement observation overflow returned success or discarded the old copyable state")
+check(NSRT.ReminderSettings.IconSettings.Width==80 and NSRT.Settings.ExtraPadding~=nil,"geometry failure clobbered unrelated native state or failed to revert its owned value")
 print("nsrt_adapter: "..checks.." checks passed")

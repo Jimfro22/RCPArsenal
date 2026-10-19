@@ -543,6 +543,7 @@ function Adapter:ReleaseUndo(kind, expected)
         if not recovery then return false, "There is no recovery record to release." end
         if expected ~= recovery.token then return false, "A different recovery record is now active. Review it before releasing." end
         if noteBackup and noteBackup.recoveryToken == recovery.token then noteBackup = nil end
+        if placementBackup and placementBackup.recoveryToken == recovery.token then placementBackup = nil end
         if recovery.pending and profileBackup and profileBackup.original == recovery.original and profileBackup.clone == recovery.clone then profileBackup = nil end
         recovery = nil
     else
@@ -686,6 +687,12 @@ function Adapter:ApplyProfile(name, expected)
             or "Profile copy failed after Northern Sky changed. Automatic rollback was blocked to preserve intervening changes.", {partial = not restored, clone = cloneName}
     end
     local after = Observe()
+    if not after or not Equal(after, expectedAfterWrite) then
+        recovery.pending, recovery.phase, recovery.reason, recovery.observedProfile = true, "post-apply-observation-failed",
+            "The resulting profile could not be fully observed. Copy the original backup before further changes.", String(db.CurrentProfile, 128)
+        self:Refresh()
+        return false, recovery.reason, {partial = true, clone = cloneName}
+    end
     recovery.pending, recovery.phase, recovery.observedProfile = false, "applied", cloneName
     profileBackup = {before = before, preserved = preserved, after = after, original = original, clone = cloneName,
         originalProfile = Clone(db.Profiles[original]), cloneProfile = Clone(db.Profiles[cloneName]), api = api, internal = internal, db = db}
@@ -703,6 +710,8 @@ function Adapter:RestoreLastProfile(expected)
         or not Equal(db.Profiles[backup.original], backup.originalProfile) or not Equal(db.Profiles[backup.clone], backup.cloneProfile) then
         return false, "Northern Sky changed since the Arsenal profile copy was applied. Restore is blocked to preserve those changes."
     end
+    local capacityOK = pcall(Clone, backup.before)
+    if not capacityOK then return false, "The original profile exceeds safe observation limits; copy the recovery backup instead." end
     applying = true
     local ok = pcall(function()
         if api:SetProfile(backup.original) ~= true or db.CurrentProfile ~= backup.original then error("Original profile was not activated.") end
@@ -718,6 +727,12 @@ function Adapter:RestoreLastProfile(expected)
         if recovery then recovery.pending, recovery.phase, recovery.reason, recovery.observedProfile = true, "restore-failed", "Original profile restore did not finish.", String(db.CurrentProfile, 128) end
         self:Refresh()
         return false, "Northern Sky could not completely restore the original profile; copy the backup and inspect its settings.", {partial = true}
+    end
+    local restoredReport = Observe()
+    if not restoredReport then
+        if recovery then recovery.pending, recovery.phase, recovery.reason = true, "restore-observation-failed", "The restored profile could not be fully observed; copy its recovery backup." end
+        self:Refresh()
+        return false, "The restored profile could not be fully observed; copy its recovery backup.", {partial = true}
     end
     profileBackup = nil
     recovery = nil
@@ -764,22 +779,56 @@ function Adapter:SetPlacement(section, values, expected)
         elseif type(value) ~= "number" or value ~= value or value < field.min or value > field.max then return false, "Enter placement values within the displayed limits." end
         changed[key] = value
     end
-    local previous = Clone(target)
+    local projectedOK, projected = pcall(function()
+        local value = Clone(before)
+        for key, number in pairs(changed) do value.dbValues.ReminderSettings[section][key] = number end
+        return Clone(value)
+    end)
+    if not projectedOK then return false, "This placement would exceed safe session backup limits. Remove old Northern Sky data before changing it." end
+    local previous, previousBackup = Clone(target), placementBackup
+    placementBackup = {before = previous, reportBefore = before, changed = Clone(changed), section = section, profile = before.profile,
+        api = api, internal = internal, db = db, failed = true}
     applying = true
-    local ok = pcall(function() for key, value in pairs(changed) do target[key] = value end; NativeRefresh(internal) end)
+    local ok = pcall(function()
+        for key, value in pairs(changed) do target[key] = value end
+        NativeRefresh(internal)
+        if not Equal(ReadCurrent(), projected) then error("The native placement refresh changed additional state.") end
+    end)
     applying = false
-    if not ok then
-        local owned = _G.NSRT == db and _G.NorthernSkyRaidTools == internal and db.CurrentProfile == before.profile and db.ReminderSettings[section] == target
-        if owned then for key in pairs(changed) do target[key] = previous[key] end; applying = true; pcall(NativeRefresh, internal); applying = false end
+    local after = ok and Observe() or nil
+    if ok and after and Equal(after, projected) then
+        placementBackup.after, placementBackup.failed = after, false
+        QueueNativeRefresh(api, internal, db)
         self:Refresh()
-        return false, owned and "Placement refresh failed; prior values were restored." or "Placement changed during refresh; rollback was blocked to preserve those changes.", {partial = not owned}
+        return true, nil, {section = section, context = state.context}
     end
-    local after = Observe()
-    placementBackup = {before = previous, changed = Clone(changed), section = section, after = after, profile = before.profile,
-        api = api, internal = internal, db = db}
-    QueueNativeRefresh(api, internal, db)
+    local character = UnitGUID and UnitGUID("player")
+    local owned = not NativeRestriction() and not NativeOwnershipReason() and not Secret(character) and character == before.character
+        and SameOwners(api, internal, db) and db.CurrentProfile == before.profile and db.ReminderSettings[section] == target
+    for key, value in pairs(changed) do if Secret(target[key]) or target[key] ~= value then owned = false end end
+    if owned then
+        -- Revert only unchanged adapter-written fields; incoming native notes
+        -- and unrelated settings remain untouched even if observation is full.
+        for key in pairs(changed) do target[key] = previous[key] end
+        applying = true; local refreshed = pcall(NativeRefresh, internal); applying = false
+        local restored = ReadCurrent()
+        if restored and Equal(restored, before) then
+            placementBackup = previousBackup
+            Observe()
+            QueueNativeRefresh(api, internal, db)
+            self:Refresh()
+            return false, refreshed and "Placement refresh failed; prior values were restored."
+                or "Prior placement values were restored, but Northern Sky display refresh failed.", {partial = false}
+        end
+    end
+    recoverySequence = recoverySequence + 1
+    recovery = {kind = "placement", token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-refresh-failed",
+        original = before.profile, observedProfile = String(db.CurrentProfile, 128), before = before,
+        reason = "Northern Sky changed during placement refresh. Newer native state was preserved; copy the previous settings before releasing recovery."}
+    placementBackup.recoveryToken = recovery.token
     self:Refresh()
-    return true, nil, {section = section, context = state.context}
+    return false, recovery.reason, {partial = true, recovery = recovery.token}
+
 end
 function Adapter:RestoreLastPlacement(expected)
     local current, reason, api, internal, db = Guard(expected, "placement")
@@ -791,6 +840,12 @@ function Adapter:RestoreLastPlacement(expected)
     end
     local target = db.ReminderSettings and db.ReminderSettings[backup.section]
     if type(target) ~= "table" then return false, "The original placement section is unavailable." end
+    local projectedOK, projected = pcall(function()
+        local value = Clone(current)
+        for key in pairs(backup.changed) do value.dbValues.ReminderSettings[backup.section][key] = Clone(backup.before[key]) end
+        return Clone(value)
+    end)
+    if not projectedOK then return false, "The prior placement exceeds safe observation limits; copy the backup before releasing undo." end
     applying = true
     local ok = pcall(function()
         for key in pairs(backup.changed) do target[key] = Clone(backup.before[key]) end
@@ -799,9 +854,17 @@ function Adapter:RestoreLastPlacement(expected)
         if not SameOwners(api, internal, db) or db.CurrentProfile ~= backup.profile or not Equal(expectedRestored, ReadCurrent()) then error("Northern Sky changed during placement restore.") end
     end)
     applying = false
-    if not ok then self:Refresh(); return false, "Placement restore did not complete. Inspect Northern Sky settings before making further changes.", {partial = true} end
+    local restoredReport = ok and Observe() or nil
+    if not ok or not restoredReport or not Equal(restoredReport, projected) then
+        recoverySequence = recoverySequence + 1
+        recovery = {kind = "placement", token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "placement-restore-failed",
+            original = backup.profile, observedProfile = String(db.CurrentProfile, 128), before = backup.reportBefore or current,
+            reason = "Placement restore did not complete. Copy the previous settings before releasing recovery."}
+        backup.recoveryToken = recovery.token
+        self:Refresh()
+        return false, recovery.reason, {partial = true}
+    end
     placementBackup = nil
-    Observe()
     QueueNativeRefresh(api, internal, db)
     self:Refresh()
     return true, nil, {section = backup.section, context = state.context}
