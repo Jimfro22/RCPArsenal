@@ -121,12 +121,22 @@ local function FitAndClamp(frame, label, kind, requestedSize)
         local parentScale, frameScale = Metric(UIParent, "GetEffectiveScale"), Metric(frame, "GetEffectiveScale")
         local ratio = parentScale and parentScale > 0 and frameScale and frameScale > 0 and frameScale / parentScale or 1
         if screenW and screenH and screenW > 32 and screenH > IconSize() + 32 then
-            local fit = math.min(1, (screenW / ratio - 16) / (width + 2), (screenH / ratio - IconSize() - 32) / height)
+            local availableW, availableH = screenW / ratio - 16, screenH / ratio - IconSize() - 32
+            local fit = math.min(1, availableW / (width + 2), availableH / (height + 2))
             if fit > 0 and fit < 1 then
-                local size = math.max(1, requestedSize * fit)
-                if RA.ApplyFont then RA:ApplyFont(label, size, "REGULAR", false)
-                elseif label.SetTextHeight then label:SetTextHeight(size) end
-                width, height = width * fit, height * fit
+                local size = math.max(6, math.floor(requestedSize * fit))
+                -- The shared font helper rounds to whole units (minimum 6).
+                -- Measure the applied font, never scaled pre-fit metrics. A
+                -- bounded decrement handles native glyph rounding as well.
+                for attempt = 1, 96 do
+                    if RA.ApplyFont then RA:ApplyFont(label, size, "REGULAR", false)
+                    elseif label.SetTextHeight then label:SetTextHeight(size) end
+                    width, height = Metric(label, "GetStringWidth"), Metric(label, "GetStringHeight")
+                    if not width or width <= 0 then width = (#"OUT OF POTIONS!" + 1) * size end
+                    if not height or height <= 0 then height = size * 1.2 end
+                    if (width + 2 <= availableW and height + 2 <= availableH) or size <= 6 then break end
+                    size = size - 1
+                end
             end
         end
         width, height = width + 2, height + 2

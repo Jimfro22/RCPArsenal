@@ -584,6 +584,16 @@ local width=UIParent.GetWidth;UIParent.GetWidth=function() return 320 end
 events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
 check(frames[2].strings[1].textHeight<48 and tools:GetState().reminderEmptyTextSize==48
     and profile.personalTools.reminderPosition==saved,"Viewport fit clipped or changed saved size/anchor")
+local emptyCaption=frames[2].strings[1]
+RA.ApplyFont=function(_,label,size) label:SetTextHeight(math.max(6,math.floor(size+.5))) end
+function emptyCaption:GetStringWidth() return self.textHeight*17+25 end
+function emptyCaption:GetStringHeight() return self.textHeight*1.2 end
+events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
+check(emptyCaption.textHeight==16 and emptyCaption.width>=emptyCaption:GetStringWidth()+2
+    and emptyCaption.width<=304,"Fit used scaled metrics instead of measuring the applied whole-size font")
+inset=frames[1].clampInsets
+check(frames[1].width+inset[2]-inset[1]>=emptyCaption:GetStringWidth()+2
+    and -inset[4]>=emptyCaption:GetStringHeight()+11,"Final clamp excludes fitted glyphs/animation")
 UIParent.GetWidth=width
 events.DISPLAY_SIZE_CHANGED('DISPLAY_SIZE_CHANGED')
 check(frames[2].strings[1].textHeight==48,"Viewport growth did not restore configured size")
