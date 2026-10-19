@@ -106,6 +106,7 @@ function CreateFrame(kind, name, parent) return object(kind, name, parent) end
 UIParent = object('Frame', 'UIParent')
 UIParent:SetSize(1920, 1080)
 GameTooltip = object('Frame', 'GameTooltip')
+function issecretvalue() return false end
 function InCombatLockdown() return combat end
 function IsInRaid() return false end
 function IsInGroup() return false end
@@ -359,6 +360,27 @@ check(db.position == navPosition and db.leaderToolbox.position == navPuckPositio
     db.leaderToolbox.position.x == navPuckX and db.leaderToolbox.position.y == navPuckY and db.scale == navScale,
     'Opening settings changed saved geometry')
 check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
+check(hasVisibleText("Uses your carried Healthstone first, then a healing potion. Cooldown readiness isn't checked."), 'Reminder copy claims readiness')
+check(hasVisibleText('SHOW REMINDER') and hasVisibleText('ICON SIZE') and hasVisibleText('TEXT SIZE'), 'Everyday controls hidden')
+check(not hasVisibleText('HEALTHSTONE TEXT') and clickVisible('REMINDER TEXT +'), 'Text details not initially collapsed')
+check(hasVisibleText('HEALTHSTONE TEXT') and hasVisibleText('HEALING POTION TEXT') and hasVisibleText('PREVIEW SAMPLE'), 'Message/sample options missing')
+local personalSnapshot=RA:GetDB().personalTools
+local pos=personalSnapshot.reminderPosition
+RA.PersonalTools:SetOption('reminderStoneText','Stone now')
+RA.PersonalTools:SetOption('reminderPotionText','Potion now')
+RA.PersonalTools:SetOption('reminderIconSize',72)
+RA.PersonalTools:SetOption('reminderTextSize',18)
+RA.PersonalTools:SetOption('reminderCombat','OUT_OF_COMBAT')
+check(personalSnapshot.reminderPosition==pos and not personalSnapshot.consumableReminder, 'Options changed anchor/opt-in')
+check(clickVisible('RESET POSITION') and personalSnapshot.reminderStoneText=='Stone now' and personalSnapshot.reminderIconSize==72
+    and personalSnapshot.reminderTextSize==18 and personalSnapshot.reminderCombat=='OUT_OF_COMBAT', 'Position reset changed appearance/visibility')
+local beforeSupplySent, beforeSupplyTimers, beforeSupplyReads=sent,#timers,talentReads
+check(clickVisible('VIEW RESULTS') and hasVisibleText('Carried healing supplies'), 'Manual supplies dialog missing')
+check(sent==beforeSupplySent and #timers==beforeSupplyTimers and talentReads==beforeSupplyReads, 'Viewing supply results queried/polled/inspected')
+check(clickVisible('CLOSE') and clickVisible('VIEW RESULTS') and #timers==beforeSupplyTimers and sent==beforeSupplySent, 'Reopening supply results starts a request')
+check(clickVisible('CLOSE') and clickVisible('CHECK RAID SUPPLIES') and hasVisibleText('Join a raid to check supplies.'), 'Ineligible query lacks explanation')
+check(sent==beforeSupplySent and #timers==beforeSupplyTimers, 'Ineligible supply action sent/started work')
+check(clickVisible('CLOSE') and clickVisible('HIDE REMINDER TEXT'), 'Text disclosure did not collapse')
 check(clickVisible('PREVIEW'), 'Reminder preview button missing')
 check(RA.PersonalTools:GetState().previewMode == 'PREVIEW' and not RA:GetDB().personalTools.consumableReminder, 'Preview changed activation')
 check(clickVisible('MOVE') and RA.PersonalTools:GetState().previewMode == 'MOVE', 'Move button did not select mover')

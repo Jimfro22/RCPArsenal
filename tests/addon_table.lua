@@ -21,6 +21,7 @@ function methods:IsVisible() return self.shown and (not self.parent or self.pare
 function methods:SetSize(w,h) self.width,self.height=w,h end
 function methods:SetWidth(w) self.width=w end
 function methods:SetHeight(h) self.height=h end
+function methods:ClearAllPoints() self.point=nil end
 function methods:SetPoint(...) self.point={...} end
 function methods:SetAllPoints(parent) self.allPoints=parent end
 function methods:SetFrameLevel(level) self.level=level end
@@ -88,7 +89,7 @@ function RA:OpenConfig(key) opened[#opened+1]=key end
 function RA:OpenProfileDialog() end
 function RA:GetSlashCommandStatus() return '' end
 function RA:CreateNorthernSkyPane() return noop end
-RA.PersonalTools={StopReminderPreview=noop,GetStatusText=function() return 'Off' end}
+RA.PersonalTools={StopReminderPreview=noop,GetStatusText=function() return 'Off' end,GetState=function() return {} end}
 local colors={text={1,1,1},textSoft={.7,.7,.7},muted={.4,.4,.4},orange={1,.5,0},magenta={1,0,1},surface={0,0,0},line={.1,.1,.1},lineStrong={.2,.2,.2},input={.1,.1,.1}}
 RA.Theme={Colors=colors,SetPoint=function(frame,...) frame:SetPoint(...) end,SetSize=function(frame,...) frame:SetSize(...) end,
     SetWidth=function(frame,value) frame:SetWidth(value) end,SetHeight=function(frame,value) frame:SetHeight(value) end}
@@ -104,7 +105,8 @@ local function Button(parent,label,width,height,fn)
 end
 local kit={Font=Font,Button=Button,Card=function(parent,title,subtitle) local card=Object('Frame',parent);card.title=Font(card);card.subtitle=Font(card);RA:SetVisualText(card.title,title);RA:SetVisualText(card.subtitle,subtitle);return card end,
     Heading=function(parent,title,subtitle) local a,b=Font(parent),Font(parent);RA:SetVisualText(a,title);RA:SetVisualText(b,subtitle) end,
-    Toggle=function(parent) return Object('Button',parent) end,Slider=function(parent) return Object('Frame',parent) end,Backdrop=noop,Refresh=noop}
+    Toggle=function(parent) return Object('Button',parent) end,Slider=function(parent) return Object('Frame',parent) end,
+    EditBox=function(parent) return Object('Frame',parent) end,Segmented=function(parent) local f=Object('Frame',parent);f.Layout=noop;return f end,Backdrop=noop,Refresh=noop}
 local renderer=RA:CreateHubPanes(panes,kit)
 local function Render() renderCount=renderCount+1;check(renderCount<300,'recursive readiness refresh');renderer('ADDONS') end
 RA:RegisterCallback('READINESS_UPDATED',function() if panes.ADDONS:IsVisible() then Render() end end)

@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.2"
+RA.VERSION = "0.15.3-alpha.3"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -100,7 +100,8 @@ local DEFAULTS = {
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false },
-        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40 },
+        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
+            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH" },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
@@ -400,6 +401,15 @@ local function MigrateProfile(profile)
     profile.personalTools.autoRes = profile.personalTools.autoRes == true
     profile.personalTools.consumableReminder = profile.personalTools.consumableReminder == true
     profile.personalTools.healthThreshold = math.max(1, math.min(99, tonumber(profile.personalTools.healthThreshold) or 40))
+    local personal = profile.personalTools
+    for key, default in pairs({ reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion" }) do
+        local value = personal[key]
+        if type(value) ~= "string" then value = type(personal.reminderText) == "string" and personal.reminderText or default end
+        personal[key] = value:gsub("[\r\n]", " "):sub(1, 60)
+    end
+    personal.reminderIconSize = math.max(24, math.min(128, tonumber(personal.reminderIconSize) or 56))
+    if personal.reminderTextSize ~= nil then personal.reminderTextSize = math.max(8, math.min(32, tonumber(personal.reminderTextSize) or 10)) end
+    if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
     profile.readiness.targets = type(profile.readiness.targets) == "table" and profile.readiness.targets or {}
     profile.readiness.revision = math.max(0, tonumber(profile.readiness.revision) or 0)
