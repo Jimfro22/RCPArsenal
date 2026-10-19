@@ -84,7 +84,7 @@ local function Setup(options)
     parent=true
     plays,stops,calls,events,callbacks,initializers,registry={},{},{shown=0,visible=0,cvar=0,panel=0,parent=0},{},{},{},{}
     result,soundHandle,cvarError,panelError,registryFail=true,100,false,false,options.registryFail
-    prefs,audioCVars={},{}
+    prefs,audioCVars=options.fresh and {} or {reminderSoundChoice='builtin_alert',reminderSoundChannel='SFX'},{}
     SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
     UIParent={IsVisible=function() calls.parent=calls.parent+1;return parent end}
     CinematicFrame,MovieFrame=nil,nil
@@ -117,6 +117,9 @@ local function ParentEvent(name)
     for _,entry in ipairs(registry[name] or {}) do entry[1](entry[2]) end
 end
 local function Reads() return calls.shown+calls.visible+calls.cvar+calls.panel+calls.parent end
+Setup({fresh=true})
+check(audio:GetStatusText()=='Master - Reminder is off.' and audio:Preview()
+    and plays[1].kind=='file' and plays[1][1]:find('RCP_Sound06.ogg',1,true) and plays[1][2]=='Master', 'Fresh default is not Sound 6 / Master')
 Setup()
 check(native.hookCalls==0 and Reads()==0 and #plays==0,'Fresh OFF did native work')
 check(events.UNIT_HEALTH==nil and events.UNIT_MAXHEALTH==nil and events.BAG_UPDATE_DELAYED==nil,'Audio subscribed to health/bags')
@@ -285,7 +288,28 @@ for _,case in ipairs({'global off','master zero','sfx off','sfx zero'}) do
     check(not ok and #plays==0 and feedback:find('WoW',1,true),'Known mute was not diagnosed: '..case)
 end
 Setup();prefs.reminderSoundChannel='Master';audioCVars.Sound_EnableSFX=false;audioCVars.Sound_SFXVolume='0'
-check(audio:Preview() and #plays==1,'SFX mute incorrectly classified Master as muted')
+check(not audio:Preview() and #plays==0,'Master ignored default-OFF effects-mute permission')
+local beforeMuteReads, beforeMutePlays=Reads(),#plays
+prefs.reminderSoundWhenEffectsMuted=true;Option('reminderSoundWhenEffectsMuted')
+check(Reads()==beforeMuteReads and #plays==beforeMutePlays,'Mute permission edit queried native state or played')
+check(audio:Preview() and #plays==1,'Explicit permission did not allow selected Master through effects mute')
+audioCVars.Sound_EnableAllSound=false
+check(not audio:Preview() and #plays==1,'Permission bypassed global sound OFF')
+audioCVars.Sound_EnableAllSound=true;audioCVars.Sound_MasterVolume='0'
+check(not audio:Preview() and #plays==1,'Permission bypassed zero Master volume')
+audioCVars.Sound_MasterVolume='1';prefs.reminderSoundChannel='SFX'
+check(not audio:Preview() and #plays==1,'Permission bypassed selected SFX mute or changed routes')
+Setup({enabled=true});prefs.reminderSoundChannel='Master';audioCVars.Sound_EnableSFX=false
+native:Show();check(#plays==0,'Automatic warning ignored effects-mute policy')
+beforeMuteReads=Reads();prefs.reminderSoundWhenEffectsMuted=true;Option('reminderSoundWhenEffectsMuted')
+check(Reads()==beforeMuteReads and #plays==0,'Enabling permission retried a consumed warning')
+native:Fire('OnShow');check(#plays==0,'Permission rearmed the active episode')
+native:Hide();native:Show();check(#plays==1 and plays[1][2]=='Master','New episode did not use allowed Master route')
+local priorStops=#stops;prefs.reminderSoundWhenEffectsMuted=false;Option('reminderSoundWhenEffectsMuted')
+check(#plays==1 and #stops==priorStops,'Policy edit changed owned playback or replayed')
+Setup({fresh=true});audioCVars.Sound_EnableSFX=secret;result=false
+local unknownOK,unknownFeedback=audio:Preview()
+check(not unknownOK and unknownFeedback=='Master - playback request failed.','Secret effects CVar asserted known mute')
 Setup();audioCVars.Sound_MasterVolume=secret;audioCVars.Sound_EnableAllSound=secret;result=false
 local ok,feedback=audio:Preview()
 check(not ok and feedback=='Sound Effects - playback request failed.','Unknown/error output falsely diagnosed mute')

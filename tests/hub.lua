@@ -20,9 +20,15 @@ function methods:SetFocus() self.focus = true end
 function methods:ClearFocus() self.focus = false end
 function methods:IsEnabled() return self.enabled ~= false end
 function methods:IsMouseEnabled() return true end
+function methods:IsProtected() return false,false end
 function methods:Enable() self.enabled = true end
 function methods:Disable() self.enabled = false end
 function methods:SetEnabled(value) self.enabled = value end
+function methods:EnableKeyboard(value) check(not combat,'Keyboard capture configured in combat');self.keyboard=value end
+function methods:EnableMouseWheel(value) check(not combat,'Wheel capture configured in combat');self.wheel=value end
+function methods:SetPropagateKeyboardInput(value) check(not combat,'Restricted keyboard propagation changed in combat');self.propagate=value;self.propagationChanges=(self.propagationChanges or 0)+1 end
+function methods:SetPropagateMouseClicks(value) check(not combat,'Restricted mouse propagation changed in combat');self.mousePropagate=value end
+function methods:SetPropagateMouseMotion(value) check(not combat,'Restricted mouse motion changed in combat');self.mouseMotion=value end
 function methods:GetParent() return self.parent end
 function methods:SetParent(parent) self.parent = parent end
 function methods:IsShown() return self.shown end
@@ -207,9 +213,29 @@ RaidArsenalDB = {profile = {schemaVersion = 18, shown = true, demoMode = true,
 }}
 -- Marker secure native wrapper is covered separately; emulate the API's setup.
 SecureHandlerWrapScript = function() end
-GetBindingKey = function() return nil end
-GetBindingAction = function() return '' end
-GetCurrentBindingSet = function() return 1 end
+local bindingMap,bindingOrder,bindingWrites,bindingSaves,bindingScope,chordPrefix={},{},0,0,1,''
+local function putBinding(key,action)
+    for i=#bindingOrder,1,-1 do if bindingOrder[i]==key then table.remove(bindingOrder,i) end end
+    bindingMap[key]=action;if action then bindingOrder[#bindingOrder+1]=key end
+end
+putBinding('F9',RA.WorldMarkers.PlaceBinding);putBinding('F10',RA.WorldMarkers.PlaceBinding)
+putBinding('F11',RA.WorldMarkers.ClearBinding);putBinding('SPACE','JUMP');putBinding('J','JUMP')
+C_KeyBindings={GetBindingContextForAction=function() return 7 end}
+GetBindingKey=function(action)
+    local keys={};for _,key in ipairs(bindingOrder) do if bindingMap[key]==action then keys[#keys+1]=key end end
+    return unpack(keys)
+end
+GetBindingAction=function(key) return bindingMap[key] or '' end
+GetCurrentBindingSet=function() return bindingScope end
+GetBindingName=function(action) return action=='JUMP' and 'Jump' or action end
+GetConvertedKeyOrButton=function(key) return key=='Button4' and 'BUTTON4' or key end
+IsKeyPressIgnoredForBinding=function(key) return key=='LSHIFT' or key=='LCTRL' or key=='UNKNOWN' or key=='BUTTON1' or key=='BUTTON2' end
+CreateKeyChordStringUsingMetaKeyState=function(key) return chordPrefix..key end
+SetBinding=function(key,action,context)
+    check(not combat and context==7,'Editor wrote bindings in combat or used scope as context')
+    bindingWrites=bindingWrites+1;putBinding(key,action);event('UPDATE_BINDINGS');return true
+end
+SaveBindings=function(scope) check(not combat and scope==bindingScope,'Editor saved a different binding scope');bindingSaves=bindingSaves+1 end
 event('ADDON_LOADED','RCPArsenal')
 cleanErrors()
 local db = RA:GetDB()
@@ -233,12 +259,15 @@ check(sent == 0, 'Quiet startup queried the group')
 event('ENCOUNTER_START'); check(RA.InEncounter, 'Encounter bookkeeping depends on inspection')
 event('ENCOUNTER_END'); check(not RA.InEncounter, 'Encounter state stayed latched after end')
 
--- Command entry always returns to Addons and retains legacy compatibility.
+-- Neutral entry restores local navigation; explicit deep links retain intent.
 check(SLASH_RCPARSENAL1 == '/rcp' and SLASH_RCPARSENAL2 == '/rcparsenal' and SLASH_RCPARSENAL3 == '/rcpa', 'Slash aliases changed')
 local other = function() end
 hash_SlashCmdList = {['/RCP'] = other}
 check(RA:GetSlashCommandStatus():find('another addon') and hash_SlashCmdList['/RCP'] == other, 'Collision status overwrote another handler')
 hash_SlashCmdList = nil
+SlashCmdList.RCPARSENAL('')
+check(RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='ADDONS', 'First open must default to Addons')
+RA:CloseConfig()
 SlashCmdList.RCPARSENAL('settings')
 check(RA.ConfigFrame:IsShown(), 'Real config did not open')
 local headerLogo
@@ -252,7 +281,11 @@ local function hasVisibleText(text)
 end
 check(hasVisibleText('Profiles & Recovery') and not hasVisibleText('Addons & versions'), 'Profiles pane navigation failed')
 SlashCmdList.RCPARSENAL('')
-check(hasVisibleText('Addons & versions') and not hasVisibleText('Profiles & Recovery'), 'Bare /rcp did not return to Addons')
+check(hasVisibleText('Profiles & Recovery') and not hasVisibleText('Addons & versions'), 'Bare /rcp reset the last viewed tab')
+RA:CloseConfig(); SlashCmdList.RCPARSENAL('config')
+check(hasVisibleText('Profiles & Recovery'), 'Generic config command lost last tab on close/reopen')
+RA:CloseConfig(); RA:OpenConfig()
+check(hasVisibleText('Profiles & Recovery'), 'Generic UI open lost last tab')
 check(talentReads == 0 and inspectCalls == 0 and sent == 0, 'Opening the hub performed scans or network requests')
 SlashCmdList.RCPARSENAL('raid')
 check(hasVisibleText('Addons & versions'), 'Version check pane missing')
@@ -372,18 +405,34 @@ for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Low-health sou
 check(audioToggle~=nil and RA:GetDB().personalTools.reminderSound==true, 'Default native sound preference missing')
 audioToggle:Fire('OnClick')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder, 'Sound toggle enabled master or failed OFF')
-local oldKit,oldPlaySound=SOUNDKIT,PlaySound
+local oldKit,oldPlaySound,oldPlayFile=SOUNDKIT,PlaySound,PlaySoundFile
 local previews,beforeSoundTimers,beforeSoundSent=0,#timers,sent
 SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
-PlaySound=function(id,channel,...) check(id==12889 and channel=='SFX' and select('#',...)==0,'Preview did not use explicit SFX route');previews=previews+1;return true,7777 end
+PlaySoundFile=function(path,channel,...) check(path:find('RCP_Sound06.ogg',1,true) and channel=='Master' and select('#',...)==0,'Preview did not use default Sound 6 / Master');previews=previews+1;return true,7777 end
 check(clickVisible('PREVIEW SOUND') and previews==1, 'Explicit sound preview failed')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder
     and #timers==beforeSoundTimers and sent==beforeSoundSent, 'Audio preview changed opt-in or started timer/network work')
-SOUNDKIT,PlaySound=oldKit,oldPlaySound
+SOUNDKIT,PlaySound,PlaySoundFile=oldKit,oldPlaySound,oldPlayFile
 local beforeChoiceSounds=previews
-check(clickVisible('Built-in alert  v') and hasVisibleText('Sound 1'), 'Sound dropdown did not open')
+check(clickVisible('Sound 6  v') and hasVisibleText('Sound 1'), 'Sound dropdown did not open')
 check(clickVisible('Sound 1') and RA:GetDB().personalTools.reminderSoundChoice=='sound_1', 'Sound selection did not save curated ID')
 check(previews==beforeChoiceSounds and not RA:GetDB().personalTools.consumableReminder, 'Selection played sound or enabled reminder')
+local muteOption,channelControl
+for _,obj in ipairs(objects) do
+    if obj.label and obj.label.text=='Play when game effects are muted' then muteOption=obj end
+    if obj.title and obj.title.text=='CHANNEL' and obj.buttons then channelControl=obj end
+end
+check(muteOption and muteOption:IsEnabled() and not RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted
+    and hasVisibleText('Requires Master. Does not override global sound or master volume.'),'Mute permission default/helper missing')
+local channelBottom=-channelControl.points[1][5]+channelControl:GetHeight()
+check(-muteOption.points[1][5]>=channelBottom+4,'Muted-effects hit area overlaps channel buttons')
+check(clickVisible('Play when game effects are muted') and RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted
+    and previews==beforeChoiceSounds,'Mute permission edit played a sound or failed to save')
+RA.PersonalTools:SetOption('reminderSoundChannel','SFX')
+check(not muteOption:IsEnabled() and not clickVisible('Play when game effects are muted')
+    and RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted,'SFX route did not disable/preserve mute permission')
+RA.PersonalTools:SetOption('reminderSoundChannel','Master')
+check(muteOption:IsEnabled() and clickVisible('Play when game effects are muted') and not RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted,'Master route did not recover existing mute choice')
 check(hasVisibleText('Show while on cooldown') and RA:GetDB().personalTools.reminderShowOnCooldown==false, 'Show-on-cooldown default/control wrong')
 local personalSnapshot=RA:GetDB().personalTools
 local pos=personalSnapshot.reminderPosition
@@ -434,7 +483,9 @@ local beforeReset = RA:GetDB()
 check(clickVisible('ADVANCED: FULL PROFILE RESET') and clickVisible('RESET PROFILE') and RA:GetDB() == beforeReset, 'Reset ran before consequence confirmation')
 check(clickVisible('CANCEL') and RA:GetDB() == beforeReset, 'Reset cancel changed the profile')
 local imported = assert(RA:ExportProfileString())
+local navigation = RaidArsenalDB.navigation
 check(RA:ImportProfileString(imported), 'Portable round trip failed')
+check(RaidArsenalDB.navigation==navigation and navigation.lastTab=='SETTINGS', 'Import changed local navigation')
 check(RA:GetDB().readiness == targets and RA:GetDB().personalTools == personal and not RA:GetDB().hudEnabled and RA:GetDB().worldMarkers.enabled, 'Import changed local opt-ins or targets')
 local schedule = RA.ScheduleInspectionScan
 local scheduled = 0
@@ -472,6 +523,7 @@ check(RA:IsHUDEnabled() and RA:GetDB().shown and RA:GetDB().leaderToolbox.enable
 check(RA:SetHUDEnabled(false) and not RA:IsInspectionEnabled(), 'HUD disable failed')
 RA.ScheduleInspectionScan = schedule
 RA:ResetProfile(); cleanErrors()
+check(RaidArsenalDB.navigation==navigation, 'Profile reset discarded local navigation')
 check(not RA:GetDB().hudEnabled and not RA:GetDB().leaderToolbox.enabled and not RA:GetDB().worldMarkers.enabled and next(RA:GetDB().readiness.targets) == nil, 'Reset is not quiet')
 RA:CloseConfig()
 cleanErrors()
@@ -714,6 +766,73 @@ for _,command in ipairs({'sort','split','groupsplit'}) do
     check(output:find('Using 2 saved specializations',1,true) and output:find('Raid is already arranged',1,true), 'Puck-only '..command..' failed to hydrate saved specs after an empty session')
     check(inspectCalls==requestsBefore and talentReads==talentsBefore and not RA:IsInspectionRunning() and not RA:IsHUDEnabled() and cacheProfile.leaderToolbox.enabled, 'Puck-only '..command..' enabled or collected inspection data')
 end
+-- Actual key-slot and capture callbacks, including a cancelled held gesture.
+RA:OpenConfig('WORLDMARKERS')
+local function keyButton(key)
+    for _,obj in ipairs(objects) do if obj.label and obj.label.text==key and obj:IsVisible() and obj:IsEnabled() then return obj end end
+end
+local markerAttributes=attributeWrites
+check(keyButton('F9') and keyButton('F10') and keyButton('F11'),'Current primary/alternate marker keys missing')
+keyButton('F9'):Fire('OnClick')
+local input=named.RCPArsenalMarkerBindingEditor
+check(input and input:IsVisible() and input.parent==UIParent and input.keyboard and input.propagate==false,'Capture does not own/consume ordinary input')
+local writesBefore,savesBefore=bindingWrites,bindingSaves
+input:Fire('OnKeyDown','F8')
+check(bindingWrites==writesBefore and bindingSaves==savesBefore and input:IsVisible(),'UI saved or closed on keydown')
+input:Fire('OnKeyUp','F7');check(input:IsVisible() and bindingWrites==writesBefore,'Unrelated release ended key capture')
+input:Fire('OnKeyUp','F8')
+check(not input:IsShown() and bindingMap.F8==RA.WorldMarkers.PlaceBinding and bindingMap.F10==RA.WorldMarkers.PlaceBinding
+    and bindingMap.F9==nil and bindingSaves==savesBefore+1 and attributeWrites==markerAttributes,'UI assignment lost alternate or changed secure marker actions')
+keyButton('F8'):Fire('OnClick');writesBefore,savesBefore=bindingWrites,bindingSaves
+input:Fire('OnKeyDown','SPACE');input:Fire('OnKeyUp','SPACE')
+check(input:IsVisible() and hasVisibleText('SPACE is assigned to Jump. Replace it?') and bindingWrites==writesBefore,'UI conflict replaced a key silently')
+check(clickVisible('CANCEL') and not input:IsShown() and bindingSaves==savesBefore,'Conflict cancel changed bindings')
+for _,path in ipairs({'hide','tab','combat','external','reset','import','cancel','mouse-hide'}) do
+    RA:OpenConfig('WORLDMARKERS');keyButton('F8'):Fire('OnClick')
+    input=named.RCPArsenalMarkerBindingEditor
+    local mouse=path=='mouse-hide';local held=mouse and 'BUTTON4' or 'F7'
+    input:Fire(mouse and 'OnMouseDown' or 'OnKeyDown',mouse and 'Button4' or 'F7')
+    writesBefore,savesBefore=bindingWrites,bindingSaves
+    local propagationBefore=input.propagationChanges
+    if path=='hide' or path=='mouse-hide' then RA:CloseConfig()
+    elseif path=='tab' then RA:OpenConfig('MYTOOLS')
+    elseif path=='combat' then combat=true;event('PLAYER_REGEN_DISABLED')
+    elseif path=='external' then event('UPDATE_BINDINGS')
+    elseif path=='reset' then RA:ResetProfile()
+    elseif path=='import' then RA:ApplyImportedProfile(RA:CreateDefaultProfile())
+    else check(clickVisible('CANCEL'),'Capture Cancel missing') end
+    check(not RA.MarkerBindings:GetPending() and RA.MarkerBindings:GetHeldKey()==held and input:IsVisible()
+        and input.allPoints==UIParent and hasVisibleText('Release '..held..' to finish cancelling. If needed, tap '..held..' again.'),path..' lost held release or cancellation hint')
+    input:Fire('OnKeyDown','W');input:Fire('OnKeyUp','W')
+    check(input:IsVisible() and input.propagate==false and input.propagationChanges==propagationBefore,path..' changed restricted propagation flags during drain')
+    input:Fire(mouse and 'OnMouseUp' or 'OnKeyUp',mouse and 'Button4' or 'F7')
+    check(not input:IsShown() and not RA.MarkerBindings:GetHeldKey() and bindingWrites==writesBefore
+        and bindingSaves==savesBefore and bindingMap.F7==nil,path..' committed after cancellation or retained input capture')
+    if path=='combat' then combat=false;event('PLAYER_REGEN_ENABLED') end
+end
+-- Recreate the actual Config module's locals while retaining SavedVariables,
+-- modeling a reload without relying on its prior activeTab in memory.
+RA:OpenConfig('HUD'); RA:CloseConfig()
+local savedNavigation=RaidArsenalDB.navigation
+check(savedNavigation.lastTab=='HUD' and savedNavigation.cooldownTab=='HUD', 'Leaf navigation was not persisted')
+assert(loadfile('RCPArsenal/Config.lua'))('RCPArsenal', RA)
+RA:OpenConfig()
+check(hasVisibleText('HUD OPACITY') and selectedNav('AVAILABLE COOLDOWNS'), 'Module reload lost the last cooldown subtab')
+check(clickNav('ADDONS & VERSIONS') and clickNav('AVAILABLE COOLDOWNS') and hasVisibleText('HUD OPACITY'), 'Cooldown sidebar reset the last subtab')
+SlashCmdList.RCPARSENAL('content')
+check(RaidArsenalDB.navigation.lastTab=='CONTENT', 'Explicit categories deep link ignored')
+SlashCmdList.RCPARSENAL('tools'); RA:CloseConfig(); SlashCmdList.RCPARSENAL('')
+check(hasVisibleText('Personal tools') and RaidArsenalDB.navigation.lastTab=='MYTOOLS', 'Close/reopen lost explicit deep-link destination')
+savedNavigation.privateSentinel='PRIVATE-NAVIGATION-SENTINEL'
+check(not RA:ExportProfileString():find('PRIVATE-NAVIGATION-SENTINEL',1,true), 'Portable profile includes navigation state')
+RA:CloseConfig(); savedNavigation.lastTab='invalid-pane'; RA:OpenConfig()
+check(hasVisibleText('Addons & versions') and savedNavigation.lastTab=='ADDONS', 'Invalid saved pane did not fall back safely')
+RaidArsenalDB.navigation='invalid-state'; RA:CloseConfig(); RA:OpenConfig()
+check(hasVisibleText('Addons & versions') and type(RaidArsenalDB.navigation)=='table', 'Malformed navigation state was not repaired')
+RA:OpenConfig('RAIDTOOLS')
+check(hasVisibleText('Addons & versions'), 'Legacy explicit raid-tools route changed')
+RA:CloseConfig(); combat=true; SlashCmdList.RCPARSENAL('tools'); combat=false
+check(not RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='ADDONS', 'Combat open mutated saved navigation')
 cleanErrors()
 print = nativePrint
 print('PASS: ' .. checks .. ' hub/migration/quiet-lifecycle assertions (actual addon modules; offline frame mocks)')

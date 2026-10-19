@@ -83,6 +83,11 @@ local COOLDOWN_TABS = {
 local function PaneContext(key)
     return PANE_CONTEXT[key]
 end
+local function Navigation()
+    -- Local window navigation is independent of portable/resettable profiles.
+    if type(RaidArsenalDB.navigation) ~= "table" then RaidArsenalDB.navigation = {} end
+    return RaidArsenalDB.navigation
+end
 
 local TIER_COLORS = {
     CORE = TC.magenta,
@@ -1625,33 +1630,151 @@ local function CreateWorldMarkersPane(parent)
     local bindingCard = CreateCard(parent, "KEY BINDINGS", "Press the place key repeatedly; after the last marker, the sequence repeats.")
     SetSize(bindingCard, 950, 194)
     SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -410)
-    local placeLabel = Font(bindingCard, 11, TC.text, "BOLD")
-    RA:SetVisualText(placeLabel, "Place next world marker")
-    SetPoint(placeLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -70)
-    local clearLabel = Font(bindingCard, 11, TC.text, "BOLD")
-    RA:SetVisualText(clearLabel, "Clear all world markers")
-    SetPoint(clearLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -100)
-    local placeKey = Font(bindingCard, 11, TC.orange, "REGULAR")
-    SetPoint(placeKey, "LEFT", placeLabel, "LEFT", 280, 0)
-    SetWidth(placeKey, 350)
-    local clearKey = Font(bindingCard, 11, TC.orange, "REGULAR")
-    SetPoint(clearKey, "LEFT", clearLabel, "LEFT", 280, 0)
-    SetWidth(clearKey, 350)
-    local setup = CreateButton(bindingCard, "OPEN KEY BINDINGS", 220, 36, function()
+    local bindings = RA.MarkerBindings
+    local bindingRows = {}
+    local editorOverlay, editorUnavailable, editorVisual, drainHint, editorTitle, editorInfo, editorPrompt, replaceKey
+    local RefreshEditor
+    local scopeText = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
+    SetPoint(scopeText, "TOPRIGHT", bindingCard, "TOPRIGHT", -18, -20)
+    SetWidth(scopeText, 250); scopeText:SetJustifyH("RIGHT")
+    local bindingHelp = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
+    bindingHelp:SetSpacing(4); bindingHelp:SetWordWrap(true)
+    SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -146)
+    SetWidth(bindingHelp, 744)
+    local function CancelEditor()
+        if bindings:GetPending() then bindings:Cancel("Binding cancelled.") end
+        if RefreshEditor then RefreshEditor() end
+    end
+    local function CreateEditor()
+        if editorUnavailable then return false end
+        if editorOverlay then return true end
+        editorOverlay = CreateFrame("Frame", "RCPArsenalMarkerBindingEditor", UIParent)
+        local protectedOK, protected, explicitlyProtected = pcall(function() return editorOverlay:IsProtected() end)
+        if type(issecretvalue) ~= "function" or not protectedOK or issecretvalue(protected) or issecretvalue(explicitlyProtected)
+            or protected ~= false or explicitlyProtected ~= false then
+            pcall(editorOverlay.Hide, editorOverlay)
+            editorOverlay, editorUnavailable = nil, true; return false
+        end
+        editorOverlay:SetAllPoints(UIParent)
+        editorOverlay:SetFrameStrata("FULLSCREEN_DIALOG")
+        editorOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel() + 200)
+        editorOverlay:Hide(); editorOverlay:EnableMouse(true)
+        local ok = pcall(function()
+            local combat = InCombatLockdown()
+            if issecretvalue(combat) or combat ~= false then error("Capture setup requires out of combat.") end
+            editorOverlay:EnableKeyboard(true)
+            editorOverlay:EnableMouseWheel(true)
+            editorOverlay:SetPropagateKeyboardInput(false)
+            editorOverlay:SetPropagateMouseClicks(false)
+            editorOverlay:SetPropagateMouseMotion(true)
+        end)
+        if not ok then editorOverlay, editorUnavailable = nil, true; return false end
+        editorVisual = CreateFrame("Frame", nil, editorOverlay)
+        editorVisual:SetAllPoints(RA.ConfigFrame)
+        editorVisual:SetScale(RA.ConfigFrame:GetScale())
+        drainHint = Font(editorOverlay, 14, TC.orange, "BOLD")
+        SetPoint(drainHint, "CENTER", UIParent, "CENTER", 0, 0)
+        SetWidth(drainHint, math.max(1, math.min(580, UIParent:GetWidth() - 32)))
+        drainHint:SetJustifyH("CENTER"); drainHint:SetWordWrap(true); drainHint:Hide()
+        local shade = editorVisual:CreateTexture(nil, "BACKGROUND")
+        shade:SetAllPoints(); shade:SetColorTexture(0, 0, 0, 0.76)
+        local dialog = CreateFrame("Frame", nil, editorVisual, "BackdropTemplate")
+        SetSize(dialog, 580, 248); SetPoint(dialog, "CENTER", editorVisual, "CENTER", 0, 0)
+        SetSurfaceColor(dialog, TC.surfaceRaised); SetBorderColor(dialog, TC.lineStrong)
+        editorTitle = Font(dialog, 15, TC.text, "BOLD")
+        SetPoint(editorTitle, "TOPLEFT", dialog, "TOPLEFT", 22, -22); SetWidth(editorTitle, 536)
+        editorInfo = Font(dialog, 10, TC.textSoft, "REGULAR")
+        SetPoint(editorInfo, "TOPLEFT", dialog, "TOPLEFT", 22, -54); SetWidth(editorInfo, 536)
+        editorPrompt = Font(dialog, 11, TC.orange, "REGULAR")
+        editorPrompt:SetWordWrap(true); editorPrompt:SetSpacing(5)
+        SetPoint(editorPrompt, "TOPLEFT", dialog, "TOPLEFT", 22, -88); SetWidth(editorPrompt, 536)
+        local hint = Font(dialog, 9.5, TC.textSoft, "REGULAR")
+        RA:SetVisualText(hint, "Modifiers supported. Mouse buttons 3+ supported. Escape cancels.")
+        SetPoint(hint, "BOTTOMLEFT", dialog, "BOTTOMLEFT", 22, 65); SetWidth(hint, 536)
+        replaceKey = CreateButton(dialog, "REPLACE", 130, 32, function() bindings:Replace(); RefreshEditor() end)
+        SetPoint(replaceKey, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -164, 20)
+        local cancel = CreateButton(dialog, "CANCEL", 130, 32, CancelEditor)
+        SetPoint(cancel, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -22, 20)
+        -- All input/propagation flags were configured outside combat above.
+        -- Never change restricted flags in an input/combat callback. A cancelled
+        -- held gesture briefly drains input until its matching release; a clear
+        -- visible hint explains this instead of claiming unrelated input passes.
+        local function Press(_, input)
+            local edit = bindings:GetPending()
+            if edit and (not edit.conflict or input == "ESCAPE") then
+                local _, detail = bindings:Capture(input); RefreshEditor(detail)
+            end
+        end
+        local function Release(_, input) local _, detail = bindings:Release(input); RefreshEditor(detail) end
+        editorOverlay:SetScript("OnKeyDown", Press); editorOverlay:SetScript("OnKeyUp", Release)
+        editorOverlay:SetScript("OnMouseDown", Press); editorOverlay:SetScript("OnMouseUp", Release)
+        editorOverlay:SetScript("OnMouseWheel", function() end) -- Consume; wheel editing remains in WoW keybinds.
+        editorOverlay:SetScript("OnHide", function()
+            if bindings:GetPending() then bindings:Cancel("Binding cancelled.") end
+        end)
+        return true
+    end
+    RefreshEditor = function(detail)
+        if not editorOverlay then return end
+        local edit = bindings:GetPending()
+        if not edit then
+            editorVisual:Hide()
+            -- Own ordinary input frame survives host/tab/combat cancellation
+            -- only through the held release. No deferred binding write exists.
+            local held = bindings:GetHeldKey()
+            RA:SetVisualText(drainHint, held and ("Release " .. held .. " to finish cancelling. If needed, tap " .. held .. " again.") or "")
+            drainHint:SetShown(held ~= nil)
+            editorOverlay:SetShown(held ~= nil)
+            return
+        end
+        drainHint:Hide(); editorVisual:Show()
+        RA:SetVisualText(editorTitle, "Bind " .. edit.label)
+        RA:SetVisualText(editorInfo, (edit.slot == 1 and "Primary" or "Alternate") .. " slot: " .. (edit.currentKey or "Unbound") .. " - " .. edit.scopeLabel)
+        local prompt = detail or bindings:GetStatusText()
+        if edit.awaitingRelease then prompt = "Release the captured key to continue."
+        elseif edit.conflict then prompt = edit.proposedKey .. " is assigned to " .. edit.conflictLabel .. ". Replace it?" end
+        RA:SetVisualText(editorPrompt, prompt:gsub("|", "||"))
+        replaceKey:SetShown(edit.conflict and not edit.awaitingRelease)
+    end
+    local function EditKey(action, slot)
+        local ok, detail = bindings:Begin(action, slot)
+        if not ok then message = detail; RefreshWorldMarkers(); return end
+        if not CreateEditor() then
+            bindings:Cancel("Key capture unavailable; use WoW keybinds."); RefreshWorldMarkers(); return
+        end
+        RefreshEditor(); editorOverlay:Show()
+    end
+    for row, action in ipairs({markers.PlaceBinding, markers.ClearBinding}) do
+        local actionLabel = row == 1 and "Place next world marker" or "Clear all world markers"
+        local label = Font(bindingCard, 11, TC.text, "BOLD")
+        RA:SetVisualText(label, actionLabel)
+        SetPoint(label, "TOPLEFT", bindingCard, "TOPLEFT", 18, -(68 + (row - 1) * 36)); SetWidth(label, 264)
+        for slot = 1, 2 do
+            local bindingAction, bindingSlot = action, slot
+            local key = CreateButton(bindingCard, "Unbound", 194, 30, function() EditKey(bindingAction, bindingSlot) end)
+            local x, y = slot == 1 and 298 or 548, -(64 + (row - 1) * 36)
+            SetPoint(key, "TOPLEFT", bindingCard, "TOPLEFT", x, y)
+            local unbind = CreateButton(bindingCard, "X", 30, 30, function()
+                local _, detail = bindings:Clear(bindingAction, bindingSlot)
+                message = detail or ""; RefreshWorldMarkers()
+            end)
+            SetPoint(unbind, "LEFT", key, "RIGHT", 4, 0)
+            AddTooltip(key, "Edit " .. (slot == 1 and "primary" or "alternate") .. " key: " .. actionLabel)
+            AddTooltip(unbind, "Unbind this key: " .. actionLabel .. ". Does not clear placed markers.")
+            bindingRows[#bindingRows + 1] = {action=action, slot=slot, key=key, unbind=unbind}
+        end
+    end
+    local setup = CreateButton(bindingCard, "WOW KEYBINDS", 140, 30, function()
         if InCombatLockdown() then return end
+        CancelEditor()
         if Settings and Settings.OpenToCategory and Settings.KEYBINDINGS_CATEGORY_ID then
             Settings.OpenToCategory(Settings.KEYBINDINGS_CATEGORY_ID, BINDING_HEADER_RCPARSENAL_MARKERS)
-        else
-            RA:Print("Open Esc > Options > Key Bindings > AddOns > RCP Arsenal — World markers.")
-        end
+        else RA:Print("Open Esc > Options > Key Bindings > AddOns > RCP Arsenal - World markers.") end
     end)
-    SetPoint(setup, "TOPRIGHT", bindingCard, "TOPRIGHT", -18, -70)
-    local bindingHelp = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
-    RA:SetVisualText(bindingHelp, "AddOns > RCP Arsenal — World markers. Blizzard handles conflicts and saves your keys.\nClear all also restarts at slot 1; it keeps your order. Disabling keeps your bindings but makes both actions inactive.")
-    bindingHelp:SetSpacing(4)
-    bindingHelp:SetWordWrap(true)
-    SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -137)
-    SetWidth(bindingHelp, 914)
+    SetPoint(setup, "BOTTOMRIGHT", bindingCard, "BOTTOMRIGHT", -18, 18)
+    parent:HookScript("OnHide", CancelEditor)
+    RA.ConfigFrame:HookScript("OnHide", CancelEditor)
+    RA:RegisterCallback("MARKER_BINDINGS_CHANGED", function() if RefreshEditor then RefreshEditor() end end)
     local state = Font(parent, 10, TC.orange, "REGULAR")
     SetPoint(state, "TOPLEFT", parent, "TOPLEFT", 0, -616)
     SetWidth(state, 950)
@@ -1690,8 +1813,17 @@ local function CreateWorldMarkersPane(parent)
             button:SetAlpha(button:IsEnabled() and 1 or 0.45)
         end
         RA:SetVisualText(selection, message ~= "" and message or (selected and ("Selected: " .. markers.Definitions[order[selected]].name) or "Select a numbered slot to edit it."))
-        RA:SetVisualText(placeKey, markers:GetBindingText(markers.PlaceBinding))
-        RA:SetVisualText(clearKey, markers:GetBindingText(markers.ClearBinding))
+        local bindingState = bindings:GetState(markers.PlaceBinding)
+        RA:SetVisualText(scopeText, bindingState.scopeLabel)
+        RA:SetVisualText(bindingHelp, combat and "Change keybinds after combat." or bindings:GetStatusText())
+        for _, row in ipairs(bindingRows) do
+            local binding = bindings:GetState(row.action)
+            local key = binding.keys[row.slot]
+            RA:SetVisualText(row.key.label, key or (binding.available and "Unbound" or "Unavailable"))
+            row.key:SetEnabled(binding.editable); row.key:SetAlpha(binding.editable and 1 or 0.45)
+            row.unbind:SetEnabled(binding.editable and key ~= nil); row.unbind:SetAlpha(row.unbind:IsEnabled() and 1 or 0.45)
+        end
+        RefreshEditor()
         if pending then
             RA:SetVisualText(state, "Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
         elseif combat then
@@ -1837,10 +1969,15 @@ end
 
 local function SetTab(tabKey)
     if tabKey == "RAIDTOOLS" then tabKey = "ADDONS" end
-    if tabKey == "COOLDOWNS" then tabKey = "CONTENT" end
+    local navigation = Navigation()
+    if tabKey == "COOLDOWNS" then
+        tabKey = PANE_CONTEXT[navigation.cooldownTab] == "COOLDOWNS" and navigation.cooldownTab or "CONTENT"
+    end
     if not panes[tabKey] then tabKey = "ADDONS" end
     if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
     activeTab = tabKey
+    navigation.lastTab = tabKey
+    if PaneContext(tabKey) == "COOLDOWNS" then navigation.cooldownTab = tabKey end
     for key, pane in pairs(panes) do
         pane:SetShown(key == tabKey or (key == "COOLDOWNS" and PaneContext(tabKey) == "COOLDOWNS"))
     end
@@ -2109,7 +2246,7 @@ local function CreateConfig()
     advancedBack:SetFrameLevel(main:GetFrameLevel() + 20)
     SetPoint(advancedBack, "TOPRIGHT", main, "TOPRIGHT", -68, -20)
     local hint = Font(sidebar, 10, TC.muted, "REGULAR")
-    RA:SetVisualText(hint, "Tools stay optional.\n/rcp opens the addon checklist.")
+    RA:SetVisualText(hint, "Tools stay optional.\n/rcp reopens your last tab.")
     hint:SetWordWrap(true)
     SetWidth(hint, 200)
     SetPoint(hint, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 30)
@@ -2231,16 +2368,11 @@ function RA:OpenConfig(tabKey)
         self:Print("Configuration is locked during combat.")
         return
     end
-    if tabKey == "RAIDTOOLS" then tabKey = "ADDONS" end
-    if tabKey and panes[tabKey] then
-        activeTab = tabKey
-    elseif tabKey and not frame then
-        activeTab = tabKey
-    end
+    local requested = tabKey == nil and Navigation().lastTab or tabKey
+    activeTab = type(requested) == "string" and requested or "ADDONS"
     if not frame then
         CreateConfig()
     end
-    if tabKey and panes[tabKey] then activeTab = tabKey end
     frame:Show()
     SetTab(activeTab)
     RefreshConfig()
@@ -2295,5 +2427,9 @@ RA:RegisterCallback("ABILITY_ORDER_CHANGED", function()
 end)
 
 RA:RegisterCallback("WORLD_MARKERS_CHANGED", function()
+    if frame and frame:IsShown() and activeTab == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
+end)
+
+RA:RegisterCallback("MARKER_BINDINGS_CHANGED", function()
     if frame and frame:IsShown() and activeTab == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
 end)

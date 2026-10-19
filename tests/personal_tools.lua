@@ -129,6 +129,7 @@ function CreateFrame(kind, name, parent, template)
         if changed and self.scripts.OnShow then self.scripts.OnShow(self) end
     end
     function frame:SetAlpha(value)
+        if self.failSink and rawequal(value, secret) then error("Glow alpha sink failed") end
         -- Sink receives the exact opaque token, never a processed derivative.
         check(rawequal(value, secret) or value == 0 or value == 1, "Unexpected health/alpha conversion")
         self.alpha = value
@@ -295,7 +296,7 @@ tools = loadTools()
 ready(5512); ready(224464); ready(241304); ready(271884)
 check(tools:SetOption("consumableReminder", true), "Reminder enable failed")
 check(tools:GetState().itemID == 224464, "Demonic Healthstone must have priority")
-check(#frames == 2 and frames[1].shown and rawequal(frames[1].alpha, secret), "Secret alpha must reach parent sink")
+check(#frames == 3 and frames[1].shown and rawequal(frames[1].alpha, secret), "Secret alpha must reach parent sink")
 check(frames[2].animation.plays == 1 and #tickers == 0,
     "Inventory selection must use events with no readiness ticker")
 local curve = tools:GetReminderCurveForValidation()
@@ -303,10 +304,10 @@ check(curve.kind == Enum.LuaCurveType.Step and math.abs(curve.points[2][1] - 0.4
     "Native curve must use 0-1 domain and editable threshold")
 local beforeItems, beforeHealth = itemCalls, healthCalls
 events.UNIT_HEALTH("UNIT_HEALTH", "player")
-check(itemCalls == beforeItems and healthCalls == beforeHealth + 1, "Health events must not rescan item state")
+check(itemCalls == beforeItems and healthCalls == beforeHealth + 2, "Health event must use only main/glow sinks without item work")
 events.UNIT_HEALTH("UNIT_HEALTH", secret)
 events.UNIT_HEALTH("UNIT_HEALTH", "target")
-check(healthCalls == beforeHealth + 1, "Ignore unknown/nonplayer unit health events")
+check(healthCalls == beforeHealth + 2, "Ignore unknown/nonplayer unit health events")
 items[224464].count = 0; tools:Refresh()
 check(tools:GetState().itemID == 5512, "Standard stone fallback missing")
 items[5512].start, items[5512].duration, items[5512].usable = now, 100, false
@@ -559,9 +560,12 @@ check(not tools:GetNativeSoundEligibility(),"Saved sound OFF remained eligible")
 check(not tools:SetOption("reminderSound",secret) and not tools:SetOption("reminderSound",1),"Secret/nonboolean sound preference accepted")
 -- Audio choices/channel sanitation and migration are public preferences.
 tools=loadTools();local bagBefore,hpBefore=itemCalls,healthCalls
-check(tools:GetState().reminderSoundChannel=='SFX' and tools:GetState().reminderSoundChoice=='builtin_alert',"Legacy/unset sound defaults differ")
+check(tools:GetState().reminderSoundChannel=='Master' and tools:GetState().reminderSoundChoice=='sound_6',"Legacy/unset sound defaults differ")
 check(tools:SetOption('reminderSoundChannel','Master') and tools:SetOption('reminderSoundChoice','sound_6'),"Curated audio preference rejected")
 check(itemCalls==bagBefore and healthCalls==hpBefore and #frames==0 and #timers==0,"Selection did gameplay/native display work")
+check(not tools:GetState().reminderSoundWhenEffectsMuted and tools:SetOption('reminderSoundWhenEffectsMuted',true)
+    and itemCalls==bagBefore and healthCalls==hpBefore and #timers==0 and #frames==0,"Effects-mute permission default/edit did gameplay work")
+check(not tools:SetOption('reminderSoundWhenEffectsMuted',secret) and not tools:SetOption('reminderSoundWhenEffectsMuted',1),"Invalid effects-mute permission accepted")
 check(not tools:SetOption('reminderSoundChannel','Music') and not tools:SetOption('reminderSoundChoice','Interface\\bad.ogg')
     and not tools:SetOption('reminderSoundChoice',secret),"Unallowlisted/secret audio preference accepted")
 local migrated=coreTextRA:CreateDefaultProfile()
@@ -569,9 +573,13 @@ migrated.personalTools.reminderSoundChannel,migrated.personalTools.reminderSound
 coreTextRA:NormalizeProfile(migrated)
 check(migrated.personalTools.reminderSoundChannel=='Master' and migrated.personalTools.reminderSoundChoice=='sound_6'
     and migrated.personalTools.reminderSound==false,"Migration overwrote valid audio choice/channel/OFF")
+migrated.personalTools.reminderSoundChannel,migrated.personalTools.reminderSoundChoice='SFX','builtin_alert'
+coreTextRA:NormalizeProfile(migrated)
+check(migrated.personalTools.reminderSoundChannel=='SFX' and migrated.personalTools.reminderSoundChoice=='builtin_alert'
+    and migrated.personalTools.reminderSound==false,"New defaults overwrote prior valid SFX/built-in/OFF choices")
 migrated.personalTools.reminderSoundChannel,migrated.personalTools.reminderSoundChoice='invalid','bad'
 coreTextRA:NormalizeProfile(migrated)
-check(migrated.personalTools.reminderSoundChannel=='SFX' and migrated.personalTools.reminderSoundChoice=='builtin_alert',"Malformed sound settings not sanitized")
+check(migrated.personalTools.reminderSoundChannel=='Master' and migrated.personalTools.reminderSoundChoice=='sound_6',"Malformed sound settings not sanitized")
 -- One native preview frame, full-text/animation clamp, saved anchor unchanged.
 tools=loadTools();tools:SetReminderPosition(800,-500);local saved=profile.personalTools.reminderPosition
 check(tools:PreviewReminder('empty'),"Empty warning sample failed")
@@ -618,7 +626,7 @@ check(frames[1].renderAlpha==0,"Above-threshold setup failed")
 for _,eventName in ipairs({"UNIT_HEALTH","UNIT_MAXHEALTH"}) do
     local beforeItems,beforeHealth,beforeTime=itemCalls,healthCalls,now
     healthRatio=.59;events[eventName](eventName,"player")
-    check(frames[1].renderAlpha==1 and healthCalls==beforeHealth+1 and now==beforeTime,
+    check(frames[1].renderAlpha==1 and healthCalls==beforeHealth+2 and now==beforeTime,
         "Player health event deferred its native alpha write")
     check(itemCalls==beforeItems and #timers==0 and #tickers==0,"Health event scanned or queued a refresh")
     healthRatio=.8;events[eventName](eventName,"player")
@@ -631,6 +639,42 @@ local priorItems=itemCalls
 events.UNIT_HEALTH("UNIT_HEALTH","player")
 check(frames[1].renderAlpha==1 and itemCalls==priorItems,"Reminder opted out of native predicted health")
 reportedHealthRatio=nil
+-- The independent glow uses opaque native output under the main gate.
+tools=loadTools();ready(5512);healthRatio=.5
+tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
+local glow=frames[1].glow
+check(glow and glow.parent==frames[2] and frames[1].renderAlpha==1 and glow.renderAlpha==0,
+    'Glow was not parented under the existing main threshold/body gate')
+local glowBag,glowCD,glowTimer=itemCalls,cooldownCalls,#timers
+for _,entry in ipairs({{.35,1},{.350001,0},{.5,0},{.2,1}}) do
+    healthRatio=entry[1];events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(glow.renderAlpha==entry[2] and frames[1].renderAlpha==1,'Fixed glow boundary/recovery altered main threshold')
+end
+check(itemCalls==glowBag and cooldownCalls==glowCD and #timers==glowTimer and #tickers==0,'Glow added bag/cooldown/timer work')
+tools:SetOption('healthThreshold',30);healthRatio=.34;events.UNIT_HEALTH('UNIT_HEALTH','player')
+check(frames[1].renderAlpha==0 and glow.renderAlpha==1,'Glow escaped a main threshold below35')
+tools:SetOption('healthThreshold',60);ready(241304).start=now;items[241304].duration=10;tools:Refresh()
+local expiry=timers[#timers];glow.failSink=true
+local beforeGlowCD,beforeGlowBag=cooldownCalls,itemCalls
+events.UNIT_HEALTH('UNIT_HEALTH','player')
+check(frames[1].shown and frames[1].renderAlpha==1 and not glow.shown and glow.alpha==0
+    and active(timers)==1 and not expiry.cancelled,'Glow sink failure hid the main prompt or cancelled readiness expiry')
+check(cooldownCalls==beforeGlowCD and itemCalls==beforeGlowBag,'Failed glow queried readiness/inventory')
+glow.failSink=false;items[5512].start,items[5512].duration=now,20;items[241304].duration=0;tools:Refresh()
+check(tools:GetState().itemID==241304 and not glow.shown and glow.alpha==0,'Potion selection retained Healthstone glow')
+items={};tools:Refresh();check(not glow.shown and glow.alpha==0,'Empty warning retained glow')
+ready(5512);tools:Refresh();dead=true;events.UNIT_HEALTH('UNIT_HEALTH','player')
+check(not frames[1].shown and not glow.shown and glow.alpha==0,'Death retained glow')
+dead=false;tools:Refresh();tools:SetOption('consumableReminder',false)
+check(not glow.shown and glow.alpha==0,'Disable retained glow')
+tools=loadTools();ready(5512);healthRatio=.2
+local createCurve=C_CurveUtil.CreateCurve;local curveAttempts=0
+C_CurveUtil.CreateCurve=function() curveAttempts=curveAttempts+1;if curveAttempts>1 then error('Glow curve unavailable') end;return createCurve() end
+tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
+check(frames[1].shown and frames[1].renderAlpha==1 and not frames[1].glow.shown,'Glow curve failure suppressed successful main display')
+events.UNIT_HEALTH('UNIT_HEALTH','player')
+check(curveAttempts==2 and frames[1].renderAlpha==1,'Health event retried unavailable glow curve')
+C_CurveUtil.CreateCurve=createCurve
 -- UTF-8 limits agree across setter/getter and the actual profile normalizer.
 for _, entry in ipairs({
     {string.rep("界",21), string.rep("界",21)},

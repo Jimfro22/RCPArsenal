@@ -1,5 +1,7 @@
 # World marker cycler Windows test
 
+Historical detail. [Alpha.6 navigation, direct bindings and reminder polish](NAVIGATION_KEYBINDS.md) supersedes current entry/key-editor/default/glow/mute behavior; its Windows update steps use the existing checkout.
+
 Test **0.14.2-alpha.1** and record `GetBuildInfo()`, the downloaded ZIP checksum, character, raid role, and any error/taint log. Source/API review uses Retail 12.1.5.70448; the addon still declares Interface 120100, which is not a compatibility guarantee. No steps here have been completed in a WoW client.
 
 ## Install and opt in

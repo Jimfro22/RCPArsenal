@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.5"
+RA.VERSION = "0.15.3-alpha.6"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -130,7 +130,7 @@ local DEFAULTS = {
         worldMarkers = { enabled = false },
         personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
             reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH", reminderSound = true,
-            reminderSoundChannel = "SFX", reminderSoundChoice = "builtin_alert", reminderEmptyTextSize = 48, reminderShowOnCooldown = false },
+            reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
@@ -440,9 +440,10 @@ local function MigrateProfile(profile)
     personal.reminderEmptyTextSize = math.max(16, math.min(96, tonumber(personal.reminderEmptyTextSize) or 48))
     if personal.reminderTextSize ~= nil then personal.reminderTextSize = math.max(8, math.min(32, tonumber(personal.reminderTextSize) or 10)) end
     personal.reminderSoundChannel = RA.ReminderSounds and RA.ReminderSounds:NormalizeChannel(personal.reminderSoundChannel)
-        or (personal.reminderSoundChannel == "Master" and "Master" or "SFX")
-    personal.reminderSoundChoice = RA.ReminderSounds and RA.ReminderSounds:NormalizeID(personal.reminderSoundChoice) or "builtin_alert"
+        or (personal.reminderSoundChannel == "SFX" and "SFX" or "Master")
+    personal.reminderSoundChoice = RA.ReminderSounds and RA.ReminderSounds:NormalizeID(personal.reminderSoundChoice) or "sound_6"
     personal.reminderShowOnCooldown = personal.reminderShowOnCooldown == true
+    personal.reminderSoundWhenEffectsMuted = personal.reminderSoundWhenEffectsMuted == true
     if personal.reminderSound == nil then personal.reminderSound = true else personal.reminderSound = personal.reminderSound == true end
     if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}

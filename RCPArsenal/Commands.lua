@@ -84,7 +84,9 @@ local function HandleSlash(raw)
     local command, rest = (raw or ""):match("^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
 
-    if command == "" or command == "config" or command == "addons" then
+    if command == "" or command == "config" then
+        RA:OpenConfig()
+    elseif command == "addons" then
         RA:OpenConfig("ADDONS")
     elseif command == "cooldowns" then
         RA:OpenConfig("COOLDOWNS")

@@ -9,7 +9,7 @@ local bound, attempted, parentShownHook, parentHiddenHook
 local worldReady = false
 local state, wasEligible = "WAIT_CLEAR", false
 local automaticHandle, previewHandle
-local routeLabel = "Sound Effects"
+local routeLabel = "Master"
 local statusBody = "Reminder is off."
 local status = routeLabel .. " - " .. statusBody
 local Reconcile
@@ -48,13 +48,14 @@ local function SetStatus(body)
 end
 local function Selection()
     local sounds = RA.ReminderSounds
-    if not sounds then return nil, "SFX" end
+    if not sounds then return nil, "Master" end
     local db = type(RA.GetDB) == "function" and RA:GetDB()
     local settings = type(db) == "table" and type(db.personalTools) == "table" and db.personalTools or {}
     local channel = sounds:NormalizeChannel(settings.reminderSoundChannel)
     routeLabel = sounds:ChannelLabel(channel)
     SetStatus(statusBody)
-    return sounds:Get(sounds:NormalizeID(settings.reminderSoundChoice)), channel
+    return sounds:Get(sounds:NormalizeID(settings.reminderSoundChoice)), channel,
+        not Secret(settings.reminderSoundWhenEffectsMuted) and settings.reminderSoundWhenEffectsMuted == true
 end
 local function Volume(name)
     if type(GetCVar) ~= "function" then return nil end
@@ -64,20 +65,23 @@ local function Volume(name)
     if not value or value ~= value or value < 0 or value > 1 then return nil end
     return value
 end
-local function KnownMute(channel)
+local function KnownMute(channel, allowEffectsMuted)
     if Boolean(GetCVarBool, "Sound_EnableAllSound") == false then return "WoW sound is disabled." end
     if Volume("Sound_MasterVolume") == 0 then return "WoW master volume is zero." end
+    if channel == "Master" and not allowEffectsMuted and Boolean(GetCVarBool, "Sound_EnableSFX") == false then
+        return "Game effects are muted; alert permission is off."
+    end
     if channel == "SFX" then
         if Boolean(GetCVarBool, "Sound_EnableSFX") == false then return "WoW Sound Effects are disabled." end
         if Volume("Sound_SFXVolume") == 0 then return "WoW Sound Effects volume is zero." end
     end
 end
 local function PlayAlert()
-    local entry, channel = Selection()
+    local entry, channel, allowEffectsMuted = Selection()
     if type(issecretvalue) ~= "function" or not entry then
         return false, nil, routeLabel .. " - sound selection unavailable."
     end
-    local muted = KnownMute(channel)
+    local muted = KnownMute(channel, allowEffectsMuted)
     if muted then return false, nil, routeLabel .. " - " .. muted end
     local api, value
     if entry.kind == "kit" then api, value = PlaySound, entry.kitID
@@ -225,7 +229,7 @@ function Audio:GetStatusText() return status end -- Cached only; rendering does 
 RA:RegisterInitializer(function() Selection(); Reconcile(false, true, true) end)
 RA:RegisterCallback("PERSONAL_TOOLS_CHANGED", function(option)
     if Secret(option) or type(option) ~= "string" then return end
-    if option == "reminderSoundChoice" or option == "reminderSoundChannel" then Selection(); return end
+    if option == "reminderSoundChoice" or option == "reminderSoundChannel" or option == "reminderSoundWhenEffectsMuted" then Selection(); return end
     if option == "consumableReminder" or option == "reminderSound" then Reconcile(false, true, true)
     elseif option == "reminderCombat" then Reconcile(false, false, true) end
 end)
