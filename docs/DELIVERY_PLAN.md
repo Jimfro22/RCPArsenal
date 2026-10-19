@@ -10,6 +10,10 @@ The kickoff sections below describe their original baseline/proposal, not curren
 
 These are source/offline milestones, not client acceptance: the health reminder is explicitly experimental in this alpha; native curve/item feasibility, normal res, cold enabled-profile login, two-client transport, and existing secure/raid behaviors remain pending Windows checks. No NSRT adapter, note workflow, timed announcement engine, or WowUtils Bridge has been claimed implemented. The canonical Page remains lead-owned and unchanged by Engineering.
 
+## Northern Sky adapter implementation checkpoint
+
+0.15.1-alpha.1 adds a guarded local setup adapter for separately installed stock NSRT12.1.32: runtime note view/draft/local copy, profile clone with preservation, native geometry edits, independent samples, guarded session undo/release and copyable failure recovery. NSRT code/codec/assets are not redistributed. Source/internal coupling and native unknowns are documented in NSRT_ADAPTER_CONTRACT.md and NSRT_WINDOWS_TESTS.md. Public reads/config degrade independently for missing or other versions. Client acceptance, actual sharing/scheduling, later timed-announcement decisions, and WowUtils Bridge ownership remain open.
+
 ## Verified baseline and completed foundations
 
 - [x] Read the handoff, manifest, all of Core.lua and ProfileIO.lua, and the relevant settings, HUD, inspection, and Quick Bar lifecycle code. No applicable ancestor AGENTS.md was found.

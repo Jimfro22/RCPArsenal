@@ -69,6 +69,10 @@ function RA:CreateHubPanes(panes, kit)
         linkOverlay:Show(); linkBox:SetFocus(); linkBox:HighlightText()
     end
 
+    function RA:ShowAddonLink(id)
+        local entry = RA.AddonCatalog:GetEntry(id)
+        if entry then CopyLink(entry) end
+    end
     RA.ConfigFrame:HookScript("OnHide", function() RA:HideHubTransientDialogs() end)
 
     local addons = panes.ADDONS
@@ -87,7 +91,9 @@ function RA:CreateHubPanes(panes, kit)
         Text(row, entry.description, 9.8, 16, -34, 410)
         local details = Text(row, "", 10, 452, -12, 354)
         details:SetSpacing(4)
-        local link = Button(row, "LINK", 94, 32, function() CopyLink(entry) end)
+        local link = Button(row, entry.id == "northernsky" and "SETUP" or "LINK", 94, 32, function()
+            if entry.id == "northernsky" then RA:OpenConfig("NORTHERNSKY") else CopyLink(entry) end
+        end)
         Point(link, "RIGHT", row, "RIGHT", -14, 0)
         addonRows[entry.id] = details
     end
@@ -298,6 +304,7 @@ function RA:CreateHubPanes(panes, kit)
     refreshers.SETTINGS = function()
         commandStatus:SetText("Open Morning Brew with /rcp. Unique fallback: /rcparsenal.\n" .. (RA.GetSlashCommandStatus and RA:GetSlashCommandStatus() or ""))
     end
+    refreshers.NORTHERNSKY = RA:CreateNorthernSkyPane(panes.NORTHERNSKY, kit)
     return function(key)
         if refreshers[key] then refreshers[key]() end
     end
