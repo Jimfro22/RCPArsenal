@@ -11,7 +11,7 @@ python3 -m unittest discover -s tests -v
 python3 tools/package.py --output-dir dist --label local
 ```
 
-These validate the package, source manifest, and negative fixtures. They do not run the addon in WoW.
+These validate the package, source manifest, and negative fixtures. CI additionally runs Lua 5.1 syntax and offline marker/profile/snippet checks; run `luac5.1 -p RCPArsenal/*.lua` and `lua5.1 tests/world_markers.lua` when that runtime is available locally. They do not run the addon in WoW.
 
 ## Tagged alpha releases
 

@@ -49,6 +49,9 @@ def collect(check_baseline):
     core_version = re.search(r'RA\.VERSION\s*=\s*"([^"]+)"', core)
     if not core_version or core_version.group(1) != version:
         raise ValueError("TOC and Core.lua versions must match")
+    revisions = dict(re.findall(r"RA\.(PROFILE_SCHEMA|CATALOG_VERSION)\s*=\s*(\d+)", core))
+    meta["ProfileSchema"] = revisions["PROFILE_SCHEMA"]
+    meta["CatalogVersion"] = revisions["CATALOG_VERSION"]
     if meta.get("SavedVariables", "").strip() != "RaidArsenalDB":
         raise ValueError("SavedVariables compatibility changed; review before packaging")
     load_order = []
@@ -132,13 +135,14 @@ def main():
     manifest = {
         "addon": "RCPArsenal", "addon_version": meta["Version"],
         "toc_interface": meta.get("Interface"), "package_label": args.label,
+        "profile_schema": int(meta["ProfileSchema"]), "catalog_version": int(meta["CatalogVersion"]),
         "git_commit": commit,
         "git_worktree_dirty": dirty,
         "release_tag": args.release_tag,
         "original_source_zip_sha256": json.loads(BASELINE.read_text())["original_source_zip_sha256"],
         "original_baseline_match": unchanged, "zip": archive.name,
         "zip_sha256": digest, "toc_load_order": load_order, "files": files,
-        "verification_scope": "Static manifest and payload validation; no Lua syntax or WoW runtime test",
+        "verification_scope": "Package validation only; Lua checks are recorded separately in CI; no WoW runtime verification",
     }
     archive.with_suffix(".manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"

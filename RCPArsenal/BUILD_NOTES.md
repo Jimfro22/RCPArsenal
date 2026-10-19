@@ -1,4 +1,14 @@
-# RCP Arsenal v0.14.1-alpha — Build Notes
+# RCP Arsenal v0.14.2-alpha.1 — Build Notes
+
+## v0.14.2 optional world marker cycler
+
+- Added an independent secure marker module and native CLICK keybinding declarations; no default keys or override-binding APIs.
+- Added a World markers setup subview under Quick Bar, with a numbered unique sequence, palette, move/remove controls, and separate binding readouts.
+- Source-reviewed cursor placement uses prepared `/wm [@cursor] N` secure macros. Restricted wrappers advance on the down phase only. Sequence fields use a private namespace to avoid reserved macro1 attributes.
+- Clear all uses the native worldmarker clear action with no marker ID, and resets the cycle index through a secure frame reference.
+- Schema 18 stores local opt-in and order. Migration starts off, explicit empty orders survive reload, and imports preserve local marker settings without exporting them or changing Blizzard bindings.
+- Lua 5.1 syntax and offline state/snippet tests supplement package/ZIP checks. These do not verify WoW taint, hardware dispatch, terrain, or combat permission behavior.
+- Interface remains 120100; actual Retail client compatibility is a live-test gate. Catalog remains 6. Existing HUD/inspection/sort/split engines are unchanged.
 
 
 ## v0.14.1 major-coverage additions

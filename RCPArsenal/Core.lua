@@ -4,9 +4,9 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.14.1-alpha"
+RA.VERSION = "0.14.2-alpha.1"
 RA.CATALOG_VERSION = 6
-RA.PROFILE_SCHEMA = 17
+RA.PROFILE_SCHEMA = 18
 RA.InEncounter = false
 RA.Initialized = false
 RA.DebugEnabled = false
@@ -94,6 +94,10 @@ local DEFAULTS = {
             raidWarningTemplate = "{name} - {spell}",
         },
 
+        -- Local opt-in only. Do not put numeric order defaults here:
+        -- CopyDefaults would refill deliberately removed/empty sequence slots.
+        worldMarkers = { enabled = false },
+
         -- Small hover puck that expands into pre-pull raid utilities. By
         -- default it is visible to every raid member; users can optionally
         -- hide it unless they are raid lead/assist. Privileged actions remain
@@ -152,6 +156,23 @@ local function CopyDefaults(source, destination)
             destination[key] = value
         end
     end
+end
+
+function RA:NormalizeWorldMarkerSettings(settings)
+    settings = type(settings) == "table" and settings or {}
+    settings.enabled = settings.enabled == true
+    local source = settings.order
+    if type(source) ~= "table" then source = {1, 2, 3, 4, 5, 6, 7, 8} end
+    local order, seen = {}, {}
+    for i = 1, 8 do
+        local marker = tonumber(source[i])
+        if marker and marker == math.floor(marker) and marker >= 1 and marker <= 8 and not seen[marker] then
+            order[#order + 1] = marker
+            seen[marker] = true
+        end
+    end
+    settings.order = order
+    return settings
 end
 
 local function MigrateProfile(profile)
@@ -344,6 +365,13 @@ local function MigrateProfile(profile)
         if profile.leaderToolbox.showForNonLeaders == nil then profile.leaderToolbox.showForNonLeaders = true end
         schema = 17
     end
+
+    if schema < 18 then
+        profile.worldMarkers = RA:NormalizeWorldMarkerSettings(profile.worldMarkers)
+        profile.worldMarkers.enabled = false
+        schema = 18
+    end
+    profile.worldMarkers = RA:NormalizeWorldMarkerSettings(profile.worldMarkers)
 
     profile.schemaVersion = RA.PROFILE_SCHEMA
     profile.scale = math.max(0.75, math.min(2.0, tonumber(profile.scale) or 1.25))
@@ -682,6 +710,10 @@ function RA:ApplyImportedProfile(profile)
         profile.position = current.position
         profile.positionAnchorVersion = current.positionAnchorVersion
         profile.shown = current.shown
+
+        -- World-marker opt-in and sequence are local. Keybindings belong to
+        -- Blizzard, never to portable profiles. Imports cannot enable this tool.
+        profile.worldMarkers = current.worldMarkers
 
         profile.leaderToolbox = profile.leaderToolbox or {}
         local currentToolbox = current.leaderToolbox or {}

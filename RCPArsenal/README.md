@@ -1,4 +1,16 @@
-# RCP Arsenal — v0.14.1-alpha
+# RCP Arsenal — v0.14.2-alpha.1
+
+## Optional world marker cycler
+
+Open **Quick Bar → World markers** or `/rcpa markers`. The new tool starts off with no assigned keys and adds no login overlay. Click the eight-marker palette to build a unique numbered order; select a slot to move or remove it. An empty order stays empty and disables placement.
+
+Enable the tool when ready, then use **Open Key Bindings → AddOns → RCP Arsenal — World markers** to assign **Place next world marker** and **Clear all world markers**. Blizzard owns conflicts, account/character binding choices, and saved keys. Arsenal never assigns or overrides keys. Disabling makes both actions inactive but retains your chosen bindings; unbind them in Blizzard settings if you want those keys for another action.
+
+Each hardware press attempts the next ground marker at your cursor and wraps after the last slot. Ground markers are different from target/unit icons. Clear all removes world markers and restarts the local sequence without changing your order. Enabling, changing the order, and reloading also restart at slot 1. An attempt advances even if Blizzard rejects placement due to permission or terrain.
+
+Setup changes apply outside combat. Unexpected profile changes during combat are deferred, with the current effective state reported until combat ends. Reloading during combat defers initialization and keys may remain unavailable until combat ends. In raids, placement and clearing require leader or assist; the game checks other restrictions.
+
+This alpha uses source-reviewed secure actions and has offline syntax/logic checks. Actual cursor placement, binding dispatch, group permissions, and combat behavior still need Windows WoW testing. Existing HUD defaults and raid engines are unchanged. UniversalMarkerCycler is only a behavior reference; none of its source is bundled.
 
 
 ## v0.14.1 highlights
