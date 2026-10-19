@@ -448,6 +448,11 @@ local function ResolveSender(roster, senderName)
     end
     return matches == 1 and candidate or nil
 end
+-- Shared identity-only helpers for the independent manual supply protocol.
+-- These do not refresh addon metadata or create/query a readiness snapshot.
+function Readiness:GetGroupIdentitySnapshot() return Roster(), GroupChannel() end
+function Readiness:ResolveRosterSender(roster, senderName) return ResolveSender(roster, senderName) end
+
 local function OnMessage(_, prefix, message, channel, senderName)
     -- Never concatenate, pattern-match, or compare secret event values first.
     if Secret(prefix) or Secret(message) or Secret(channel) or Secret(senderName) then return end

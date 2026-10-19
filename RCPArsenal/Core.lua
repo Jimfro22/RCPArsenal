@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.2"
+RA.VERSION = "0.15.3-alpha.3"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -20,6 +20,34 @@ RA.CLASS_CATALOG_REVISIONS = {
     PRIEST = 2,
     MONK = 2,
 }
+
+-- Shared reminder limit: Unicode code points, never a byte cut inside UTF-8.
+-- Malformed saved input retains its valid prefix. Native edit-box limits use
+-- the same 60-character cap; getter, setter and migration call this helper.
+function RA:NormalizeReminderText(value)
+    if type(value) ~= "string" or (type(issecretvalue) == "function" and issecretvalue(value)) then return "" end
+    value = value:gsub("[\r\n]", " ")
+    local position, last = 1, 0
+    for count = 1, 60 do
+        local first = value:byte(position)
+        if not first then break end
+        local width = first < 128 and 1 or (first >= 194 and first <= 223 and 2)
+            or (first >= 224 and first <= 239 and 3) or (first >= 240 and first <= 244 and 4)
+        if not width then break end
+        local valid = true
+        for offset = 1, width - 1 do
+            local byte = value:byte(position + offset)
+            if not byte or byte < 128 or byte > 191 then valid = false; break end
+        end
+        local second = value:byte(position + 1)
+        if (first == 224 and second and second < 160) or (first == 237 and second and second > 159)
+            or (first == 240 and second and second < 144) or (first == 244 and second and second > 143) then valid = false end
+        if not valid then break end
+        last = position + width - 1
+        position = last + 1
+    end
+    return value:sub(1, last)
+end
 
 local eventFrame = CreateFrame("Frame")
 local eventHandlers = {}
@@ -100,7 +128,8 @@ local DEFAULTS = {
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false },
-        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40 },
+        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
+            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH" },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
@@ -400,6 +429,15 @@ local function MigrateProfile(profile)
     profile.personalTools.autoRes = profile.personalTools.autoRes == true
     profile.personalTools.consumableReminder = profile.personalTools.consumableReminder == true
     profile.personalTools.healthThreshold = math.max(1, math.min(99, tonumber(profile.personalTools.healthThreshold) or 40))
+    local personal = profile.personalTools
+    for key, default in pairs({ reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion" }) do
+        local value = personal[key]
+        if type(value) ~= "string" then value = type(personal.reminderText) == "string" and personal.reminderText or default end
+        personal[key] = RA:NormalizeReminderText(value)
+    end
+    personal.reminderIconSize = math.max(24, math.min(128, tonumber(personal.reminderIconSize) or 56))
+    if personal.reminderTextSize ~= nil then personal.reminderTextSize = math.max(8, math.min(32, tonumber(personal.reminderTextSize) or 10)) end
+    if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
     profile.readiness.targets = type(profile.readiness.targets) == "table" and profile.readiness.targets or {}
     profile.readiness.revision = math.max(0, tonumber(profile.readiness.revision) or 0)

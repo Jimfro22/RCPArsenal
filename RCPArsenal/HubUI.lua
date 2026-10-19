@@ -10,7 +10,7 @@ function RA:CreateHubPanes(panes, kit)
     local refreshers, matrixRows, selectors, targetDrafts = {}, {}, {}, {}
     local feedback, targetBox, matrixMeta, matrixScroll, matrixChild, showDetails
     local lastTargetID, lastTargetValue
-    local linkOverlay, linkBox, linkTitle, resetOverlay
+    local linkOverlay, linkBox, linkTitle, resetOverlay, supplyOverlay
     local function SetText(region, value) RA:SetVisualText(region, value or "") end
     local function Text(parent, value, size, x, y, width, color)
         local text = Font(parent, size or 11, color or C.textSoft, "REGULAR")
@@ -34,6 +34,7 @@ function RA:CreateHubPanes(panes, kit)
     function RA:HideHubTransientDialogs()
         if linkOverlay then linkOverlay:Hide() end
         if resetOverlay then resetOverlay:Hide() end
+        if supplyOverlay then supplyOverlay:Hide() end
         if RA.PersonalTools.StopReminderPreview then RA.PersonalTools:StopReminderPreview() end
     end
     local function CopyLink(entry)
@@ -327,26 +328,156 @@ function RA:CreateHubPanes(panes, kit)
     end
     Tool("Accept normal resurrection", "Accepts ordinary resurrection offers. Battle resurrection stays manual while encounter or group combat is active.",
         function() return RA:GetDB().personalTools.autoRes == true end, function(v) return RA.PersonalTools:SetOption("autoRes", v) end, -68)
-    Tool("Healthstone / potion reminder", "An optional bouncing reminder for a usable item at low health. Use your own item keybind.",
+    Tool("Enable Healthstone / healing potion reminder", "Uses your carried Healthstone first, then a healing potion. Cooldown readiness isn't checked.",
         function() return RA:GetDB().personalTools.consumableReminder == true end, function(v) return RA.PersonalTools:SetOption("consumableReminder", v) end, -134)
-    local threshold = kit.Slider(tools, "Reminder health threshold", 1, 99, 1,
+    local threshold = kit.Slider(tools, "HEALTH THRESHOLD — AT OR BELOW", 1, 99, 1,
         function() return RA:GetDB().personalTools.healthThreshold end,
         function(v) RA.PersonalTools:SetOption("healthThreshold", v) end,
         function(v) return string.format("%d%%", v) end)
     Width(threshold, 440); Point(threshold, "TOPLEFT", tools, "TOPLEFT", 16, -205)
-    local preview = Button(tools, "PREVIEW", 110, 34, function() RA.PersonalTools:PreviewReminder() end)
-    Point(preview, "TOPLEFT", tools, "TOPLEFT", 480, -216)
-    local move = Button(tools, "MOVE", 110, 34, function() RA.PersonalTools:MoveReminder() end)
-    Point(move, "TOPLEFT", tools, "TOPLEFT", 598, -216)
-    local stop = Button(tools, "STOP PREVIEW", 110, 34, function() RA.PersonalTools:StopReminderPreview() end)
-    Point(stop, "TOPLEFT", tools, "TOPLEFT", 716, -216)
-    local resetReminder = Button(tools, "RESET", 110, 34, function() RA.PersonalTools:ResetReminderPosition() end)
-    Point(resetReminder, "TOPLEFT", tools, "TOPLEFT", 834, -216)
-    Text(tools, "Press your item/macro key when reminded. Preview, Move, and Reset keep your tool switch unchanged.", 10, 16, -269, 914)
-    local personalStatus = Text(tools, "", 10, 16, -302, 914)
-    personalStatus:SetSpacing(5)
+    local combatMode = kit.Segmented(tools, "SHOW REMINDER", {
+        {label="BOTH", value="BOTH"}, {label="IN COMBAT", value="IN_COMBAT"}, {label="OUT OF COMBAT", value="OUT_OF_COMBAT"},
+    }, function() return RA.PersonalTools:GetState().reminderCombat end,
+        function(v) RA.PersonalTools:SetOption("reminderCombat", v) end)
+    Width(combatMode, 440); Point(combatMode, "TOPLEFT", tools, "TOPLEFT", 494, -205); combatMode:Layout(440)
+    local iconSize = kit.Slider(tools, "ICON SIZE", 24, 128, 1,
+        function() return RA.PersonalTools:GetState().reminderIconSize end,
+        function(v) RA.PersonalTools:SetOption("reminderIconSize", v) end,
+        function(v) return tostring(v) .. " px" end)
+    Width(iconSize, 440); Point(iconSize, "TOPLEFT", tools, "TOPLEFT", 16, -269)
+    local textSize = kit.Slider(tools, "TEXT SIZE", 8, 32, 1,
+        function() return RA.PersonalTools:GetState().reminderTextSize end,
+        function(v) RA.PersonalTools:SetOption("reminderTextSize", v) end,
+        function(v) return tostring(v) .. " px" end)
+    Width(textSize, 440); Point(textSize, "TOPLEFT", tools, "TOPLEFT", 494, -269)
+    local details = CreateFrame("Frame", nil, tools)
+    Size(details, 918, 155); Point(details, "TOPLEFT", tools, "TOPLEFT", 16, -377); details:Hide()
+    for index, entry in ipairs({ {"HEALTHSTONE TEXT", "reminderStoneText"}, {"HEALING POTION TEXT", "reminderPotionText"} }) do
+        local key = entry[2]
+        local field = kit.EditBox(details, entry[1], "Blank hides text; 60 characters.",
+            function() return RA.PersonalTools:GetState()[key] end,
+            function(v) RA.PersonalTools:SetOption(key, v) end)
+        Width(field, 440); Point(field, "TOPLEFT", details, "TOPLEFT", (index - 1) * 478, 0)
+        if field.box then field.box:SetMaxLetters(60) end
+    end
+    local sampleKind = "stone"
+    local sampleChoice = kit.Segmented(details, "PREVIEW SAMPLE", {
+        {label="HEALTHSTONE", value="stone"}, {label="HEALING POTION", value="potion"},
+    }, function() return sampleKind end, function(v) sampleKind = v end)
+    Width(sampleChoice, 440); Point(sampleChoice, "TOPLEFT", details, "TOPLEFT", 0, -92); sampleChoice:Layout(440)
+    Text(details, "Visual warnings only. When low with neither supported item, OUT OF POTIONS stays until you recover or carry one.", 10, 478, -94, 440)
+    local preview = Button(tools, "PREVIEW", 100, 34, function() RA.PersonalTools:PreviewReminder(sampleKind) end)
+    local move = Button(tools, "MOVE", 100, 34, function() RA.PersonalTools:MoveReminder(sampleKind) end)
+    Point(move, "LEFT", preview, "RIGHT", 8, 0)
+    local stop = Button(tools, "STOP PREVIEW", 132, 34, function() RA.PersonalTools:StopReminderPreview() end)
+    Point(stop, "LEFT", move, "RIGHT", 8, 0)
+    local resetReminder = Button(tools, "RESET POSITION", 154, 34, function() RA.PersonalTools:ResetReminderPosition() end)
+    Point(resetReminder, "LEFT", stop, "RIGHT", 8, 0)
+    local helper = Text(tools, "Preview bounces; Move keeps the sample still. Use your own item/macro key. Neither action enables the reminder.", 10, 16, -435, 914)
+    local personalStatus = Text(tools, "", 10, 16, -479, 914)
+    personalStatus:SetSpacing(4)
+    local supplyLabel = Text(tools, "RAID SUPPLIES", 9, 600, -369, 334)
+    local supplyAction, supplyView, supplySummary, supplyState, supplyRows, supplyAgain
+    local function SupplyValue(value)
+        return value == true and "Carried" or value == false and "None carried" or "Unknown"
+    end
+    local function RenderSupply()
+        local state = RA.SupplyCheck:GetSnapshot()
+        if supplyAction then
+            supplyAction:SetEnabled(state.status ~= "checking")
+            SetText(supplyAction.label, state.status == "checking" and "CHECKING…" or "CHECK RAID SUPPLIES")
+        end
+        if not supplyOverlay or not supplyOverlay:IsShown() then return end
+        local summaries = {}
+        for _, kind in ipairs({"stone", "potion"}) do
+            local yes, no, unknown, offline = 0, 0, 0, 0
+            for _, row in ipairs(state.rows) do
+                if row.status == "offline" then offline = offline + 1
+                elseif row[kind] == true then yes = yes + 1
+                elseif row[kind] == false then no = no + 1 else unknown = unknown + 1 end
+            end
+            summaries[#summaries+1] = (kind == "stone" and "Healthstone" or "Healing potion") .. " — Players: " .. yes .. " carried · " .. no .. " none · " .. unknown .. " unknown · " .. offline .. " offline"
+        end
+        SetText(supplySummary, table.concat(summaries, "\n"))
+        local age = state.queriedAt and math.max(0, math.floor(GetTime() - state.queriedAt))
+        SetText(supplyState, (state.status == "checking" and "Checking…" or state.reason or "No manual check yet.") ..
+            (age and (" Last manual check " .. age .. "s ago; bags may have changed.") or ""))
+        supplyAgain:SetEnabled(state.status ~= "checking")
+        for i, view in ipairs(supplyRows) do
+            local row = state.rows[i]
+            view.frame:SetShown(row ~= nil)
+            if row then
+                SetText(view.name, Literal(row.name))
+                SetText(view.stone, row.status == "offline" and "Offline" or SupplyValue(row.stone))
+                SetText(view.potion, row.status == "offline" and "Offline" or SupplyValue(row.potion))
+                SetText(view.state, row.status == "no_reply" and "No reply" or row.status == "offline" and "Offline" or
+                    ("Reported " .. math.max(0, math.floor(GetTime() - row.respondedAt)) .. "s ago"))
+            end
+        end
+    end
+    local function ShowSupply()
+        if not supplyOverlay then
+            supplyOverlay = CreateFrame("Frame", nil, RA.ConfigFrame, "BackdropTemplate")
+            supplyOverlay:SetAllPoints(RA.ConfigFrame); supplyOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel() + 100)
+            supplyOverlay:EnableMouse(true); kit.Backdrop(supplyOverlay, {0,0,0,0.68}, C.line, 14, false)
+            local dialog = CreateFrame("Frame", nil, supplyOverlay, "BackdropTemplate")
+            Size(dialog, 920, 550); Point(dialog, "CENTER", supplyOverlay, "CENTER", 0, 0)
+            dialog:EnableMouse(true); kit.Backdrop(dialog, C.surface, C.lineStrong, 14, true)
+            Text(dialog, "Carried healing supplies", 18, 20, -18, 880, C.text)
+            Text(dialog, "One manual request. Players with Arsenal report their own bags. No talent inspection or background polling. Carried supplies don't confirm cooldown readiness.", 10, 20, -50, 880)
+            supplySummary = Text(dialog, "", 10, 20, -88, 880); supplySummary:SetSpacing(4)
+            supplyState = Text(dialog, "", 10, 20, -126, 880)
+            for _, field in ipairs({{"PLAYER", 0}, {"HEALTHSTONE", 320}, {"HEALING POTION", 500}, {"REPORT", 680}}) do
+                Text(dialog, field[1], 10, 20 + field[2], -164, 170, C.text)
+            end
+            local scroll = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
+            Size(scroll, 854, 270); Point(scroll, "TOPLEFT", dialog, "TOPLEFT", 20, -186)
+            local child = CreateFrame("Frame", nil, scroll); Size(child, 854, 40 * 28); scroll:SetScrollChild(child)
+            supplyRows = {}
+            for i = 1, 40 do
+                local frame = CreateFrame("Frame", nil, child); Size(frame, 854, 28); Point(frame, "TOPLEFT", child, "TOPLEFT", 0, -(i-1)*28)
+                supplyRows[i] = { frame = frame, name = Text(frame, "", 10, 0, -5, 306), stone = Text(frame, "", 10, 320, -5, 170),
+                    potion = Text(frame, "", 10, 500, -5, 170), state = Text(frame, "", 9, 680, -5, 170) }
+            end
+            supplyAgain = Button(dialog, "CHECK AGAIN", 170, 34, function()
+                local ok, reason = RA.SupplyCheck:Query()
+                RenderSupply(); if not ok then SetText(supplyState, reason) end
+            end)
+            Point(supplyAgain, "BOTTOMLEFT", dialog, "BOTTOMLEFT", 20, 20)
+            local close = Button(dialog, "CLOSE", 120, 34, function() supplyOverlay:Hide() end)
+            Point(close, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 20)
+        end
+        supplyOverlay:Show(); RenderSupply()
+    end
+    supplyAction = Button(tools, "CHECK RAID SUPPLIES", 180, 34, function()
+        local ok, reason = RA.SupplyCheck:Query()
+        ShowSupply(); if not ok then SetText(supplyState, reason) end
+    end)
+    supplyView = Button(tools, "VIEW RESULTS", 146, 34, ShowSupply)
+    Point(supplyView, "LEFT", supplyAction, "RIGHT", 8, 0)
+    local function PersonalLayout()
+        local expanded = details:IsShown()
+        local y = expanded and -549 or -389
+        preview:ClearAllPoints(); Point(preview, "TOPLEFT", tools, "TOPLEFT", 16, y)
+        supplyAction:ClearAllPoints(); Point(supplyAction, "TOPLEFT", tools, "TOPLEFT", 600, y)
+        supplyLabel:ClearAllPoints(); Point(supplyLabel, "TOPLEFT", tools, "TOPLEFT", 600, y + 20)
+        helper:ClearAllPoints(); Point(helper, "TOPLEFT", tools, "TOPLEFT", 16, y - 44)
+        personalStatus:ClearAllPoints(); Point(personalStatus, "TOPLEFT", tools, "TOPLEFT", 16, y - 79)
+    end
+    local disclosure = Button(tools, "REMINDER TEXT +", 200, 30, function(self)
+        details:SetShown(not details:IsShown())
+        SetText(self.label, details:IsShown() and "HIDE REMINDER TEXT" or "REMINDER TEXT +")
+        PersonalLayout()
+    end)
+    Point(disclosure, "TOPLEFT", tools, "TOPLEFT", 16, -333)
+    PersonalLayout()
+    RA:RegisterCallback("SUPPLIES_UPDATED", RenderSupply)
+    tools:HookScript("OnHide", function() if supplyOverlay then supplyOverlay:Hide() end end)
     refreshers.MYTOOLS = function()
-        SetText(personalStatus, "Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " .. RA.PersonalTools:GetStatusText("consumableReminder"))
+        local state = RA.PersonalTools:GetState()
+        local combatLabel = ({BOTH="Both",IN_COMBAT="In combat",OUT_OF_COMBAT="Out of combat"})[state.reminderCombat] or "Both"
+        SetText(personalStatus, "Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " ..
+            (state.consumableReminder and ("Enabled · At/below " .. state.healthThreshold .. "% · " .. combatLabel .. " · ") or "") .. RA.PersonalTools:GetStatusText("consumableReminder"))
     end
 
     local settings = panes.SETTINGS

@@ -2166,7 +2166,7 @@ local function CreateConfig()
     end
     RefreshHub = RA:CreateHubPanes(panes, {
         Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
-        Toggle = CreateToggle, Slider = CreateSlider, Backdrop = Backdrop,
+        Toggle = CreateToggle, Slider = CreateSlider, EditBox = CreateEditBox, Segmented = CreateSegmented, Backdrop = Backdrop,
         Refresh = function() RefreshConfig() end,
     })
 
