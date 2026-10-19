@@ -66,7 +66,7 @@ local TAB_DEFS = {
 }
 local PANE_CONTEXT = {
     HUD = "MYTOOLS", QUICKBAR = "MYTOOLS", CONTENT = "MYTOOLS", WORLDMARKERS = "MYTOOLS",
-    SCANNING = "RAIDTOOLS", ACTIONS = "RAIDTOOLS",
+    SCANNING = "RAIDTOOLS", ACTIONS = "RAIDTOOLS", NORTHERNSKY = "ADDONS",
 }
 
 local TIER_COLORS = {
@@ -1764,7 +1764,7 @@ local function SetTab(tabKey)
     if hudFooter then hudFooter:SetShown(tabKey == "HUD") end
     if advancedBack then
         advancedBack:SetShown(PANE_CONTEXT[tabKey] ~= nil)
-        advancedBack.label:SetText(PANE_CONTEXT[tabKey] == "RAIDTOOLS" and "BACK TO RAID TOOLS" or "BACK TO MY TOOLS")
+        advancedBack.label:SetText(PANE_CONTEXT[tabKey] == "RAIDTOOLS" and "BACK TO RAID TOOLS" or (PANE_CONTEXT[tabKey] == "ADDONS" and "BACK TO ADDONS" or "BACK TO MY TOOLS"))
     end
     if RefreshHub then RefreshHub(tabKey) end
     if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end

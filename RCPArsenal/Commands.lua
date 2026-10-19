@@ -5,6 +5,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp raid|r, |cff3aa7ff/rcp settings|r - open a hub section")
     print("  |cff3aa7ff/rcp versions|r - request group addon versions as leader or assistant")
     print("  |cff3aa7ff/rcp config|r - open Morning Brew (the addon hub)")
+    print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
     print("  |cff3aa7ff/rcp markers|r - set up the optional world marker cycler and keybindings")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
@@ -84,6 +85,8 @@ local function HandleSlash(raw)
 
     if command == "" or command == "config" or command == "addons" then
         RA:OpenConfig("ADDONS")
+    elseif command == "nsrt" or command == "northernsky" then
+        RA:OpenConfig("NORTHERNSKY")
     elseif command == "tools" then
         RA:OpenConfig("MYTOOLS")
     elseif command == "raid" then

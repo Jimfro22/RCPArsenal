@@ -1,4 +1,4 @@
-# RCP Arsenal — 0.15.0-alpha.1
+# RCP Arsenal — 0.15.1-alpha.1
 
 Open **`/rcp`** for Morning Brew. The four sections are **Addons**, **My tools**, **Raid tools**, and **Settings**. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
 
@@ -16,6 +16,16 @@ On **Raid tools**, select an addon, enter an exact local target, or deliberately
 
 A party/raid leader or assistant can click **Check group versions** outside combat and communication restrictions. Other players need Arsenal running to report their local metadata; their optional tools can all be off. Non-response is unknown, offline stays offline, and missing requires an explicit valid reply. Partial replies and unknown versions are not treated as success. Ordered numeric versions distinguish older/newer; suffixes and incompatible schemes use exact-match/different states. Snapshots expire visibly and roster changes invalidate remote results. No periodic network query runs.
 
+## Northern Sky Setup
+
+Open **Addons → Northern Sky → Setup** or **`/rcp nsrt`**. Stock NSRT remains separately installed. Current shared/personal notes and saved profiles use public reads. Internal writes require reviewed stock **12.1.32**, completed initialization, safe native state, and unchanged context. Unknown versions offer supported reads and original settings; base/UI companion states are shown separately.
+
+Editing is an Arsenal draft. **Save local Arsenal copy** creates/selects a unique local shared-note copy without replacing an existing team note or sending it. Current AutoShare must be off. If you enable NSRT AutoShare later, a ready/pull check can send the active copy. Review Current lets you keep a dirty draft while acknowledging a new source context. Personal notes are view-only in this first pane.
+
+Profile selection is separate from apply. **Apply settings as Arsenal copy** creates/activates a new profile, preserving current notes/runtime strings, local anchored geometry/sizes (including timer fonts), and AutoShare. Originals stay intact. Placement edits native anchors/offsets/dimensions/font sizes; a separate labeled sample does not enable NSRT's real reminder. There is no invented generic scale setting. Finish/lock an existing native preview/drag before conflicting changes.
+
+Session restore is guarded against external changes. **Keep Current / Release Undo** forgets only Arsenal's undo record and changes nothing in NSRT. A failed operation retains recovery text for copying/review; unresolved recovery blocks new writes. These bounded in-memory backups disappear on reload, so keep SavedVariables backups and copy recovery text first. Live interoperability, persistence, codec behavior, and rollback still need the release's Windows tests. No NSRT source, codec, assets, share path, synthetic event, or reminder engine is bundled.
+
 ## Personal tools
 
 **Accept normal resurrection** is off by default. It requests acceptance only outside detected player, pet, group combat, and encounters, with a second safety check after deferral. Combat/encounter offers and unknown states stay manual. The event does not identify the offered spell; this is conservative combat exclusion, not universal battle-res spell classification.
@@ -32,6 +42,6 @@ The optional world-marker cycler is under **My tools → World markers** or `/rc
 
 ## Install and test
 
-Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.0-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
+Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.1-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
 
 Offline Lua, packaging, and source reviews do not establish native rendering, secure hardware dispatch, taint, communication, resurrection acceptance, or combat behavior. Follow the release's Windows validation checklist before treating this alpha as accepted. External addons remain separately installed; none is bundled or controlled through an unverified adapter.

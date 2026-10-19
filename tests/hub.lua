@@ -256,7 +256,7 @@ RA:OpenConfig('MYTOOLS'); cleanErrors()
 check(hasVisibleText('My tools'), 'My tools did not open')
 local function clickVisible(label)
     for _, obj in ipairs(objects) do
-        if obj.label and obj.label.text == label and obj:IsVisible() then obj:Fire('OnClick'); return true end
+        if obj.label and obj.label.text == label and obj:IsVisible() and obj:IsEnabled() then obj:Fire('OnClick'); return true end
     end
     return false
 end
@@ -326,6 +326,132 @@ RA.ScheduleInspectionScan = schedule
 RA:ResetProfile(); cleanErrors()
 check(not RA:GetDB().hudEnabled and not RA:GetDB().leaderToolbox.enabled and not RA:GetDB().worldMarkers.enabled and next(RA:GetDB().readiness.targets) == nil, 'Reset is not quiet')
 RA:CloseConfig()
+cleanErrors()
+
+-- Exercise the real NSRT pane against a controlled adapter boundary. Adapter
+-- transactions themselves are checked in nsrt_adapter.lua with stock-shaped APIs.
+RA:OpenConfig('NORTHERNSKY'); cleanErrors()
+check(hasVisibleText('Northern Sky'), 'NSRT setup pane did not open')
+local earlyEditor
+for _,obj in ipairs(objects) do if obj.kind == 'EditBox' and obj:IsVisible() then earlyEditor=obj; break end end
+check(earlyEditor ~= nil, 'NSRT missing-addon draft editor unavailable')
+earlyEditor:SetText('Draft typed before Northern Sky loaded'); earlyEditor:Fire('OnTextChanged')
+local adapter = RA.NSRTAdapter
+local originals = {}
+for key,value in pairs(adapter) do originals[key] = value end
+local noteWrites, profileWrites, placementWrites, selections = 0,0,0,0
+local nsrtContext, sharedText = 'ui-1', 'Shared runtime original'
+local noteUndo, profileUndo, placementUndo = false,false,false
+local restoreCalls, releaseCalls = 0,0
+local savedText, recoveryFixture
+local capabilities = {notes=true,profiles=true,applyNote=true,applyProfile=true,placement=true,setPlacement=true,openSettings=true}
+function adapter:GetStatus()
+    return {available=true,version='12.1.32',compatible=true,profile='Original',context=nsrtContext,capabilities=capabilities,reasons={},canRestoreNote=noteUndo,canRestoreProfile=profileUndo,canRestorePlacement=placementUndo,hasNoteBackup=noteUndo,hasProfileBackup=profileUndo,hasPlacementBackup=placementUndo,recovery=recoveryFixture}
+end
+function adapter:Refresh() return true end
+function adapter:GetNotes() return true,nil,{personal='Personal text',shared=sharedText,profile='Original',activeName='Raid note',context=nsrtContext} end
+function adapter:GetProfiles() return true,nil,{names={'Original','Raid setup'},current='Original',context=nsrtContext} end
+function adapter:SelectProfile(name) selections=selections+1; return true,nil,{name=name,context=nsrtContext} end
+function adapter:ApplyLocalNote(text,context)
+    check(context == nsrtContext, 'UI used an unreviewed note context')
+    savedText=text; noteWrites=noteWrites+1; sharedText=text; nsrtContext='ui-3'; noteUndo=true; return true
+end
+function adapter:ApplyProfile(name,context) profileWrites=profileWrites+1; profileUndo=true; return true end
+function adapter:RestoreLastNote(context)
+    check(context == nsrtContext, 'Note restore UI omitted/freshened expected context')
+    restoreCalls=restoreCalls+1; noteUndo=false
+    sharedText,nsrtContext='Restored original note','ui-restored-'..restoreCalls
+    return true
+end
+function adapter:RestoreLastProfile(context) check(context == nsrtContext, 'Profile restore UI omitted/freshened expected context'); restoreCalls=restoreCalls+1; profileUndo=false; return true end
+function adapter:RestoreLastPlacement(context) check(context == nsrtContext, 'Placement restore UI omitted expected context'); restoreCalls=restoreCalls+1; placementUndo=false; return true end
+function adapter:GetRecoveryBackup() return recoveryFixture ~= nil,nil,recoveryFixture end
+function adapter:ReleaseUndo(kind,context)
+    if kind == 'recovery' then
+        check(recoveryFixture and context == recoveryFixture.token, 'Recovery release UI lost record token')
+        recoveryFixture=nil
+    else check(kind == 'note' and context == nsrtContext, 'Keep Current UI lost kind/context'); noteUndo=false end
+    releaseCalls=releaseCalls+1; return true
+end
+function adapter:GetPlacement(section)
+    return true,nil,{label='Test placement',context=nsrtContext,values={Anchor='CENTER',relativeTo='CENTER',xOffset=0,yOffset=0,Width=200,Height=40},fields={
+        {key='Anchor',label='Anchor',options={'CENTER','TOP'}},{key='relativeTo',label='Relative',options={'CENTER','TOP'}},
+        {key='xOffset',label='X',min=-100,max=100},{key='yOffset',label='Y',min=-100,max=100},
+        {key='Width',label='Width',min=100,max=500},{key='Height',label='Height',min=20,max=100}}}
+end
+function adapter:SetPlacement(section,values,context) placementWrites=placementWrites+1; placementUndo=true; return true end
+RA:FireCallback('NSRT_ADAPTER_CHANGED'); cleanErrors()
+check(earlyEditor:GetText() == 'Draft typed before Northern Sky loaded', 'Late addon load silently replaced a dirty draft')
+check(not clickVisible('SAVE LOCAL ARSENAL COPY'), 'Unreviewed late-load draft allowed apply')
+check(clickVisible('REPLACE DRAFT') and clickVisible('CONFIRM'), 'Explicit draft replacement route failed')
+local editor
+for _,obj in ipairs(objects) do if obj.kind == 'EditBox' and obj.text == sharedText and obj:IsVisible() then editor=obj; break end end
+check(editor ~= nil, 'Shared runtime note did not populate real editor')
+editor:SetText('My retained draft'); editor:Fire('OnTextChanged')
+sharedText,nsrtContext='Incoming replacement','ui-2'
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(editor:GetText() == 'My retained draft' and noteWrites == 0, 'Background refresh lost draft or wrote note')
+check(not clickVisible('SAVE LOCAL ARSENAL COPY'), 'Changed note context left apply enabled')
+check(clickVisible('PROFILES') and clickVisible('Raid setup'), 'Saved profile selector missing')
+check(selections == 1 and profileWrites == 0, 'Profile selection applied a profile')
+check(clickVisible('NOTES') and editor:GetText() == 'My retained draft', 'Subview visit lost draft')
+check(clickVisible('REVIEW CURRENT SHARED') and editor:GetText() == sharedText, 'Current note review did not show received runtime text')
+check(clickVisible('KEEP DRAFT + USE REVIEWED CONTEXT') and clickVisible('CONFIRM'), 'Reviewed context acknowledgement failed')
+check(editor:GetText() == 'My retained draft', 'Context acknowledgement replaced the draft')
+check(clickVisible('SAVE LOCAL ARSENAL COPY') and noteWrites == 0, 'Note applied before consequence confirmation')
+check(clickVisible('CONFIRM') and noteWrites == 1 and savedText == 'My retained draft', 'Confirmed local copy did not use retained draft')
+editor:SetText('New unsaved draft after applying'); editor:Fire('OnTextChanged')
+check(clickVisible('RESTORE PREVIOUS LOCAL NOTE') and clickVisible('CONFIRM') and restoreCalls == 1, 'Note restore did not send expected context')
+check(editor:GetText() == 'New unsaved draft after applying', 'Successful note restore discarded a newer unsaved draft')
+check(not clickVisible('SAVE LOCAL ARSENAL COPY'), 'Restored native context allowed an unreviewed retained draft to apply')
+check(clickVisible('REPLACE DRAFT') and clickVisible('CONFIRM') and editor:GetText() == 'Restored original note', 'Explicit replacement did not load the restored native note')
+check(clickVisible('SAVE LOCAL ARSENAL COPY') and clickVisible('CONFIRM') and noteWrites == 2, 'Clean-draft restore setup failed')
+check(clickVisible('RESTORE PREVIOUS LOCAL NOTE') and clickVisible('CONFIRM') and restoreCalls == 2, 'Clean-draft note restore failed')
+check(editor:GetText() == 'Restored original note' and clickVisible('SAVE LOCAL ARSENAL COPY') and clickVisible('CANCEL'), 'Clean draft did not reload the restored note with a current context')
+noteUndo=true; nsrtContext='ui-4'; RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('KEEP CURRENT / RELEASE UNDO') and releaseCalls == 0, 'Undo release skipped consequence review')
+check(clickVisible('CONFIRM') and releaseCalls == 1, 'Keep Current did not release local undo')
+check(clickVisible('PROFILES') and clickVisible('Raid setup'), 'Profile selection could not reopen')
+check(clickVisible('APPLY SETTINGS AS ARSENAL COPY') and profileWrites == 0, 'Profile applied before consequence confirmation')
+check(clickVisible('CONFIRM') and profileWrites == 1, 'Profile apply action failed')
+check(clickVisible('RESTORE PREVIOUS SESSION PROFILE') and clickVisible('CONFIRM') and restoreCalls == 3, 'Profile restore did not send expected context')
+check(clickVisible('PLACEMENT') and clickVisible('PREVIEW PLACEMENT'), 'Native placement sample control failed')
+check(named.RCPArsenalNSRTPlacementSample:IsShown() and placementWrites == 0, 'Placement sample wrote NSRT settings')
+check(clickVisible('STOP PREVIEW') and not named.RCPArsenalNSRTPlacementSample:IsShown(), 'Stop placement sample failed')
+check(clickVisible('APPLY LOCAL PLACEMENT') and placementWrites == 1, 'Placement apply action failed')
+check(clickVisible('RESTORE LAST') and clickVisible('CONFIRM') and restoreCalls == 4, 'Placement restore did not send expected context')
+check(clickVisible('PREVIEW PLACEMENT'), 'Placement sample did not reopen')
+RA:CloseConfig()
+check(not named.RCPArsenalNSRTPlacementSample:IsShown(), 'Closing hub left NSRT placement sample visible')
+local function recoveryEditor(fragment)
+    for _,obj in ipairs(objects) do
+        if obj.kind == 'EditBox' and obj:IsVisible() and (obj:GetText() or ''):find(fragment,1,true) then return obj end
+    end
+end
+RA:OpenConfig('NORTHERNSKY')
+recoveryFixture={kind='note',token='failed-note-token',original='Original',observedProfile='Original',phase='note-activation-failed',reason='Newer note retained',shared='Previous shared note recovery',personal='Previous personal note recovery'}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP') and recoveryEditor('Previous shared note recovery'), 'Note recovery did not default to the shared backup from Notes')
+check(not clickVisible('ORIGINAL PROFILE EXPORT') and not clickVisible('PLACEMENT SETTINGS'), 'Note recovery offered unavailable export/placement content')
+check(clickVisible('PERSONAL NOTE BACKUP') and recoveryEditor('Previous personal note recovery'), 'Personal recovery backup was not selectable')
+check(clickVisible('CLOSE'), 'Note recovery could not close')
+recoveryFixture={kind='placement',token='failed-placement-token',original='Original',observedProfile='Original',phase='placement-refresh-failed',reason='Newer placement retained',shared='Shared backup',personal='Personal backup',placement={section='BarSettings',label='Bars',values={Anchor='TOPRIGHT',relativeTo='CENTER',xOffset=-83,yOffset=41,Width=287,Height=29,TimerFontSize=17}}}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP'), 'Placement recovery was not reachable from Notes')
+local placementBackupEditor=recoveryEditor('Northern Sky placement backup')
+check(placementBackupEditor and placementBackupEditor:GetText():find('Section: Bars',1,true) and placementBackupEditor:GetText():find('Anchor = TOPRIGHT',1,true)
+    and placementBackupEditor:GetText():find('xOffset = -83',1,true) and placementBackupEditor:GetText():find('Width = 287',1,true)
+    and placementBackupEditor:GetText():find('TimerFontSize = 17',1,true) and placementBackupEditor:GetText():find('FontSize = unset',1,true), 'Placement recovery omitted copyable prior coordinates/dimensions/font or unset fields')
+check(not clickVisible('ORIGINAL PROFILE EXPORT') and clickVisible('SELECT TEXT') and placementBackupEditor:HasFocus(), 'Placement recovery offered missing export or could not select backup text')
+check(clickVisible('KEEP CURRENT / RELEASE BACKUP') and releaseCalls == 1 and hasVisibleText('Keep current state and release placement backup?'), 'Placement release skipped review or identified the wrong backup')
+check(clickVisible('CONFIRM') and releaseCalls == 2 and not recoveryFixture, 'Placement recovery could not release its exact record')
+recoveryFixture={kind='profile',token='profile-token',original='Original',observedProfile='Copy',phase='import-failed',reason='Inspect settings',originalExport='Native profile export recovery',shared='Shared backup',personal='Personal backup'}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP') and recoveryEditor('Native profile export recovery') and not clickVisible('PLACEMENT SETTINGS'), 'Profile recovery did not default to its available native export')
+RA:CloseConfig()
+check(not recoveryEditor('Native profile export recovery'), 'Closing hub left recovery content visible')
+for key in pairs(adapter) do adapter[key]=nil end
+for key,value in pairs(originals) do adapter[key]=value end
 cleanErrors()
 print = nativePrint
 print('PASS: ' .. checks .. ' hub/migration/quiet-lifecycle assertions (actual addon modules; offline frame mocks)')
