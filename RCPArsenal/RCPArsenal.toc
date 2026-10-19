@@ -2,7 +2,7 @@
 ## Title: RCP Arsenal
 ## Notes: Premium leader-installed raid capability HUD with pre-pull inspection, callouts, and raid-leader utilities.
 ## Author: Jimfro / Ready Check Pull
-## Version: 0.14.1-alpha
+## Version: 0.14.2-alpha.1
 ## SavedVariables: RaidArsenalDB
 ## IconTexture: Interface\AddOns\RCPArsenal\Media\RCPAddonIcon
 ## Category-enUS: Raid
@@ -13,6 +13,7 @@ Theme.lua
 Layout.lua
 Catalog.lua
 ProfileIO.lua
+WorldMarkers.lua
 Inspect.lua
 RaidLeader.lua
 UI.lua

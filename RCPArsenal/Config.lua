@@ -30,6 +30,8 @@ local mainTitle
 local mainSubtitle
 local actionStatusText
 local actionStatusDetail
+local hudFooter
+local RefreshWorldMarkers
 
 -- Compatibility aliases for the existing page logic. The visual system itself
 -- lives in Theme.lua so the settings window can use soft, layered surfaces
@@ -1400,6 +1402,11 @@ local function CreateQuickBarPane(parent)
     SetPoint(behaviorText, "TOPLEFT", rightTop, "TOPLEFT", 20, -66)
     SetWidth(behaviorText, 430)
 
+    local markerSetup = CreateButton(rightTop, "WORLD MARKERS", 190, 34, function()
+        RA:OpenConfig("WORLDMARKERS")
+    end)
+    SetPoint(markerSetup, "BOTTOMLEFT", rightTop, "BOTTOMLEFT", 20, 16)
+
     local hudDirection = CreateSegmented(rightBottom, "MAIN HUD DIRECTION", {
         {label = "AUTO", value = "AUTO"},
         {label = "RIGHT", value = "RIGHT"},
@@ -1425,6 +1432,205 @@ local function CreateQuickBarPane(parent)
         RefreshConfig()
     end)
     SetPoint(recenter, "BOTTOMLEFT", rightBottom, "BOTTOMLEFT", 20, 24)
+end
+
+local function CreateWorldMarkersPane(parent)
+    local markers = RA.WorldMarkers
+    local selected
+    local message = ""
+    local slots, palette = {}, {}
+    CreateHeading(parent, "World marker cycler", "Place ground markers at your cursor. These are not target icons.")
+    local back = CreateButton(parent, "BACK TO QUICK BAR", 180, 32, function() RA:OpenConfig("QUICKBAR") end)
+    SetPoint(back, "TOPRIGHT", parent, "TOPRIGHT", -52, 0)
+
+    local toggle = CreateToggle(parent, "Enable world marker cycler", "Off until you choose it. Bindings start unassigned; no extra overlay.",
+        function() return markers:GetSettings().enabled end,
+        function(value)
+            local _, detail = markers:SetEnabled(value)
+            message = detail or ""
+        end)
+    SetPoint(toggle, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+    SetWidth(toggle, 950)
+
+    local orderCard = CreateCard(parent, "MARKER ORDER", "Click a marker to append it. Select a numbered slot to move or remove it.")
+    SetSize(orderCard, 950, 270)
+    SetPoint(orderCard, "TOPLEFT", parent, "TOPLEFT", 0, -126)
+    local empty = Font(orderCard, 11, TC.textSoft, "REGULAR")
+    empty:SetText("Add at least one marker to use the cycler.")
+    SetPoint(empty, "TOPLEFT", orderCard, "TOPLEFT", 18, -166)
+    local selection = Font(orderCard, 9.4, TC.textSoft, "REGULAR")
+    SetPoint(selection, "BOTTOMLEFT", orderCard, "BOTTOMLEFT", 386, 28)
+    SetWidth(selection, 540)
+
+    local function CommitOrder(order)
+        local _, detail = markers:SetOrder(order)
+        message = detail or ""
+        RefreshWorldMarkers()
+    end
+    local function CopyOrder()
+        local result = {}
+        for i, id in ipairs(markers:GetSettings().order) do result[i] = id end
+        return result
+    end
+    local function AddTooltip(button, text)
+        button:HookScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(text, 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        button:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    for id, definition in ipairs(markers.Definitions) do
+        local markerID = id
+        local add = CreateButton(orderCard, definition.name, 104, 58, function()
+            local order = CopyOrder()
+            for _, present in ipairs(order) do
+                if present == markerID then message = "Already in sequence."; RefreshWorldMarkers(); return end
+            end
+            order[#order + 1] = markerID
+            selected = #order
+            CommitOrder(order)
+        end)
+        SetPoint(add, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -68)
+        add.label:ClearAllPoints()
+        ApplyReadableFont(add.label, 8.5, "REGULAR")
+        SetPoint(add.label, "BOTTOM", add, "BOTTOM", 0, 6)
+        local icon = add:CreateTexture(nil, "ARTWORK")
+        icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. definition.icon)
+        SetSize(icon, 28, 28)
+        SetPoint(icon, "TOP", add, "TOP", 0, -4)
+        AddTooltip(add, definition.name .. " — append to the ground-marker sequence")
+        palette[id] = add
+
+        local slot = CreateButton(orderCard, tostring(id), 104, 50, function()
+            selected = markerID
+            message = ""
+            RefreshWorldMarkers()
+        end)
+        SetPoint(slot, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -148)
+        slot.label:ClearAllPoints()
+        SetPoint(slot.label, "LEFT", slot, "LEFT", 10, 0)
+        slot.icon = slot:CreateTexture(nil, "ARTWORK")
+        SetSize(slot.icon, 30, 30)
+        SetPoint(slot.icon, "CENTER", slot, "CENTER", 9, 0)
+        slot:HookScript("OnEnter", function(self)
+            local worldID = markers:GetSettings().order[markerID]
+            if worldID then
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(markerID .. ". " .. markers.Definitions[worldID].name, 1, 1, 1)
+                GameTooltip:Show()
+            end
+        end)
+        slot:HookScript("OnLeave", function() GameTooltip:Hide() end)
+        slots[id] = slot
+    end
+    local function Move(delta)
+        local order = CopyOrder()
+        local target = selected and selected + delta
+        if target and target >= 1 and target <= #order then
+            order[selected], order[target] = order[target], order[selected]
+            selected = target
+            CommitOrder(order)
+        end
+    end
+    local left = CreateButton(orderCard, "MOVE LEFT", 110, 32, function() Move(-1) end)
+    SetPoint(left, "BOTTOMLEFT", orderCard, "BOTTOMLEFT", 18, 18)
+    local right = CreateButton(orderCard, "MOVE RIGHT", 110, 32, function() Move(1) end)
+    SetPoint(right, "LEFT", left, "RIGHT", 8, 0)
+    local remove = CreateButton(orderCard, "REMOVE", 110, 32, function()
+        local order = CopyOrder()
+        if selected and order[selected] then
+            table.remove(order, selected)
+            selected = #order > 0 and math.min(selected, #order) or nil
+            CommitOrder(order)
+        end
+    end)
+    SetPoint(remove, "LEFT", right, "RIGHT", 8, 0)
+
+    local bindingCard = CreateCard(parent, "KEY BINDINGS", "Press the place key repeatedly; after the last marker, the sequence repeats.")
+    SetSize(bindingCard, 950, 194)
+    SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -410)
+    local placeLabel = Font(bindingCard, 11, TC.text, "BOLD")
+    placeLabel:SetText("Place next world marker")
+    SetPoint(placeLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -70)
+    local clearLabel = Font(bindingCard, 11, TC.text, "BOLD")
+    clearLabel:SetText("Clear all world markers")
+    SetPoint(clearLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -100)
+    local placeKey = Font(bindingCard, 11, TC.orange, "REGULAR")
+    SetPoint(placeKey, "LEFT", placeLabel, "LEFT", 280, 0)
+    SetWidth(placeKey, 350)
+    local clearKey = Font(bindingCard, 11, TC.orange, "REGULAR")
+    SetPoint(clearKey, "LEFT", clearLabel, "LEFT", 280, 0)
+    SetWidth(clearKey, 350)
+    local setup = CreateButton(bindingCard, "OPEN KEY BINDINGS", 220, 36, function()
+        if InCombatLockdown() then return end
+        if Settings and Settings.OpenToCategory and Settings.KEYBINDINGS_CATEGORY_ID then
+            Settings.OpenToCategory(Settings.KEYBINDINGS_CATEGORY_ID, BINDING_HEADER_RCPARSENAL_MARKERS)
+        else
+            RA:Print("Open Esc > Options > Key Bindings > AddOns > RCP Arsenal — World markers.")
+        end
+    end)
+    SetPoint(setup, "TOPRIGHT", bindingCard, "TOPRIGHT", -18, -70)
+    local bindingHelp = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
+    bindingHelp:SetText("AddOns > RCP Arsenal — World markers. Blizzard handles conflicts and saves your keys.\nClear all also restarts at slot 1; it keeps your order. Disabling keeps your bindings but makes both actions inactive.")
+    bindingHelp:SetSpacing(4)
+    bindingHelp:SetWordWrap(true)
+    SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -137)
+    SetWidth(bindingHelp, 914)
+    local state = Font(parent, 10, TC.orange, "REGULAR")
+    SetPoint(state, "TOPLEFT", parent, "TOPLEFT", 0, -616)
+    SetWidth(state, 950)
+    local permission = Font(parent, 9.2, TC.textSoft, "REGULAR")
+    SetPoint(permission, "TOPLEFT", parent, "TOPLEFT", 0, -640)
+    SetWidth(permission, 950)
+
+    RefreshWorldMarkers = function()
+        local settings = markers:GetSettings()
+        local order = settings.order
+        local combat = InCombatLockdown()
+        local effective, pending = markers:GetState()
+        if selected and not order[selected] then selected = nil end
+        toggle:Refresh()
+        toggle:SetEnabled(not combat)
+        toggle:SetAlpha(combat and 0.45 or 1)
+        for id, button in ipairs(palette) do
+            local present = false
+            for _, markerID in ipairs(order) do if id == markerID then present = true end end
+            button:SetSelected(present)
+            button:SetEnabled(not combat)
+            button:SetAlpha(combat and 0.45 or 1)
+            local slot = slots[id]
+            slot:SetShown(order[id] ~= nil)
+            slot:SetEnabled(not combat)
+            slot:SetAlpha(combat and 0.45 or 1)
+            slot:SetSelected(selected == id)
+            if order[id] then slot.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. markers.Definitions[order[id]].icon) end
+        end
+        empty:SetShown(#order == 0)
+        left:SetEnabled(not combat and selected ~= nil and selected > 1)
+        right:SetEnabled(not combat and selected ~= nil and selected < #order)
+        remove:SetEnabled(not combat and selected ~= nil)
+        setup:SetEnabled(not combat)
+        for _, button in ipairs({left, right, remove, setup}) do
+            button:SetAlpha(button:IsEnabled() and 1 or 0.45)
+        end
+        selection:SetText(message ~= "" and message or (selected and ("Selected: " .. markers.Definitions[order[selected]].name) or "Select a numbered slot to edit it."))
+        placeKey:SetText(markers:GetBindingText(markers.PlaceBinding))
+        clearKey:SetText(markers:GetBindingText(markers.ClearBinding))
+        if pending then
+            state:SetText("Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
+        elseif combat then
+            state:SetText("Change setup after combat. Each place keypress advances once; placement is checked by Blizzard.")
+        elseif #order == 0 then
+            state:SetText("Add at least one marker to use the cycler. Place-next is inactive.")
+        elseif not settings.enabled then
+            state:SetText("Cycler off. Prepare your order and bindings, then enable when ready.")
+        else
+            state:SetText("Each keypress attempts the next slot, even if rejected. Enabling, order changes and clear restart at slot 1.")
+        end
+        permission:SetText(markers:GetPermissionText())
+    end
+    RegisterControl({Refresh = function() RefreshWorldMarkers() end})
 end
 
 local function CreateActionsPane(parent)
@@ -1537,7 +1743,7 @@ local function SetTab(tabKey)
         pane:SetShown(key == tabKey)
     end
     for key, button in pairs(tabButtons) do
-        local selected = key == tabKey
+        local selected = key == tabKey or (key == "QUICKBAR" and tabKey == "WORLDMARKERS")
         SetSurfaceColor(button, selected and TC.activeDark or TC.transparent)
         SetBorderColor(button, selected and CopyColor(TC.magenta, 0.34) or TC.transparent)
         button.gradient:SetAlpha(selected and 0.66 or 0)
@@ -1546,6 +1752,8 @@ local function SetTab(tabKey)
         button.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
         button.bar:SetShown(selected)
     end
+    if hudFooter then hudFooter:SetShown(tabKey ~= "WORLDMARKERS") end
+    if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
     if tabKey == "CONTENT" then
         RefreshAbilityList(false)
         RefreshCategoryRows()
@@ -1713,6 +1921,7 @@ local function CreateConfig()
     Theme:AddTopWash(main, Theme.Assets.GradientBerry, 0.028, 110, 2)
 
     local footer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    hudFooter = footer
     SetSize(footer, 1248, 62)
     SetPoint(footer, "BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 14)
     Backdrop(footer, TC.footer, CopyColor(TC.magenta, 0.16), 15, false)
@@ -1813,12 +2022,17 @@ local function CreateConfig()
         pane:Hide()
         panes[TAB_DEFS[i].key] = pane
     end
+    local markerPane = CreateFrame("Frame", nil, content)
+    markerPane:SetAllPoints(content)
+    markerPane:Hide()
+    panes.WORLDMARKERS = markerPane
 
     CreateHUDPane(panes.HUD)
     CreateQuickBarPane(panes.QUICKBAR)
     CreateContentPane(panes.CONTENT)
     CreateScanningPane(panes.SCANNING)
     CreateActionsPane(panes.ACTIONS)
+    CreateWorldMarkersPane(panes.WORLDMARKERS)
 
     local hudToggle = CreateButton(footer, "HIDE HUD", 166, 42, function(self)
         if RA:GetDB().shown then RA:HideHUD() else RA:ShowHUD() end
@@ -1932,4 +2146,8 @@ end)
 
 RA:RegisterCallback("ABILITY_ORDER_CHANGED", function()
     if frame and frame:IsShown() then RefreshAbilityList(false) end
+end)
+
+RA:RegisterCallback("WORLD_MARKERS_CHANGED", function()
+    if frame and frame:IsShown() and activeTab == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
 end)

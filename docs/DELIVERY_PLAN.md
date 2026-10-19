@@ -39,7 +39,7 @@ Milestones 1–2 are the recommended first product slice; H starts immediately s
 
 The DEFAULTS table at `Core.lua:27` enables `shown`, `autoShowEncounter`, `demoMode`, scan strip/demo preview, Quick Bar, several categories, and callout controls. `CopyDefaults` runs before migration during `ADDON_LOADED` (`Core.lua:729`). Old migration steps re-enable shown state, preview, Quick Bar, and actions; normalization also supplies true defaults. Changing only DEFAULTS would miss those paths.
 
-Recommend one final schema-18 migration that records a one-time hub opt-in transition, sets optional modules/actions off for fresh and older profiles, and preserves visual values, positions, templates, ignored groups, and content choices. Do not reset the whole profile. Once the player enables a module in schema 18, later login and normalization must preserve that choice. Review this upgrade behavior with the owner; existing settings cannot prove which old true flags were deliberate consent.
+Recommend a later hub schema migration that records a one-time hub opt-in transition, sets optional modules/actions off for fresh and older profiles, and preserves visual values, positions, templates, ignored groups, and content choices. Do not reset the whole profile. Once the player enables a module after that hub migration, later login and normalization must preserve that choice. Review this upgrade behavior with the owner; existing settings cannot prove which old true flags were deliberate consent.
 
 `ProfileIO.lua:131–207` exports explicit fields with several true-default fallbacks; imports start from `CreateDefaultProfile`, apply fields, normalize, then call `ApplyImportedProfile`. That last function keeps local `shown` and HUD/puck positions, but imports Quick Bar enablement and other behavior. Recommend keeping feature enablement local for hub-era imports, while copying portable presentation/content settings. Otherwise an imported team profile can switch modules on implicitly. Provide a deliberate apply step for any future import that changes behavior. Add explicit schema/format compatibility handling while retaining RCPA11/RCPA9/RA8 readers.
 
@@ -83,3 +83,7 @@ Start with the same local package script in read-only validation CI, then add a 
 ## Proposed canonical checklist updates
 
 Mark only local checkout/provenance/packaging preparation complete, with the exact checkout path and baseline commit. Keep Windows installation, quiet first run, catalog, health client validation, and every feature unchecked. Update GitHub publishing only after remote workflow/release verification; the separate chat owns CurseForge status. Add the H feasibility gate beside the early health reminder item. Add a decision for migrated-profile consent and profile-import enablement. Keep the existing idea bank and the owner’s unsettled tiers, res policy, timing model, and placement choices intact.
+
+## Optional marker feature alpha
+
+The bounded world marker cycler is implemented for 0.14.2-alpha.1, using schema 18 for local opt-in/order and native Blizzard bindings. This does not complete quiet startup, the catalog, or the hub redesign. Client acceptance remains governed by WORLD_MARKER_TESTS.md. Any future hub-wide migration must use a new schema rather than reusing marker schema 18.

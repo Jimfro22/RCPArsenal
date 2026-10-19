@@ -3,6 +3,7 @@ local _, RA = ...
 local function PrintHelp()
     RA:Print("Commands:")
     print("  |cff3aa7ff/rcpa config|r - open the RCP Arsenal settings panel")
+    print("  |cff3aa7ff/rcpa markers|r - set up the optional world marker cycler and keybindings")
     print("  |cff3aa7ff/rcpa show|r or |cff3aa7ff/rcpa hide|r - show or hide the HUD")
     print("  |cff3aa7ff/rcpa recover|r - show and recenter a missing/off-screen HUD")
     print("  |cff3aa7ff/rcpa scan|r - scan only missing/new tracked players")
@@ -25,7 +26,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcpa active <ability_key>|r - preview an ACTIVE state")
     print("  |cff3aa7ff/rcpa clearactive|r - clear preview ACTIVE states")
     print("  |cff3aa7ff/rcpa reset|r - reset saved layout and filters")
-    print("  Compact tiles: |cffffffffleft-click says + whispers|r; |cffffffffright-click sends raid warning|r.")
+    print("  Compact tiles: |cffffffffleft-click uses Whisper, Say, or Off|r; |cffffffffright-click sends raid warning|r.")
 end
 
 local function StartScan(fullRefresh)
@@ -77,6 +78,8 @@ local function HandleSlash(raw)
 
     if command == "" or command == "config" then
         RA:OpenConfig()
+    elseif command == "markers" then
+        RA:OpenConfig("WORLDMARKERS")
     elseif command == "show" then
         RA:ShowHUD()
     elseif command == "hide" then

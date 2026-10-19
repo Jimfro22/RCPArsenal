@@ -31,6 +31,12 @@ jobs:
           test -f "docs/releases/$RELEASE_TAG.md"
       - name: Test packaging safeguards
         run: python3 -m unittest discover -s tests -v
+      - name: Install Lua 5.1 for offline checks
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.1
+      - name: Validate Lua and marker logic
+        run: |
+          luac5.1 -p RCPArsenal/*.lua
+          lua5.1 tests/world_markers.lua
       - name: Build a clean tagged install ZIP
         env:
           RELEASE_TAG: ${{ github.ref_name }}
