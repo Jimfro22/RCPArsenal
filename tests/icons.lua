@@ -64,15 +64,18 @@ function methods:SetFont(path, size)
     elseif not path:find('Fonts\\', 1, true) then liveOptionalFontCalls = liveOptionalFontCalls + 1 end
     if path == 'GhostFont.ttf' then self.font, self.fontSize, self.text = nil, nil, nil; return true end
     if self.failFonts then self.font, self.fontSize, self.text = nil, nil, nil; return false end
-    if path == 'Fonts\\ARIALN.TTF' or (path == 'SharedExpressway.ttf' and mediaReady) then
+    if self.kind == 'Font' and path:find('SharedExpressway', 1, true) and not self.bound then return end
+    if path == 'Fonts\\ARIALN.TTF' or ((path == 'SharedExpressway.ttf' or path == 'SharedExpresswayBold.ttf') and mediaReady) then
         self.font, self.fontSize = path, size
         if self.clearTextOnFont then self.text = nil end
+        if self.kind == 'Font' then return end -- native Font:SetFont is void
         return true
     end
     self.font, self.fontSize, self.text = nil, nil, nil
     return false
 end
 function methods:SetFontObject(font)
+    if self.kind == 'FontString' then font.bound = true end
     self.fontCalls = (self.fontCalls or 0) + 1
     if self.failFonts then self.font, self.fontSize, self.text = nil, nil, nil; return end
     self.font, self.fontSize = font:GetFont()
@@ -129,7 +132,10 @@ function UnitExists() return false end
 function UnitGUID() return 'player-guid' end
 function Ambiguate(name) return name end
 local sharedMedia = {
-    Fetch = function() return sharedFontPath or (mediaReady and 'SharedExpressway.ttf' or nil) end,
+    Fetch = function(_, _, name)
+        if sharedFontPath then return sharedFontPath end
+        if mediaReady then return name:find('Bold', 1, true) and 'SharedExpresswayBold.ttf' or 'SharedExpressway.ttf' end
+    end,
     RegisterCallback = function(_, eventName, callback)
         check(eventName == 'LibSharedMedia_Registered', 'Unexpected media callback')
         registeredFontCallback = callback
@@ -235,7 +241,17 @@ check(editor.textCalls == editorTextCalls, 'An unchanged editor was rewritten by
 sharedFontPath, mediaReady = nil, true
 registeredFontCallback('LibSharedMedia_Registered', 'font', 'Expressway')
 RA:ApplyFont(nativeCaption, 11, 'BOLD', false)
-check(nativeCaption.font == 'SharedExpressway.ttf' and nativeCaption:GetText() == '', 'Late SharedMedia registration did not invalidate the candidate cache safely')
+check(nativeCaption.font == 'SharedExpresswayBold.ttf' and nativeCaption:GetText() == '', 'Void Font:SetFont rejected a valid late bold Expressway face')
+local regularCaption = nativeParent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+RA:SetVisualText(regularCaption, 'Regular body copy')
+RA:ApplyFont(regularCaption, 10, 'REGULAR', false)
+check(regularCaption.font == 'SharedExpressway.ttf' and regularCaption:GetText() == 'Regular body copy', 'Regular and bold typography did not retain separate actual faces')
+check(regularCaption.__raResolvedFont.object.bound and regularCaption.__raResolvedFont.probe and not regularCaption.__raResolvedFont.probe.parent:IsShown(), 'Cold font was loaded without first binding its hidden instance')
+regularCaption.font = 'Fonts\\ARIALN.TTF'
+RA:ApplyFont(regularCaption, 10, 'REGULAR', false)
+check(regularCaption.font == 'SharedExpressway.ttf' and regularCaption:GetText() == 'Regular body copy', 'Native face drift remained on a thin fallback despite cached Expressway')
+local fontStatus, fontPath = RA:GetFontStatus()
+check(fontStatus == 'Expressway' and fontPath == 'SharedExpressway.ttf', 'Resolved font status disagrees with native void-return font object')
 RA:GetFontStatus()
 local objectsBefore = #objects
 probesBefore = fontProbeCalls
@@ -283,7 +299,7 @@ failedFont.failFonts, resolverReady = false, true
 registeredFontCallback('LibSharedMedia_Registered', 'font', 'Expressway')
 faultParent:Hide(); faultParent:Show()
 drain()
-check(failedFont.font == 'SharedExpressway.ttf' and failedFont:GetText() == '!' and resolved.texture == 44444, 'Failed font/resolver registrations were discarded')
+check(failedFont.font == 'SharedExpresswayBold.ttf' and failedFont:GetText() == '!' and resolved.texture == 44444, 'Failed font/resolver registrations were discarded')
 faultParent:Hide()
 
 -- Missing spell data is requested once and repaired in place on its event.
@@ -352,7 +368,7 @@ check(drain() == 6, 'Actual overlay warm-up did not terminate after six passes')
 check(geometryBefore == geometryWrites and attributesBefore == attributeWrites, 'Asset recovery changed geometry or protected attributes in combat')
 check(scanCalls == 0, 'Asset recovery invoked talent inspection')
 for region, path in pairs(desiredPaths) do check(region.texture == path, 'Registered actual artwork did not recover: ' .. path) end
-for region, count in pairs(textRefs) do check(region.fontCalls > count and region.font == 'SharedExpressway.ttf', 'Actual Quick Bar/HUD font ref did not recover') end
+for region, count in pairs(textRefs) do check(region.fontCalls > count and (region.font == 'SharedExpressway.ttf' or region.font == 'SharedExpresswayBold.ttf'), 'Actual Quick Bar/HUD font ref did not recover') end
 for _, region in ipairs(spellRefs) do check(region.texture ~= 134400, 'Actual flyout spell icon did not recover') end
 check(panic.label:GetText() == '!' and sortIcon.filter == 'LINEAR', 'Recovery changed PANIC identity or SORT filter')
 local spellHUDCount = 0

@@ -29,6 +29,7 @@ Theme.Assets = {
     Atmosphere = Theme.MediaPath .. "PanelAtmosphere",
 
     Logo = Theme.MediaPath .. "RCPLogo",
+    HeaderLogo = Theme.MediaPath .. "RCPLogoHeader",
     Checkmark = Theme.MediaPath .. "RCPCheckmark",
     AddonIcon = Theme.MediaPath .. "RCPAddonIcon",
     SliderThumb = Theme.MediaPath .. "SliderThumb",

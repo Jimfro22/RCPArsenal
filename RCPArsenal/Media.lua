@@ -11,6 +11,7 @@ local FALLBACK = "Fonts\\ARIALN.TTF"
 local resolvedFonts = {}
 local fontSerial = 0
 local sharedMedia
+local fontProbeParent
 
 local function FontDetails(instance)
     if not instance or not instance.GetFont then return nil end
@@ -86,14 +87,29 @@ local function ResolveFont(size, weight)
     if font and font.SetFontObject and GameFontNormal then
         pcall(font.SetFontObject, font, GameFontNormal)
     end
+    local probe
+    if font and CreateFrame then
+        -- Loose SharedMedia fonts can need a bound instance before the native
+        -- FontObject loads them on a cold client. Keep this initialization
+        -- away from live captions, on one hidden parent shared by all probes.
+        if not fontProbeParent then
+            fontProbeParent = CreateFrame("Frame")
+            fontProbeParent:Hide()
+        end
+        probe = fontProbeParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        probe:SetFontObject(font)
+    end
 
     local candidates = RA:GetFontCandidates(weight)
     if font then
         for i = 1, #candidates do
-            local ok, result = pcall(font.SetFont, font, candidates[i], size, "")
+            local ok = pcall(font.SetFont, font, candidates[i], size, "")
             local actualPath = FontDetails(font)
-            if ok and result == true and actualPath and NormalizePath(actualPath) == NormalizePath(candidates[i]) then
-                local resolved = {object = font, path = actualPath, size = size}
+            -- Font:SetFont is a void native API, unlike FontString:SetFont's
+            -- boolean result. Accept nil only when GetFont proves the chosen
+            -- asset loaded; otherwise every valid Expressway face is rejected.
+            if ok and actualPath and NormalizePath(actualPath) == NormalizePath(candidates[i]) then
+                local resolved = {object = font, probe = probe, path = actualPath, size = size}
                 resolvedFonts[key] = resolved
                 return resolved
             end
@@ -115,6 +131,7 @@ function RA:GetFontCandidates(weight)
         AddCandidate(candidates, GetSharedMediaFont({
             "Expressway Bold",
             "Expressway ExtraBold",
+            "Expressway, Bold",
             "Expressway",
         }))
         AddCandidate(candidates, LOCAL_BOLD)
@@ -155,7 +172,9 @@ function RA:ApplyFont(fontString, size, weight, shadow, refreshingAsset)
     end
 
     local resolved = ResolveFont(size, weight)
-    if fontString.__raResolvedFont ~= resolved or not FontDetails(fontString) then
+    local currentPath = FontDetails(fontString)
+    if fontString.__raResolvedFont ~= resolved or not currentPath
+        or NormalizePath(currentPath) ~= NormalizePath(resolved.path) then
         if resolved.object and fontString.SetFontObject then
             pcall(fontString.SetFontObject, fontString, resolved.object)
         else

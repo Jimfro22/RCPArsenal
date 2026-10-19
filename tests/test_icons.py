@@ -1,6 +1,8 @@
 """Asset delivery checks; the separate Lua harness exercises runtime calls."""
 from pathlib import Path
 import re
+import hashlib
+import runpy
 import struct
 import unittest
 
@@ -50,10 +52,21 @@ class IconDeliveryTests(unittest.TestCase):
         self.assertIn('result == false', source)
         self.assertIn('SPELL_DATA_LOAD_RESULT', source)
 
+    def test_header_logo_is_reproducible_and_preserves_original(self):
+        source = ROOT / "RCPArsenal/Media/RCPLogo.tga"
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
+                         "9729123a843bd16ab41a500daf9fdabfcd329958e489bc7e9bc497af1d25a461")
+        exporter = runpy.run_path(str(ROOT / "tools/build_header_logo.py"))
+        exported = (ROOT / "RCPArsenal/Media/RCPLogoHeader.tga").read_bytes()
+        self.assertEqual(exporter["build"](), exported)
+        self.assertEqual(struct.unpack_from("<HH", exported, 12), (64, 64))
+
     def test_optional_fonts_are_resolved_away_from_live_captions(self):
         media = (ROOT / "RCPArsenal/Media.lua").read_text()
         self.assertIn('pcall(CreateFont, "RCPArsenalResolvedFont"', media)
         self.assertIn('NormalizePath(actualPath) == NormalizePath(candidates[i])', media)
+        self.assertIn('if ok and actualPath and NormalizePath(actualPath)', media)
+        self.assertNotIn('result == true and actualPath', media)
         self.assertNotIn('pcall(fontString.SetFont, fontString, candidates[i]', media)
         assets = (ROOT / "RCPArsenal/Assets.lua").read_text()
         self.assertIn('function RA:SetVisualText(region, text)', assets)
