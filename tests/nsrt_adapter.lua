@@ -63,6 +63,9 @@ local function setup(missing)
         record("callback")
         if callbacks[name] then callbacks[name](name,personal,shared) end
     end
+    function engine:InviteListFromReminder() return {"derived"} end
+    function engine:GetProfileKey() return "Player" end
+    function engine:EncodeExportData(data,kind) check(kind=="Profile","native profile encode kind");local key="stage:"..tostring(#exports+1);exports[#exports+1]=key;exports[key]=copy(data.data);return key end
     function engine:ImportReminder(name,text,activate,personal,isUpdate,diff)
         check(not combat and not encounter and not restricted,"note write under restriction")
         check(activate==false and personal==false and isUpdate==true and diff==nil,"unsafe note import flags")
@@ -93,6 +96,7 @@ local function setup(missing)
         if name==NSRT.CurrentProfile then engine:SaveProfile() end
         local token="profile:"..tostring(#exports+1); exports[#exports+1]=copy(NSRT.Profiles[name]); exports[token]=exports[#exports]; record("export:"..name); return token
     end
+    function NSAPI:DecodeProfileString(token) return copy(exports[token]) end
     function NSAPI:ImportProfileString(token,name,shared,ignoreShared)
         check(shared==false and ignoreShared==true,"profile imported shared data")
         while NSRT.Profiles[name] do name=name.." 2" end
@@ -335,4 +339,43 @@ NSAPI.GetReminderString=function() error("must not call NSRT while releasing loc
 check(A:ReleaseUndo("recovery",recoveryToken) and #calls==callsBefore and notices==noticesBefore and #timers==timersBefore and NSRT.CurrentProfile==currentKey,
     "recovery release called native APIs/callbacks or changed current profile")
 check(A:GetStatus().recovery==nil,"released recovery still advertised")
+
+A=setup()
+for i=1,56 do NSRT.Reminders["Historical "..i]=string.rep("h",32768) end
+local capContext=context();local capShared,capName=engine.Reminder,NSRT.ActiveReminder
+callsBefore=#calls
+check(not A:ApplyLocalNote(string.rep("n",65536),capContext) and #calls==callsBefore and engine.Reminder==capShared and NSRT.ActiveReminder==capName and A:GetNotes(),
+    "near-cap valid note wrote an unobservable or unrestorable state")
+A=setup();local nativeFire=engine.FireCallback
+engine.FireCallback=function(self,...) nativeFire(self,...);self.Reminder="new incoming native note";NSRT.StoredSharedReminder=self.Reminder end
+check(not A:ApplyLocalNote("Arsenal draft",context()) and engine.Reminder=="new incoming native note" and NSRT.StoredSharedReminder=="new incoming native note",
+    "note activation rollback overwrote a newer incoming native note")
+recoveryOK,recoveryReason,recoveryData=A:GetRecoveryBackup()
+check(recoveryOK and recoveryData.shared=="Received runtime note" and A:GetStatus().recovery.pending,"unsafe note failure discarded the original copyable note")
+A=setup();local guidContext=context();UnitGUID=function() return "Player-Other" end
+check(not A:ApplyLocalNote("wrong character",guidContext),"character GUID change did not invalidate context")
+A=setup();ok,reason,notes=A:GetPlacement("IconSettings");check(ok,reason);check(A:SetPlacement("IconSettings",{Width=100},notes.context),"placement apply failed")
+combat=true;check(not A:GetStatus().canRestorePlacement,"combat status still advertised placement undo")
+
+A=setup();local moverContext=context();engine.IsInPreview=true
+check(not A:ApplyLocalNote("mine",moverContext) and #calls==0,"native NSRT preview did not block mutation")
+A:Refresh();check(not A:GetStatus().capabilities.applyNote and A:GetStatus().capabilities.openSettings,"preview gate hid native settings or left writes enabled")
+engine.IsInPreview=false;check(A:ApplyLocalNote("mine",context()),"finished native preview kept mutation blocked")
+for _,ref in ipairs({"TextMover","IconMover","BarMover","CircleMover","ReminderFrameMover","PersonalReminderFrameMover","ExtraReminderFrameMover"}) do
+    A=setup();engine[ref]={_nsrtLiveSaveDrag=true}
+    check(not A:ApplyLocalNote("mine",context()) and #calls==0,"native live drag allowed writes: "..ref)
+    engine[ref]._nsrtLiveSaveDrag=false
+    check(A:ApplyLocalNote("mine",context()),"finished drag kept mutation blocked: "..ref)
+end
+A=setup();NSRT.ReminderSettings.ReminderFrame.Moveable=true
+check(not A:ApplyLocalNote("mine",context()) and #calls==0,"movable native note allowed writes")
+NSRT.ReminderSettings.ReminderFrame.Moveable=false
+engine.ReminderFrameMover={IsMovable=function() return true end}
+check(not A:ApplyLocalNote("mine",context()) and #calls==0,"native note mover property allowed writes")
+engine.ReminderFrameMover.IsMovable=function() return false end
+check(A:ApplyLocalNote("mine",context()),"locked note controls kept mutation blocked")
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
+engine.UpdateExistingFrames=function() error("render failure during apply and rollback") end
+ok,reason,notes=A:ApplyProfile("RaidPreset",notes.context)
+check(not ok and notes.partial and A:GetStatus().recovery.pending and A:GetRecoveryBackup(),"failed rollback discarded its recoverable original state")
 print("nsrt_adapter: "..checks.." checks passed")
