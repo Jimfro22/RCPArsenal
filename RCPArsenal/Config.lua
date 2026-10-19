@@ -700,12 +700,12 @@ local function CreateHUDPane(parent)
     previewBadge:SetJustifyH("RIGHT")
     SetPoint(previewBadge, "TOPRIGHT", rightCard, "TOPRIGHT", -18, -14)
 
-    local previewOpacity = CreateSlider(rightCard, "HUD OPACITY", 0.40, 1.00, 0.05,
+    local hudOpacity = CreateSlider(settingsCard, "HUD OPACITY", 0.40, 1.00, 0.05,
         function() return RA:GetDB().opacity end,
         function(value) RA:GetDB().opacity = value; ApplyVisualChange() end,
         function(value) return string.format("%d%%", math.floor(value * 100 + 0.5)) end)
-    SetPoint(previewOpacity, "BOTTOMLEFT", rightCard, "BOTTOMLEFT", 18, 8)
-    SetWidth(previewOpacity, 464)
+    SetPoint(hudOpacity, "TOPLEFT", settingsCard, "TOPLEFT", 18, -541)
+    SetWidth(hudOpacity, 402)
 
     local styleCard = CreateCard(parent, "PRESENTATION", "Control visual structure, category text, and behavior at the tile cap.")
     SetSize(styleCard, 500, 334)
@@ -744,7 +744,7 @@ local function CreateHUDPane(parent)
         end, formatter)
         SetPoint(slider, "TOPLEFT", settingsCard, "TOPLEFT", 18, y)
         SetWidth(slider, 402)
-        y = y - 53
+        y = y - 52
         return slider
     end
 
