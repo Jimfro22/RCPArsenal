@@ -108,6 +108,8 @@ check(native.hookCalls==0 and Reads()==0 and #plays==0,'Fresh OFF did native wor
 check(events.UNIT_HEALTH==nil and events.UNIT_MAXHEALTH==nil and events.BAG_UPDATE_DELAYED==nil,'Audio subscribed to health/bags')
 for i=1,20 do audio:GetStatusText() end
 check(Reads()==0 and #plays==0,'Status rendering read native state')
+events.CVAR_UPDATE('CVAR_UPDATE','doNotFlashLowHealthWarning')
+check(audio:GetStatusText()=='Reminder is off.' and Reads()==0,'Disabled CVar callback advertised enabled sound')
 check(audio:Preview() and #plays==1 and not master and native.hookCalls==0,'Preview changed opt-in/binding')
 for _,r in ipairs({false,secret,'error'}) do result=r;check(not audio:Preview(),'Preview claimed playback acceptance') end
 result=nil;check(not audio:Preview(),'Nil playback acceptance claimed success')
@@ -233,6 +235,7 @@ soundHandle=200;audio:Preview();local beforeStops=#stops
 native:Show();parent=false;ParentEvent('UI.TopLevelParentHidden');native:Fire('OnHide')
 parent=true;ParentEvent('UI.TopLevelParentShown');events.PLAYER_REGEN_DISABLED()
 check(#stops==beforeStops,'Automatic lifecycle stopped a manual preview with master OFF')
+check(audio:GetStatusText()=='Reminder is off.','Disabled parent callback advertised enabled sound')
 audio:Preview();check(#stops==beforeStops+1 and stops[#stops]==200,'A new manual preview did not stop only its own predecessor')
 
 Setup({enabled=true});result=false;native:Show();check(#plays==1,'Playback attempt missing')

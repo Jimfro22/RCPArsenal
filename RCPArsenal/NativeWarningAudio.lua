@@ -54,7 +54,12 @@ local function PlayAlert()
 end
 local function Disarm(reason)
     state, wasEligible = "WAIT_CLEAR", false
-    status = reason or "Sound enabled - native warning unavailable."
+    if reason then status = reason
+    elseif RA.PersonalTools:IsNativeSoundOptedIn() then status = "Sound enabled - native warning unavailable."
+    else
+        local _, offReason = RA.PersonalTools:GetNativeSoundEligibility()
+        status = offReason or "Sound is off."
+    end
     StopAutomatic()
 end
 local function NativeContext()
