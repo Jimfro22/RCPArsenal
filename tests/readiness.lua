@@ -2,7 +2,7 @@
 local checks = 0
 local function check(value, message) checks = checks + 1; assert(value, message) end
 local clock, combat, grouped, raid, timers, sent, units, addons, db, restriction
-local events, callbacks, initializers, prefixResult, sendResult, secretToken, addonCalls
+local events, callbacks, initializers, prefixResult, sendResult, secretToken, addonCalls, arsenalEnableState
 local RA
 local function Advance(seconds)
     local untilTime = clock + seconds
@@ -30,6 +30,7 @@ local function Setup(options)
     clock, combat, grouped, raid, timers, sent, restriction = 100, false, true, false, {}, {}, false
     events, callbacks, initializers, addonCalls = {}, {}, {}, {}
     prefixResult, sendResult = options.prefixResult or 0, options.sendResult or 0
+    arsenalEnableState = 2
     units = { player = Member("Lead", "Player-1", true), party1 = Member("Mage", "Player-2"), party2 = Member("Rogue", "Player-3", false, false, false) }
     addons = {
         {name = "NorthernSkyRaidTools", version = "1.2.3", enabled = 2, loaded = true},
@@ -84,6 +85,7 @@ local function Setup(options)
         GetAddOnEnableState = function(folder, character)
             check(character == "Player-1", "enable state did not query current character GUID")
             addonCalls[#addonCalls + 1] = {folder, character}
+            if folder == "RCPArsenal" then return arsenalEnableState end
             return Find(folder).enabled
         end,
         IsAddOnLoaded = function(folder) local row = Find(folder); return row.loaded or row.loading or false, row.loaded end,
@@ -387,4 +389,58 @@ units.player.leader, units.party1.leader = false, true
 Deliver("Q|1|a-b-c", "Mage", "PARTY")
 Advance(4)
 check(#sent == 7 and sent[1].target == "Mage-TestRealm", "short leader query did not bind replies to canonical roster identity")
+
+-- Blizzard can disable a running addon for the next reload. Preserve that
+-- configured character state independently of installed and currently loaded.
+R, C = Setup()
+arsenalEnableState = 0
+local disabledArsenal = C:RefreshLocal().byID.arsenal
+check(disabledArsenal.installed and disabledArsenal.loaded and disabledArsenal.enabled == false and disabledArsenal.status == "disabled",
+    "running Arsenal ignored a pending disable in Blizzard's AddOns list")
+check(R:SetTarget("arsenal", "0.14.0") and R:UseLocalTargets() and db.readiness.targets.arsenal == "0.14.0",
+    "capture replaced the approved target from disabled Arsenal metadata")
+units.player.leader, units.party1.leader = false, true
+Deliver("Q|1|a-b-c", "Mage-TestRealm", "PARTY")
+Advance(4)
+local disabledPackets = sent
+check(#disabledPackets == 7 and disabledPackets[1].message:find("|arsenal|101|", 1, true),
+    "passive response did not report Arsenal configured-disabled but loaded")
+R = Setup()
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+for _, packet in ipairs(disabledPackets) do Deliver((packet.message:gsub("a%-b%-c", nonce, 1))) end
+check(R:GetSnapshot().status == "complete" and Mage().addons.arsenal.enabled == false and Mage().addons.arsenal.loaded
+    and Mage().addons.arsenal.state == "disabled" and Mage().addons.arsenal.protocol == 1,
+    "protocol rejected disabled-but-loaded Arsenal or confused protocol support with enable state")
+R = Setup()
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+Deliver(Response(nonce, "arsenal", "1u1", "0.15.0-alpha.1", "0.15.0-alpha.1", 1))
+check(Mage().receivedCount == 1 and Mage().addons.arsenal.enabled == nil and Mage().addons.arsenal.state == "unknown",
+    "unknown Arsenal enable state became enabled or unsupported")
+
+-- A combat roster event clears the live fingerprint; regen must still replace
+-- old snapshot GUIDs before any manual query is requested.
+R = Setup()
+check(R:QueryGroup(), "query failed")
+nonce = Nonce()
+Deliver(Response(nonce, "northernsky", "111", "1.2.3"))
+combat = true
+Event("PLAYER_REGEN_DISABLED")
+units.party1 = Member("NewMage", "Player-New")
+Event("GROUP_ROSTER_UPDATE")
+combat = false
+Event("PLAYER_REGEN_ENABLED")
+local replacedSnapshot = R:GetSnapshot()
+check(replacedSnapshot.byGUID["Player-2"] == nil and replacedSnapshot.byGUID["Player-New"] ~= nil,
+    "regen retained a departed GUID after combat roster replacement")
+check(replacedSnapshot.status == "invalidated" and replacedSnapshot.byGUID["Player-New"].status == "unknown"
+    and replacedSnapshot.byGUID["Player-New"].addons.northernsky.state == "unknown",
+    "regen retained readiness values for a replacement member")
+Advance(20)
+check(R:GetSnapshot().status == "invalidated", "cancelled old query timeout changed the rebuilt snapshot")
+R = Setup()
+units.party1 = Member("RefreshMage", "Player-Refresh")
+check(R:RefreshLocal() and R:GetSnapshot().byGUID["Player-2"] == nil and R:GetSnapshot().byGUID["Player-Refresh"] ~= nil,
+    "explicit local refresh retained a departed roster GUID")
 print("readiness: " .. checks .. " checks passed")

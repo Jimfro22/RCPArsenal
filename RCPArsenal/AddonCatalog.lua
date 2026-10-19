@@ -99,7 +99,13 @@ function Catalog:RefreshLocal()
             if folder then row.folder = folder; row.installed = true; break end
         end
         if entry.internal then
-            row.folder, row.installed, row.enabled, row.loaded = RA.ADDON_NAME or "RCPArsenal", true, true, true
+            row.folder, row.installed, row.loaded = RA.ADDON_NAME or "RCPArsenal", true, true
+            -- Running code proves loaded, but the next-reload enable state can
+            -- already be disabled through Blizzard's AddOns list.
+            if character then
+                local enabledOK, enabled = Call(api.GetAddOnEnableState, row.folder, character)
+                if enabledOK and not IsSecret(enabled) and type(enabled) == "number" then row.enabled = enabled > 0 end
+            end
             row.version, row.build, row.protocol = report.version, report.build, report.protocol
         elseif row.installed then
             -- Native AddonList supplies addonName, character GUID. Never change state.

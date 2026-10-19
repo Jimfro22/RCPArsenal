@@ -242,12 +242,22 @@ end
 function Readiness:RefreshLocal()
     local roster = Roster()
     if not roster then return false end
-    if not snapshot then snapshot = NewSnapshot(roster); rosterFingerprint = roster.fingerprint
+    if not snapshot then snapshot = NewSnapshot(roster)
+    elseif snapshot.rosterFingerprint ~= roster.fingerprint then
+        -- Roster events during combat cannot safely rebuild ordinary unit data.
+        -- Compare the snapshot itself after combat, even when the live cache's
+        -- fingerprint was cleared while the group was changing.
+        CancelRequest()
+        CancelReply()
+        generation = generation + 1
+        snapshot = NewSnapshot(roster, "invalidated")
+        snapshot.reason = "The group roster changed; query the group again."
     else
         for i = 1, #snapshot.rows do
             if snapshot.rows[i].isPlayer then LocalMember(snapshot.rows[i]); break end
         end
     end
+    rosterFingerprint = roster.fingerprint
     Notify()
     return true
 end
@@ -406,7 +416,7 @@ local function ReceiveResponse(fields, sender)
         if not fields[8]:match("^%d+$") or #fields[8] > 3 then return end
         protocol = tonumber(fields[8])
         -- Unsupported clients cannot supply trustworthy protocol-one rows.
-        if protocol ~= Readiness.PROTOCOL or fields[5] ~= "111" then return end
+        if protocol ~= Readiness.PROTOCOL or fields[5]:sub(1, 1) ~= "1" or fields[5]:sub(3, 3) ~= "1" then return end
     elseif fields[7] ~= "-" or fields[8] ~= "-" then return end
     if fields[5]:sub(1, 1) == "0" and (fields[5] ~= "000" or version or build) then return end
     if fields[5]:sub(1, 1) == "u" and (fields[5] ~= "uuu" or version or build) then return end
