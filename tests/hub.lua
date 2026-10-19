@@ -44,6 +44,7 @@ function methods:SetWidth(w) geometryWrites = geometryWrites + 1; self.width = w
 function methods:SetHeight(h) geometryWrites = geometryWrites + 1; self.height = h end
 function methods:SetPoint(...) geometryWrites = geometryWrites + 1; self.points[#self.points + 1] = {...} end
 function methods:ClearAllPoints() geometryWrites = geometryWrites + 1; self.points = {} end
+function methods:SetRoundLayoutToNearestPixel(value) self.roundLayout=value end
 function methods:SetAllPoints(other) geometryWrites = geometryWrites + 1; self.allPoints = other end
 function methods:GetWidth() return self.width or 0 end
 function methods:GetHeight() return self.height or 0 end
@@ -239,6 +240,10 @@ check(RA:GetSlashCommandStatus():find('another addon') and hash_SlashCmdList['/R
 hash_SlashCmdList = nil
 SlashCmdList.RCPARSENAL('settings')
 check(RA.ConfigFrame:IsShown(), 'Real config did not open')
+local headerLogo
+for _,obj in ipairs(objects) do if obj.__raAssetPath == RA.Theme.Assets.HeaderLogo then headerLogo=obj end end
+check(headerLogo and headerLogo:GetWidth()==42 and headerLogo:GetHeight()==42 and headerLogo.roundLayout==true,
+    'Header mark did not use its small-size export in the unchanged, natively rounded42-unit bounds')
 cleanErrors()
 local function hasVisibleText(text)
     for _, region in ipairs(objects) do if region.text == text and region:IsVisible() and (text ~= 'Addons & versions' or (region.fontSize or 0) >= 20) then return true end end

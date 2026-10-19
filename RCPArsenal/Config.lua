@@ -2036,7 +2036,10 @@ local function CreateConfig()
     SetPoint(footer, "BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 14)
     Backdrop(footer, TC.footer, CopyColor(TC.magenta, 0.16), 15, false)
 
-    local logo = Theme:CreateIcon(sidebar, Theme.Assets.Logo, 42, TC.white)
+    local logo = Theme:CreateIcon(sidebar, Theme.Assets.HeaderLogo, 42, TC.white)
+    -- Native rounding follows FitToScreen's final scale, unlike creation-time
+    -- offset rounding alone. Keep the existing 42-unit header footprint.
+    if logo.SetRoundLayoutToNearestPixel then logo:SetRoundLayoutToNearestPixel(true) end
     SetPoint(logo, "TOPLEFT", sidebar, "TOPLEFT", 18, -18)
 
     local title = Font(sidebar, 15.5, TC.text, "BOLD")

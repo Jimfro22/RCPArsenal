@@ -1,6 +1,6 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.1**, repairing caption/font recovery and grouping the optional tools after expanded native testing of 0.15.2-alpha.3. Available Cooldowns has a fixed master above Categories and three other internal tabs; Addons & Versions shows all seven addons in one table. Profile schema remains 19. [Repair contract and native checks](docs/NATIVE_RENDERING_REPAIR.md) distinguish offline validation from pending native acceptance.
+This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.2**, correcting alpha.1’s thin fallback-font regression and the original RP header logo’s small-size edge coverage. [Typography/logo correction](docs/TYPOGRAPHY_LOGO_POLISH.md) preserves caption recovery, feature grouping and all saved choices. Available Cooldowns has a fixed master above Categories and three other internal tabs; Addons & Versions shows all seven addons in one table. Profile schema remains 19. [Repair contract and native checks](docs/NATIVE_RENDERING_REPAIR.md) distinguish offline validation from pending native acceptance.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
