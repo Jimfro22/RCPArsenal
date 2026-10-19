@@ -186,18 +186,24 @@ function Theme:GetAccentEnd()
     return self.Colors.orange
 end
 
-function Theme:RegisterAssetTexture(texture, asset)
+function Theme:RegisterAssetTexture(texture, asset, fallback, filterMode)
     if not texture or not asset then return texture end
     texture.__raAssetPath = asset
+    texture.__raAssetFallback = fallback
+    texture.__raAssetFilter = filterMode
     self.AssetTextures[texture] = true
-    texture:SetTexture(asset)
+    if RA.RegisterVisualTexture then
+        RA:RegisterVisualTexture(texture, asset, fallback, filterMode)
+    else
+        texture:SetTexture(asset)
+    end
     return texture
 end
 
 function Theme:RefreshAssetTextures()
     for texture in pairs(self.AssetTextures) do
         if texture and texture.SetTexture and texture.__raAssetPath then
-            texture:SetTexture(texture.__raAssetPath)
+            self:RegisterAssetTexture(texture, texture.__raAssetPath, texture.__raAssetFallback, texture.__raAssetFilter)
         end
     end
 end
@@ -211,14 +217,24 @@ function Theme:RegisterAccentTexture(texture, role)
     if not texture then return texture end
     texture.__raAccentRole = role or "PRIMARY"
     self.GradientTextures[texture] = true
-    texture:SetTexture(self:GetAccentAsset(texture.__raAccentRole))
+    local accentRole = texture.__raAccentRole
+    texture.__raAccentResolver = function() return self:GetAccentAsset(accentRole) end
+    if RA.RegisterResolvedTexture then
+        RA:RegisterResolvedTexture(texture, texture.__raAccentResolver, self.Assets.White)
+    else
+        texture:SetTexture(self:GetAccentAsset(accentRole))
+    end
     return texture
 end
 
 function Theme:RefreshAccentTextures()
     for texture in pairs(self.GradientTextures) do
         if texture and texture.SetTexture then
-            texture:SetTexture(self:GetAccentAsset(texture.__raAccentRole))
+            if RA.RegisterResolvedTexture then
+                RA:RegisterResolvedTexture(texture, texture.__raAccentResolver, self.Assets.White)
+            else
+                texture:SetTexture(self:GetAccentAsset(texture.__raAccentRole))
+            end
         end
     end
 end
@@ -270,7 +286,7 @@ local function CreateSeamlessSurface(owner, key, radius, layer, sublevel, offset
         asset = border and Theme.Assets.RoundedBorderSmall or Theme.Assets.RoundedSurfaceSmall
         margin = 10
     end
-    Theme:RegisterAssetTexture(texture, asset)
+    Theme:RegisterAssetTexture(texture, asset, Theme.Assets.White)
     SetPoint(texture, "TOPLEFT", owner, "TOPLEFT", left, top)
     SetPoint(texture, "BOTTOMRIGHT", owner, "BOTTOMRIGHT", right, bottom)
 
@@ -395,7 +411,7 @@ function Theme:ApplyIconMask(texture, owner)
     if not ok or not mask then return nil end
 
     local configured = pcall(function()
-        self:RegisterAssetTexture(mask, self.Assets.RoundedIconMask)
+        self:RegisterAssetTexture(mask, self.Assets.RoundedIconMask, self.Assets.White)
         mask:SetAllPoints(texture)
         texture:AddMaskTexture(mask)
     end)

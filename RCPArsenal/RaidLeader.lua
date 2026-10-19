@@ -197,13 +197,18 @@ end
 local function ApplyCrispIcon(texture, asset)
     if not texture then return end
     if asset then
-        if Theme and Theme.RegisterAssetTexture then Theme:RegisterAssetTexture(texture, asset) end
         -- Retail's Texture:SetTexture accepts an explicit filter mode. Using
         -- the larger transparent RCP artwork with linear filtering plus pixel
         -- grid alignment avoids the crunchy, uneven resample the old 128px
         -- addon icon showed at ~30px.
-        local ok = pcall(texture.SetTexture, texture, asset, "CLAMP", "CLAMP", "LINEAR")
-        if not ok then texture:SetTexture(asset) end
+        if Theme and Theme.RegisterAssetTexture then
+            Theme:RegisterAssetTexture(texture, asset, 134400, "LINEAR")
+        elseif RA.RegisterVisualTexture then
+            RA:RegisterVisualTexture(texture, asset, 134400, "LINEAR")
+        else
+            local ok, applied = pcall(texture.SetTexture, texture, asset, "CLAMP", "CLAMP", "LINEAR")
+            if not ok or applied == false then texture:SetTexture(134400) end
+        end
     end
     if texture.SetTexelSnappingBias then pcall(texture.SetTexelSnappingBias, texture, 0) end
     if texture.SetSnapToPixelGrid then pcall(texture.SetSnapToPixelGrid, texture, true) end
@@ -673,7 +678,11 @@ local function LayoutMissingPanel()
             rowIndex = rowIndex + 1
             local row = GetMissingRow(rowIndex)
             row.item = items[i]
-            row.icon:SetTexture(GetSpellTexture(items[i].spellID))
+            if RA.RegisterSpellIcon then
+                RA:RegisterSpellIcon(row.icon, items[i].spellID)
+            else
+                row.icon:SetTexture(GetSpellTexture(items[i].spellID))
+            end
             row.text:SetText(items[i].effect and (items[i].name .. "  |  " .. items[i].effect) or items[i].name)
             row:ClearAllPoints()
             SetPoint(row, "TOPLEFT", missingPanel, "TOPLEFT", 13, y)
@@ -2262,7 +2271,6 @@ end)
 
 RA:RegisterCallback("VISUAL_ASSET_REFRESH", function()
     RefreshDockStaticIcons()
-    RefreshPanicButton()
 end)
 
 RA:RegisterCallback("ACCENT_THEME_CHANGED", function()

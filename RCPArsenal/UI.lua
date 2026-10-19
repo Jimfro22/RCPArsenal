@@ -19,6 +19,14 @@ local SetHeight = Theme and Theme.SetHeight or function(region, height)
     region:SetHeight(height)
 end
 
+local function SetAbilityIcon(texture, ability)
+    if RA.RegisterSpellIcon then
+        RA:RegisterSpellIcon(texture, ability.spellID)
+    else
+        texture:SetTexture(RA:GetAbilityTexture(ability))
+    end
+end
+
 local HUD
 local hudAnchor
 local shadow
@@ -524,7 +532,7 @@ local function ArmPanicButton()
 end
 
 local function PositionPanicButton(anchorFrame)
-    if not panicHUDButton then return end
+    if not panicHUDButton or InCombatLockdown() then return end
     if not anchorFrame then
         panicHUDButton:Hide()
         return
@@ -1132,7 +1140,7 @@ local function LayoutDetailedRow(row, ability, owners, y, width)
     SetSize(row.icon, DETAILED.iconSize, DETAILED.iconSize)
     row.icon:ClearAllPoints()
     SetPoint(row.icon, "CENTER", row.iconBack, "CENTER", 0, 0)
-    row.icon:SetTexture(RA:GetAbilityTexture(ability))
+    SetAbilityIcon(row.icon, ability)
 
     row.activeBadge:SetShown(isActive)
     row.activeBadge:ClearAllPoints()
@@ -1253,7 +1261,7 @@ local function ConfigureCompactTile(tile, ability, owner, abbreviations, active,
     SetSize(tile.iconFrame, metrics.iconSize, metrics.iconSize)
     tile.iconFrame:ClearAllPoints()
     SetPoint(tile.iconFrame, "TOP", tile, "TOP", 0, 0)
-    tile.icon:SetTexture(RA:GetAbilityTexture(ability))
+    SetAbilityIcon(tile.icon, ability)
 
     tile.nameText:ClearAllPoints()
     ApplyReadableFont(tile.nameText, metrics.nameFont, "BOLD")
@@ -2112,15 +2120,13 @@ RA:RegisterCallback("REPORTS_FROZEN", QueueHUDRefresh)
 RA:RegisterCallback("INSPECTION_STATE_CHANGED", QueueScanVisualRefresh)
 RA:RegisterCallback("ACCENT_THEME_CHANGED", QueueHUDRefresh)
 RA:RegisterCallback("VISUAL_ASSET_REFRESH", function()
-    -- A true client login can initialize addon frames before all custom media
-    -- and font state has settled. Reapply the glyph/font and rebuild ability
-    -- icons once the world is fully live; /reload already naturally does this.
+    -- PANIC is a glyph, not a spell texture. Registered fonts and icons can
+    -- refresh in place without rebuilding the protected HUD or its geometry.
     if panicHUDButton and panicHUDButton.label then
         if RA.ApplyFont then RA:ApplyFont(panicHUDButton.label, 13, "BOLD", false) end
         panicHUDButton.label:SetText("!")
         panicHUDButton.label:SetTextColor(COLORS.danger[1], COLORS.danger[2], COLORS.danger[3], 1)
     end
-    if not InCombatLockdown() then QueueHUDRefresh() end
 end)
 
 RA:RegisterCallback("PROFILE_RESET", function()
