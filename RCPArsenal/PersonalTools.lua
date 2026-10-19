@@ -33,6 +33,7 @@ local CANDIDATES = {
 }
 
 local reminder, bounce, curve, curveThreshold, readinessTicker, resTimer
+local preview, previewMode, previewMoving
 local selectedItem, bouncing
 local reminderReason = "Off."
 local resReason = "Off."
@@ -101,15 +102,20 @@ local function ReminderAPIsAvailable()
         and C_Timer and type(C_Timer.NewTicker) == "function"
 end
 
-local function PositionReminder()
-    if not reminder then return end
+local function PositionFrame(frame)
+    if not frame then return end
     local settings = Settings()
     local position = settings and settings.reminderPosition
     position = type(position) == "table" and position or DEFAULT_POSITION
     local point = VALID_POINTS[position.point] and position.point or DEFAULT_POSITION.point
     local relative = VALID_POINTS[position.relativePoint] and position.relativePoint or point
-    reminder:ClearAllPoints()
-    reminder:SetPoint(point, UIParent, relative, Number(position.x) or 0, Number(position.y) or -140)
+    frame:ClearAllPoints()
+    frame:SetPoint(point, UIParent, relative, Number(position.x) or 0, Number(position.y) or -140)
+end
+
+local function PositionReminder()
+    PositionFrame(reminder)
+    PositionFrame(preview)
 end
 
 local function CreateReminder()
@@ -134,7 +140,7 @@ local function CreateReminder()
     reminder.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     local label = child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("TOP", child, "BOTTOM", 0, -4)
-    label:SetText("USE CONSUMABLE")
+    label:SetText("Press your item/macro key")
     bounce = child:CreateAnimationGroup()
     bounce:SetLooping("REPEAT")
     for order = 1, 2 do
@@ -357,6 +363,92 @@ function Tools:ResetReminderPosition()
     return true
 end
 
+local function SavePreviewPosition()
+    local centerX, centerY = preview:GetCenter()
+    centerX, centerY = Number(centerX), Number(centerY)
+    local frameScale = Number(preview:GetEffectiveScale())
+    local parentScale = Number(UIParent:GetEffectiveScale())
+    local width, height = Number(UIParent:GetWidth()), Number(UIParent:GetHeight())
+    if not centerX or not centerY or not frameScale or frameScale <= 0 or not parentScale or parentScale <= 0
+        or not width or not height then return false end
+    -- Region coordinates use its effective scale. Convert physical pixels to
+    -- UIParent coordinates before saving center-relative native offsets.
+    return Tools:SetReminderPosition(centerX * frameScale / parentScale - width / 2,
+        centerY * frameScale / parentScale - height / 2)
+end
+
+local function CreatePreview()
+    if preview then return end
+    -- This ordinary sample is independent of the health-alpha parent and is
+    -- allocated only by an explicit Preview/Move click. It has no item action,
+    -- inventory query, health query, animation, or timer.
+    preview = CreateFrame("Frame", "RCPArsenalConsumableReminderPreview", UIParent)
+    preview:Hide()
+    preview:SetAlpha(1)
+    preview:SetSize(56, 56)
+    preview:SetFrameStrata("DIALOG")
+    preview:SetMovable(true)
+    preview:SetClampedToScreen(true)
+    preview:EnableMouse(false)
+    preview:RegisterForDrag("LeftButton")
+    local border = preview:CreateTexture(nil, "BACKGROUND")
+    border:SetAllPoints()
+    border:SetColorTexture(0.95, 0.65, 0.20, 1)
+    local icon = preview:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", 3, -3)
+    icon:SetPoint("BOTTOMRIGHT", -3, 3)
+    icon:SetTexture("Interface\\Icons\\INV_Stone_04")
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    preview.label = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    preview.label:SetPoint("BOTTOM", preview, "TOP", 0, 5)
+    local caption = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    caption:SetPoint("TOP", preview, "BOTTOM", 0, -4)
+    caption:SetText("Press your item/macro key")
+    preview:SetScript("OnDragStart", function()
+        if previewMode == "MOVE" and ReadBoolean(InCombatLockdown) == false then
+            previewMoving = true
+            preview:StartMoving()
+        end
+    end)
+    preview:SetScript("OnDragStop", function()
+        if not previewMoving then return end
+        previewMoving = false
+        preview:StopMovingOrSizing()
+        if ReadBoolean(InCombatLockdown) ~= false or not SavePreviewPosition() then PositionReminder() end
+    end)
+end
+
+function Tools:StopReminderPreview()
+    if preview then
+        preview:StopMovingOrSizing()
+        preview:Hide()
+        preview:EnableMouse(false)
+    end
+    previewMoving, previewMode = false, nil
+    return true
+end
+
+function Tools:PreviewReminder()
+    if not Settings() then return false, "Profile unavailable." end
+    self:StopReminderPreview()
+    CreatePreview()
+    PositionFrame(preview)
+    previewMode = "PREVIEW"
+    preview.label:SetText("PREVIEW - SAMPLE")
+    preview:Show()
+    return true
+end
+
+function Tools:MoveReminder()
+    if ReadBoolean(InCombatLockdown) ~= false then return false, "Move this after combat." end
+    local ok, reason = self:PreviewReminder()
+    if not ok then return false, reason end
+    previewMode = "MOVE"
+    preview.label:SetText("DRAG TO MOVE - SAMPLE")
+    preview:EnableMouse(true)
+    return true
+end
+
 function Tools:GetStatusText(key)
     if key == "autoRes" then return resReason end
     if key == "consumableReminder" then return reminderReason end
@@ -366,7 +458,7 @@ end
 function Tools:GetState()
     return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
         healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
-        reminderStatus = reminderReason, autoResStatus = resReason }
+        reminderStatus = reminderReason, autoResStatus = resReason, previewMode = previewMode }
 end
 
 -- For the report's synthetic boundary probe only; contains ordinary points,
@@ -376,12 +468,15 @@ function Tools:GetReminderCurveForValidation()
 end
 
 RA:RegisterInitializer(function() Tools:Refresh() end)
-RA:RegisterCallback("PROFILE_RESET", function() Tools:Refresh(); PositionReminder() end)
+RA:RegisterCallback("PROFILE_RESET", function() Tools:StopReminderPreview(); Tools:Refresh(); PositionReminder() end)
 RA:RegisterEvent("RESURRECT_REQUEST", RequestNormalRes)
 for _, event in ipairs({ "BAG_UPDATE_DELAYED", "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN",
     "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_ALIVE",
     "PLAYER_DEAD", "PLAYER_UNGHOST" }) do
-    RA:RegisterEvent(event, function() if Enabled("consumableReminder") then Tools:Refresh() end end)
+    RA:RegisterEvent(event, function(eventName)
+        if eventName == "PLAYER_REGEN_DISABLED" then Tools:StopReminderPreview() end
+        if Enabled("consumableReminder") then Tools:Refresh() end
+    end)
 end
 for _, event in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH" }) do
     RA:RegisterEvent(event, function(_, unit)

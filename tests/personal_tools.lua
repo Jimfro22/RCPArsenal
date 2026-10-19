@@ -14,7 +14,8 @@ local offer, recovery, healthResult, healthError, itemError
 local profile, RA
 
 function issecretvalue(value) return rawequal(value, secret) end
-UIParent = {}
+UIParent = { GetEffectiveScale = function() return 0.8 end,
+    GetWidth = function() return 1920 end, GetHeight = function() return 1080 end }
 Enum = { LuaCurveType = { Step = 1 } }
 function InCombatLockdown() return combat end
 function IsEncounterInProgress() return encounter end
@@ -93,20 +94,31 @@ C_Item = {
 function CreateFrame(kind, name, parent, template)
     check(kind == "Frame" and template == nil, "Visual must be nonsecure and noninteractive")
     local frame = { name = name, parent = parent, shown = true, scripts = {} }
+    local sample = name == "RCPArsenalConsumableReminderPreview"
     function frame:Hide() self.shown = false end
     function frame:Show() self.shown = true end
     function frame:SetAlpha(value)
         -- Sink receives the exact opaque token, never a processed derivative.
-        check(rawequal(value, secret) or value == 0, "Unexpected health/alpha conversion")
+        check(rawequal(value, secret) or value == 0 or (sample and value == 1), "Unexpected health/alpha conversion")
         self.alpha = value
     end
     function frame:SetSize(w, h) self.width, self.height = w, h end
     function frame:SetAllPoints() end
     function frame:SetPoint(...) self.point = { ... } end
     function frame:ClearAllPoints() self.point = nil end
-    function frame:EnableMouse(value) check(value == false, "Visual cannot capture clicks"); self.mouse = value end
+    function frame:EnableMouse(value) check(value == false or sample, "Live visual cannot capture clicks"); self.mouse = value end
     function frame:SetFrameStrata(value) end
-    function frame:SetScript(...) error("No frame timer/action scripts needed") end
+    function frame:SetMovable(value) check(sample and value == true, "Only explicit sample can move") end
+    function frame:SetClampedToScreen(value) check(sample and value == true, "Only explicit sample can clamp") end
+    function frame:RegisterForDrag(button) check(sample and button == "LeftButton", "Only explicit sample accepts drag") end
+    function frame:StartMoving() check(sample, "Live visual cannot move via mouse"); self.moving = true end
+    function frame:StopMovingOrSizing() check(sample, "Live visual cannot move via mouse"); self.moving = false end
+    function frame:GetCenter() return self.centerX, self.centerY end
+    function frame:GetEffectiveScale() return self.scale or 0.8 end
+    function frame:SetScript(name, fn)
+        check(sample and (name == "OnDragStart" or name == "OnDragStop"), "No frame timers/action scripts allowed")
+        self.scripts[name] = fn
+    end
     function frame:CreateTexture()
         local texture = {}
         function texture:SetAllPoints() end
@@ -117,7 +129,7 @@ function CreateFrame(kind, name, parent, template)
         return texture
     end
     function frame:CreateFontString()
-        return { SetPoint = function() end, SetText = function() end }
+        return { SetPoint = function() end, SetText = function(self, text) self.text = text end }
     end
     function frame:CreateAnimationGroup()
         local group = { animations = {}, plays = 0, stops = 0 }
@@ -324,4 +336,50 @@ for _, state in ipairs({ "dead", "secret", "nil", "missing" }) do
 end
 dead = false; events.PLAYER_UNGHOST()
 check(frames[1].shown and active(tickers) == 1, "Unghost event must recover enabled reminder")
+
+-- Preview and Move are explicit ordinary samples independent of live opt-in.
+tools = loadTools()
+check(#frames == 0, "Sample must not allocate automatically")
+check(tools:SetReminderPosition(32, -88), "Saved placement setup failed")
+local savedPosition = profile.personalTools.reminderPosition
+check(tools:PreviewReminder(), "Preview failed while disabled")
+local sample = frames[1]
+check(#frames == 1 and sample.name == "RCPArsenalConsumableReminderPreview" and sample.shown and sample.alpha == 1,
+    "Explicit preview must show only an ordinary sample")
+check(sample.width == 56 and sample.height == 56 and sample.mouse == false and sample.label.text:find("SAMPLE"),
+    "Preview must be a labeled 56px noninteractive sample")
+check(sample.point[4] == 32 and sample.point[5] == -88 and profile.personalTools.reminderPosition == savedPosition,
+    "Preview must preserve and use saved position")
+check(not tools:GetState().consumableReminder and itemCalls == 0 and healthCalls == 0 and #tickers == 0 and #timers == 0,
+    "Preview must not enable live checks or allocate timers")
+check(tools:MoveReminder() and #frames == 1 and sample.mouse and tools:GetState().previewMode == "MOVE",
+    "Move must reuse explicit sample with drag enabled")
+sample.scripts.OnDragStart()
+check(sample.moving, "Move sample did not start dragging")
+sample.scale, sample.centerX, sample.centerY = 1.2, 700, 320
+sample.scripts.OnDragStop()
+check(not sample.moving and math.abs(profile.personalTools.reminderPosition.x - 90) < 0.00001
+    and math.abs(profile.personalTools.reminderPosition.y + 60) < 0.00001,
+    "Drag must persist UIParent center offsets after converting effective scales")
+check(not tools:GetState().consumableReminder and healthCalls == 0 and itemCalls == 0 and #tickers == 0,
+    "Moving sample must leave live feature disabled and idle")
+check(tools:ResetReminderPosition() and profile.personalTools.reminderPosition == nil and sample.point[5] == -140,
+    "Reset must recenter visible sample without enabling live reminder")
+tools:SetReminderPosition(-40, 120)
+tools:StopReminderPreview()
+check(not sample.shown and not sample.mouse and tools:GetState().previewMode == nil,
+    "Stopping preview must hide and release mouse input")
+check(tools:PreviewReminder() and sample.point[4] == -40 and sample.point[5] == 120,
+    "Saved moved position must survive preview close/reopen")
+combat = true
+check(not tools:MoveReminder(), "Combat move must be refused")
+events.PLAYER_REGEN_DISABLED("PLAYER_REGEN_DISABLED")
+check(not sample.shown and not sample.mouse, "Combat event must stop sample")
+combat = false; tools:MoveReminder(); sample.scripts.OnDragStart()
+combat = true; sample.scripts.OnDragStop()
+check(profile.personalTools.reminderPosition.x == -40 and profile.personalTools.reminderPosition.y == 120,
+    "Drag interrupted by combat must not persist unknown placement")
+check(healthCalls == 0 and itemCalls == 0 and #tickers == 0 and #timers == 0
+    and profile.personalTools.autoRes == false and profile.personalTools.consumableReminder == false,
+    "Sample flow must never alter personal opt-ins or access health/items")
 print("PASS: " .. checks .. " personal tools assertions (offline Lua mocks; native threshold and raid validation pending)")
