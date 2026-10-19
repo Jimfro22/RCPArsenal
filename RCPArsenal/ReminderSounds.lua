@@ -1,5 +1,5 @@
 local _, RA = ...
-local Sounds = { DEFAULT_ID = "builtin_alert", DEFAULT_CHANNEL = "SFX" }
+local Sounds = { DEFAULT_ID = "sound_6", DEFAULT_CHANNEL = "Master" }
 RA.ReminderSounds = Sounds
 local prefix = "Interface\\AddOns\\RCPArsenal\\Media\\Audio\\"
 -- Curated IDs only. Saved variables never supply a path or sound-kit number.
@@ -24,9 +24,10 @@ function Sounds:Get(id)
 end
 function Sounds:NormalizeID(id) return self:Get(id) and id or self.DEFAULT_ID end
 function Sounds:NormalizeChannel(channel)
-    return Plain(channel) and channel == "Master" and "Master" or "SFX"
+    if Plain(channel) and (channel == "SFX" or channel == "Master") then return channel end
+    return self.DEFAULT_CHANNEL
 end
-function Sounds:ChannelLabel(channel) return Plain(channel) and channel == "Master" and "Master" or "Sound Effects" end
+function Sounds:ChannelLabel(channel) return self:NormalizeChannel(channel) == "Master" and "Master" or "Sound Effects" end
 function Sounds:GetOptions()
     local options = {}
     for _, entry in ipairs(entries) do options[#options + 1] = { value = entry.id, label = entry.label } end

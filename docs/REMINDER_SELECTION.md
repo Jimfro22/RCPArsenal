@@ -1,5 +1,7 @@
 # Reminder selection and audio - 0.15.3-alpha.5
 
+Historical detail. [Alpha.6 navigation, direct bindings and reminder polish](NAVIGATION_KEYBINDS.md) supersedes current entry/key-editor/default/glow/mute behavior; its Windows update steps use the existing checkout.
+
 This update supersedes the item-selection, audio-selection and empty-caption details in the historical [alpha.3 visual/supply contract](HEALING_SUPPLIES.md) and [alpha.4 native-warning contract](NATIVE_WARNING_AUDIO.md). Their native health sink, audio latch, opt-in and raid authorization rules remain in place. Profile schema stays 19. Existing saved thresholds, text, icons, positions, profiles, font/logo corrections and other tools remain intact.
 
 ## Controls and behavior

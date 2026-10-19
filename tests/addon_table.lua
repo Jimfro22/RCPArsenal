@@ -44,6 +44,7 @@ local function Object(kind,parent)
     objects[#objects+1]=object;return object
 end
 function CreateFrame(kind,_,parent) return Object(kind,parent) end
+function methods:CreateTexture() return Object('Texture',self) end
 function GetTime() return clock end
 function time() return 1800000000+clock end
 function InCombatLockdown() return combat end
@@ -93,6 +94,8 @@ RA.PersonalTools={StopReminderPreview=noop,GetStatusText=function() return 'Off'
 local colors={text={1,1,1},textSoft={.7,.7,.7},muted={.4,.4,.4},orange={1,.5,0},magenta={1,0,1},surface={0,0,0},line={.1,.1,.1},lineStrong={.2,.2,.2},input={.1,.1,.1}}
 RA.Theme={Colors=colors,SetPoint=function(frame,...) frame:SetPoint(...) end,SetSize=function(frame,...) frame:SetSize(...) end,
     SetWidth=function(frame,value) frame:SetWidth(value) end,SetHeight=function(frame,value) frame:SetHeight(value) end}
+RA.Theme.Assets={Checkmark='Interface\\AddOns\\RCPArsenal\\Media\\RCPCheckmark'}
+RA.Theme.RegisterAssetTexture=function(_,texture,path) texture:SetTexture(path) end
 RA.ConfigFrame=Object('Frame')
 local panes={ADDONS=Object('Frame',RA.ConfigFrame),MYTOOLS=Object('Frame',RA.ConfigFrame),SETTINGS=Object('Frame',RA.ConfigFrame),NORTHERNSKY=Object('Frame',RA.ConfigFrame)}
 for _,pane in pairs(panes) do pane:Hide() end
