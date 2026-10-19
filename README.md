@@ -1,8 +1,14 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for the Morning Brew raid hub. The current feature alpha is **0.15.2-alpha.1**: a quiet `/rcp` hub, honest local addon shelf, leader version matrix, cold-login visual recovery, opt-in personal tools, and guarded stock Northern Sky setup, and bounded inspection snapshots across reload/login. Profile schema is 19; original assets/history and the prior marker alpha remain preserved.
+This is the editable source checkout for the Morning Brew raid hub. The current feature alpha is **0.15.2-alpha.1**: a quiet `/rcp` hub, honest local addon shelf, leader version matrix, cold-login visual recovery, opt-in personal tools, guarded stock Northern Sky setup, and bounded inspection snapshots across reload/login. Profile schema is 19; original assets/history and the prior marker alpha remain preserved.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
+
+## Windows testing with GitHub Desktop
+
+Keep the source checkout **outside WoW**. After the one-time setup, Desktop **Fetch origin → Pull origin** updates the live addon directly through a directory junction; no repeated folder copying is needed.
+
+Follow [the four-step Windows setup](docs/WINDOWS_DESKTOP_SETUP.md), including the existing nested-clone fix. Run **Setup-Windows.cmd** from the checkout after moving it outside WoW. The helper asks for your actual Retail AddOns folder, preserves any existing folder only after an explicit backup choice, and links the inner `RCPArsenal` addon. Do not clone the repository into AddOns or flatten/rename the repository.
 
 ## Validate and build
 
@@ -30,6 +36,6 @@ Packaging checks validate versions, manifest references, and ZIP contents. CI al
 - [Packaging validation workflow](.github/workflows/validate-package.yml)
 - [Tagged alpha workflow](.github/workflows/release-alpha.yml)
 
-The public source destination is [Jimfro22/RCPArsenal](https://github.com/Jimfro22/RCPArsenal). Validation produces test artifacts, and pushed alpha tags produce prereleases with an install ZIP, checksum, and Git/file provenance. CurseForge setup is separate; no CurseForge upload is activated. The addon source has no supplied project license. Publication does not add a license grant; an open-source license remains an owner policy choice. Do not copy Northern Sky code or package external addons into Arsenal.
+The public source destination is [Jimfro22/RCPArsenal](https://github.com/Jimfro22/RCPArsenal). Validation produces test artifacts, and pushed alpha tags produce prereleases with an install ZIP, checksum, and Git/file provenance. CurseForge project 1753701 (`rcp-arsenal`) exists; alpha file 9252808 was submitted and was still processing/project approval pending at the last check. No automatic CurseForge uploads are configured. The addon source has no supplied project license. Publication does not add a license grant; an open-source license remains an owner policy choice. Do not copy Northern Sky code or package external addons into Arsenal.
 
 Use the current Lua source for actual controls; inherited addon docs contain older click descriptions. Preserve the existing Obsidian Ember theme, artwork, local overlay positions, SavedVariables name, static-in-combat capability model, and role → class → spec → movement split priority.

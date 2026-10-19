@@ -1,0 +1,28 @@
+name: Windows install helper
+on:
+  pull_request:
+    paths:
+      - 'Setup-Windows.cmd'
+      - 'tools/Link-WindowsAddon.ps1'
+      - 'tests/windows_install_helper.ps1'
+      - '.github/workflows/windows-install-helper.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Setup-Windows.cmd'
+      - 'tools/Link-WindowsAddon.ps1'
+      - 'tests/windows_install_helper.ps1'
+      - '.github/workflows/windows-install-helper.yml'
+permissions:
+  contents: read
+jobs:
+  fixtures:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Exercise junction and preservation behavior in disposable folders
+        shell: powershell
+        run: .\tests\windows_install_helper.ps1
