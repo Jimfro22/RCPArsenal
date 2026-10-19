@@ -50,8 +50,15 @@ function Select-RCPAddOnsPath {
     }
     finally { $picker.Dispose() }
 }
+function New-RCPJunction([string] $Destination, [string] $Source) {
+    # Windows PowerShell 5.1 expands junction targets as wildcard paths (#6232).
+    # Escape that provider input only; verification compares the real, unescaped target.
+    $providerTarget = [Management.Automation.WildcardPattern]::Escape($Source)
+    New-Item -ItemType Junction -Path $Destination -Value $providerTarget -ErrorAction Stop | Out-Null
+}
 function Get-RCPInstallPlan([string] $RepositoryRoot, [string] $AddOnsPath) {
     if ($env:OS -ne 'Windows_NT') { throw 'Run this setup on the Windows PC that has WoW installed.' }
+    if ($PSVersionTable.PSEdition -ne 'Desktop') { throw 'Use Setup-Windows.cmd, which runs the built-in Windows PowerShell 5.1. PowerShell 7 is not supported by this helper.' }
     $root = Get-RCPPath $RepositoryRoot
     $addons = Get-RCPPath $AddOnsPath
     $source = Join-Path $root 'RCPArsenal'
@@ -76,6 +83,7 @@ function Get-RCPInstallPlan([string] $RepositoryRoot, [string] $AddOnsPath) {
         throw 'Move the WHOLE GitHub checkout outside WoW first, then Locate it in GitHub Desktop. Do not link a checkout that is inside AddOns.'
     }
     Assert-RCPLocalPath $root
+    Assert-RCPLocalPath $source
     Assert-RCPLocalPath $addons
     $existing = Get-RCPExistingItem $destination
     $alreadyLinked = $false
@@ -93,7 +101,13 @@ function Get-RCPInstallPlan([string] $RepositoryRoot, [string] $AddOnsPath) {
     }
     $backup = $null
     if ($null -ne $existing -and -not $alreadyLinked) {
-        $backup = Join-Path $item.Parent.FullName ('RCPArsenal-InstallBackups\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N') + '\RCPArsenal')
+        $backupBase = Join-Path $item.Parent.FullName 'RCPArsenal-InstallBackups'
+        $backupItem = Get-RCPExistingItem $backupBase
+        if ($null -ne $backupItem) {
+            if (-not $backupItem.PSIsContainer) { throw "A file occupies the backup directory: $backupBase. It was kept unchanged." }
+            Assert-RCPLocalPath $backupBase
+        }
+        $backup = Join-Path $backupBase ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N') + '\RCPArsenal')
     }
     return [pscustomobject]@{ Source = $source; Destination = $destination; Backup = $backup; AlreadyLinked = $alreadyLinked; Changed = $false }
 }
@@ -119,12 +133,14 @@ function Invoke-RCPWindowsInstall {
     $moved = $false
     try {
         if ($null -ne $plan.Backup) {
-            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($plan.Backup)) | Out-Null
+            $backupParent = [IO.Path]::GetDirectoryName($plan.Backup)
+            [IO.Directory]::CreateDirectory($backupParent) | Out-Null
+            Assert-RCPLocalPath $backupParent
             [IO.Directory]::Move($plan.Destination, $plan.Backup)
             $moved = $true
         }
         # No -Force: an existing/racing destination must never be overwritten.
-        New-Item -ItemType Junction -Path $plan.Destination -Value $plan.Source -ErrorAction Stop | Out-Null
+        New-RCPJunction $plan.Destination $plan.Source
         $verified = Get-RCPInstallPlan $RepositoryRoot $AddOnsPath
         if (-not $verified.AlreadyLinked -or -not (Test-Path -LiteralPath (Join-Path $plan.Destination 'RCPArsenal.toc') -PathType Leaf)) {
             throw 'The link could not be verified. Keep the displayed source/backup paths and inspect the destination before retrying.'

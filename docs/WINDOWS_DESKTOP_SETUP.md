@@ -25,7 +25,7 @@ In Desktop use **Fetch origin**, then **Pull origin** when offered. Fetch alone 
 - **Wrong game folder/network drive:** select the real Retail AddOns directory on a local NTFS drive. Existing directory links in ancestor paths and foreign links at the destination are refused instead of being retargeted.
 - **PowerShell policy blocked:** the launcher requests RemoteSigned for this process only. It does not change machine/user policy or bypass organizational policy. Keep the error and ask for help; do not disable protections.
 
-Advanced preview, from PowerShell in the checkout (substitute the path you actually selected):
+Advanced preview, from built-in **Windows PowerShell 5.1** in the checkout (substitute the path you actually selected). The helper deliberately uses that same runtime as the launcher; PowerShell 7 is refused before changes:
 
 ```powershell
 .\tools\Link-WindowsAddon.ps1 -AddOnsPath 'C:\your actual WoW folder\Interface\AddOns' -WhatIf

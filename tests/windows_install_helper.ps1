@@ -35,6 +35,7 @@ try {
     $links.Add($f.Destination)
     Assert-RCPTest $result.Changed 'Fresh setup did not create a link.'
     Assert-RCPTest ((Get-Item -LiteralPath $f.Destination).LinkType -eq 'Junction') 'Destination is not a junction.'
+    Assert-RCPTest ((Get-Item -LiteralPath $f.Destination).Target[0] -eq $f.Source) 'Junction target was not the literal source path.'
     [IO.File]::WriteAllText((Join-Path $f.Source 'Core.lua'), 'source version two')
     Assert-RCPTest ((Get-Content -LiteralPath (Join-Path $f.Destination 'Core.lua') -Raw) -eq 'source version two') 'Source update did not reach the linked addon.'
     $again = Invoke-RCPWindowsInstall -RepositoryRoot $f.Repo -AddOnsPath $f.AddOns
@@ -52,7 +53,7 @@ try {
     Assert-RCPTest (-not (Test-RCPWithin $backup.Backup $b.AddOns)) 'Backup is still inside AddOns.'
 
     $other = New-RCPFixture 'foreign link'
-    New-Item -ItemType Junction -Path $other.Destination -Value $f.Source | Out-Null
+    New-RCPJunction $other.Destination $f.Source
     $links.Add($other.Destination)
     Expect-RCPFailure { Invoke-RCPWindowsInstall -RepositoryRoot $other.Repo -AddOnsPath $other.AddOns } 'A foreign junction was retargeted.'
     Assert-RCPTest ((Get-Item -LiteralPath $other.Destination).Target[0] -eq $f.Source) 'Foreign junction target changed.'
@@ -71,6 +72,22 @@ try {
     [IO.Directory]::Move($inside.Repo, $nested)
     Expect-RCPFailure { Get-RCPInstallPlan $nested $inside.AddOns } 'A source checkout inside AddOns was accepted.'
     Assert-RCPTest (Test-Path -LiteralPath (Join-Path $nested 'RCPArsenal\Core.lua')) 'Rejected nested checkout was modified.'
+
+    $inner = New-RCPFixture 'linked inner addon'
+    [IO.Directory]::Move($inner.Source, $inner.Destination)
+    New-RCPJunction $inner.Source $inner.Destination
+    $links.Add($inner.Source)
+    Expect-RCPFailure { Invoke-RCPWindowsInstall -RepositoryRoot $inner.Repo -AddOnsPath $inner.AddOns -BackupExisting } 'A linked inner addon was accepted.'
+    Assert-RCPTest ((Get-Content -LiteralPath (Join-Path $inner.Destination 'Core.lua') -Raw) -eq 'source version one') 'Rejected inner link moved the existing addon.'
+
+    $linkedBackup = New-RCPFixture 'linked backup directory'
+    [IO.Directory]::CreateDirectory($linkedBackup.Destination) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $linkedBackup.Destination 'keep.txt'), 'original backup fixture')
+    $backupBase = Join-Path (Split-Path -Parent $linkedBackup.AddOns) 'RCPArsenal-InstallBackups'
+    New-RCPJunction $backupBase $linkedBackup.AddOns
+    $links.Add($backupBase)
+    Expect-RCPFailure { Invoke-RCPWindowsInstall -RepositoryRoot $linkedBackup.Repo -AddOnsPath $linkedBackup.AddOns -BackupExisting } 'A linked backup directory was accepted.'
+    Assert-RCPTest ((Get-Content -LiteralPath (Join-Path $linkedBackup.Destination 'keep.txt') -Raw) -eq 'original backup fixture') 'Rejected backup link moved the existing folder.'
 
     # Force only the junction creation to fail after backup, exercising rollback.
     $rollback = New-RCPFixture 'permission failure'
