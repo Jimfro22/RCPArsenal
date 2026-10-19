@@ -66,7 +66,7 @@ function RA:GetFontCandidates(weight)
     return candidates
 end
 
-function RA:ApplyFont(fontString, size, weight, shadow)
+function RA:ApplyFont(fontString, size, weight, shadow, refreshingAsset)
     if not fontString or type(fontString.SetFont) ~= "function" then
         return false
     end
@@ -85,7 +85,8 @@ function RA:ApplyFont(fontString, size, weight, shadow)
     end
 
     if not applied then
-        pcall(fontString.SetFont, fontString, FALLBACK, size, "")
+        local ok, result = pcall(fontString.SetFont, fontString, FALLBACK, size, "")
+        applied = ok and result == true
     end
 
     if fontString.SetShadowColor and fontString.SetShadowOffset then
@@ -96,6 +97,10 @@ function RA:ApplyFont(fontString, size, weight, shadow)
             fontString:SetShadowColor(0, 0, 0, 0)
             fontString:SetShadowOffset(0, 0)
         end
+    end
+
+    if not refreshingAsset and self.RegisterVisualFont then
+        self:RegisterVisualFont(fontString, size, weight, shadow, applied)
     end
 
     return applied

@@ -1,8 +1,14 @@
 # RCP Arsenal delivery plan
 
-Prepared October 18, 2026 for Jimfro and the project lead. Build the Morning Brew player hub in small Windows-testable releases, starting with a quiet first run and a local addon catalog. Run the health reminder feasibility spike early because current secret-value restrictions could affect its core interaction.
+Historical kickoff proposal prepared October 18, 2026 for Jimfro and the project lead. Build the Morning Brew player hub in small Windows-testable releases, starting with a quiet first run and a local addon catalog. Run the health reminder feasibility spike early because current secret-value restrictions could affect its core interaction.
 
 The owner’s [canonical checklist and idea bank](https://chatgpt.com/space/page_272f4aa590a48191a68658910f507fa1) remains the product planning authority. This engineering plan proposes sequencing and acceptance criteria. The coordinator owns Page edits during kickoff; this checkout does not modify that Page.
+
+## October 19 implementation status
+
+The kickoff sections below describe their original baseline/proposal, not current code. The 0.15.0-alpha.1 implementation now contains quiet schema-19 profiles, the four-section /rcp hub, seven-entry local catalog, passive leader version matrix, bounded visual recovery, and off-by-default personal tools. See the versioned release notes and HUB_WINDOWS_TESTS.md for current behavior. GitHub delivery is active and earlier baseline/marker releases are preserved. CurseForge remains independently owned.
+
+These are source/offline milestones, not client acceptance: the health reminder is explicitly experimental in this alpha; native curve/item feasibility, normal res, cold enabled-profile login, two-client transport, and existing secure/raid behaviors remain pending Windows checks. No NSRT adapter, note workflow, timed announcement engine, or WowUtils Bridge has been claimed implemented. The canonical Page remains lead-owned and unchanged by Engineering.
 
 ## Verified baseline and completed foundations
 

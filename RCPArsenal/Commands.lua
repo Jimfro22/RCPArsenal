@@ -2,34 +2,40 @@ local _, RA = ...
 
 local function PrintHelp()
     RA:Print("Commands:")
-    print("  |cff3aa7ff/rcpa config|r - open the RCP Arsenal settings panel")
-    print("  |cff3aa7ff/rcpa markers|r - set up the optional world marker cycler and keybindings")
-    print("  |cff3aa7ff/rcpa show|r or |cff3aa7ff/rcpa hide|r - show or hide the HUD")
-    print("  |cff3aa7ff/rcpa recover|r - show and recenter a missing/off-screen HUD")
-    print("  |cff3aa7ff/rcpa scan|r - scan only missing/new tracked players")
-    print("  |cff3aa7ff/rcpa rescan|r - force a full tracked-roster refresh")
-    print("  |cff3aa7ff/rcpa clearcache|r - clear inspected roster data and scan again")
-    print("  |cff3aa7ff/rcpa pause|r or |cff3aa7ff/rcpa resume|r - pause/resume the inspect queue")
-    print("  |cff3aa7ff/rcpa compact|r or |cff3aa7ff/rcpa detailed|r - change HUD mode")
-    print("  |cff3aa7ff/rcpa scale 125|r - set overall HUD scale from 75 to 200 percent")
-    print("  |cff3aa7ff/rcpa lock|r or |cff3aa7ff/rcpa unlock|r - lock HUD position")
-    print("  |cff3aa7ff/rcpa demo|r - toggle solo preview data")
-    print("  |cff3aa7ff/rcpa demoscan|r - toggle the simulated 13/20 scan overlay")
-    print("  |cff3aa7ff/rcpa leaderonly|r - limit HUD to leaders and assists")
-    print("  |cff3aa7ff/rcpa export|r - open the settings export dialog")
-    print("  |cff3aa7ff/rcpa import|r - open the settings import dialog")
-    print("  |cff3aa7ff/rcpa status|r - show raid scan coverage")
-    print("  |cff3aa7ff/rcpa sort|r - Tanks > Melee > Ranged > Healers")
-    print("  |cff3aa7ff/rcpa split|r - balance roles across odd/even groups")
-    print("  |cff3aa7ff/rcpa groupsplit|r - balance G1+G2 against G3+G4")
-    print("  |cff3aa7ff/rcpa missing|r - open the missing raid buffs/debuffs flyout")
-    print("  |cff3aa7ff/rcpa active <ability_key>|r - preview an ACTIVE state")
-    print("  |cff3aa7ff/rcpa clearactive|r - clear preview ACTIVE states")
-    print("  |cff3aa7ff/rcpa reset|r - reset saved layout and filters")
+    print("  |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp raid|r, |cff3aa7ff/rcp settings|r - open a hub section")
+    print("  |cff3aa7ff/rcp versions|r - request group addon versions as leader or assistant")
+    print("  |cff3aa7ff/rcp config|r - open Morning Brew (the addon hub)")
+    print("  |cff3aa7ff/rcp markers|r - set up the optional world marker cycler and keybindings")
+    print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
+    print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
+    print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
+    print("  |cff3aa7ff/rcp rescan|r - force a full tracked-roster refresh")
+    print("  |cff3aa7ff/rcp clearcache|r - clear inspected roster data and scan again")
+    print("  |cff3aa7ff/rcp pause|r or |cff3aa7ff/rcp resume|r - pause/resume the inspect queue")
+    print("  |cff3aa7ff/rcp compact|r or |cff3aa7ff/rcp detailed|r - change HUD mode")
+    print("  |cff3aa7ff/rcp scale 125|r - set overall HUD scale from 75 to 200 percent")
+    print("  |cff3aa7ff/rcp lock|r or |cff3aa7ff/rcp unlock|r - lock HUD position")
+    print("  |cff3aa7ff/rcp demo|r - toggle solo preview data")
+    print("  |cff3aa7ff/rcp demoscan|r - toggle the simulated 13/20 scan overlay")
+    print("  |cff3aa7ff/rcp leaderonly|r - limit HUD to leaders and assists")
+    print("  |cff3aa7ff/rcp export|r - open the settings export dialog")
+    print("  |cff3aa7ff/rcp import|r - open the settings import dialog")
+    print("  |cff3aa7ff/rcp status|r - show raid scan coverage")
+    print("  |cff3aa7ff/rcp sort|r - Tanks > Melee > Ranged > Healers")
+    print("  |cff3aa7ff/rcp split|r - balance roles across odd/even groups")
+    print("  |cff3aa7ff/rcp groupsplit|r - balance G1+G2 against G3+G4")
+    print("  |cff3aa7ff/rcp missing|r - open the missing raid buffs/debuffs flyout")
+    print("  |cff3aa7ff/rcp active <ability_key>|r - preview an ACTIVE state")
+    print("  |cff3aa7ff/rcp clearactive|r - clear preview ACTIVE states")
+    print("  |cff3aa7ff/rcp reset|r - reset saved layout and filters")
     print("  Compact tiles: |cffffffffleft-click uses Whisper, Say, or Off|r; |cffffffffright-click sends raid warning|r.")
 end
 
 local function StartScan(fullRefresh)
+    if not RA:IsInspectionEnabled() then
+        RA:Print("Enable Capability HUD + talent inspection on My tools before scanning.")
+        return
+    end
     local reason = fullRefresh and "slash full rescan" or "slash scan missing"
     RA:SetInspectionPaused(false)
     if RA:RequestInspectionScan(reason, fullRefresh) then
@@ -69,15 +75,25 @@ local function PrintStatus()
     if summary.failed > 0 then extra[#extra + 1] = summary.failed .. " failed" end
 
     local suffix = #extra > 0 and (" · " .. table.concat(extra, " · ")) or ""
-    RA:Print(string.format("%d/%d tracked players ready%s.", ready, total, suffix))
+    RA:Print(string.format("%d/%d tracked players inspected%s.", ready, total, suffix))
 end
 
 local function HandleSlash(raw)
     local command, rest = (raw or ""):match("^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
 
-    if command == "" or command == "config" then
-        RA:OpenConfig()
+    if command == "" or command == "config" or command == "addons" then
+        RA:OpenConfig("ADDONS")
+    elseif command == "tools" then
+        RA:OpenConfig("MYTOOLS")
+    elseif command == "raid" then
+        RA:OpenConfig("RAIDTOOLS")
+    elseif command == "settings" then
+        RA:OpenConfig("SETTINGS")
+    elseif command == "versions" then
+        RA:OpenConfig("RAIDTOOLS")
+        local ok, reason = RA.Readiness:QueryGroup()
+        if not ok then RA:Print(reason) end
     elseif command == "markers" then
         RA:OpenConfig("WORLDMARKERS")
     elseif command == "show" then
@@ -93,7 +109,9 @@ local function HandleSlash(raw)
     elseif command == "rescan" then
         StartScan(true)
     elseif command == "clearcache" then
-        if InCombatLockdown() then
+        if not RA:IsInspectionEnabled() then
+            RA:Print("Enable Capability HUD + talent inspection on My tools before scanning.")
+        elseif InCombatLockdown() then
             RA:Print("Inspection cache cannot be cleared during combat.")
         elseif RA.ClearInspectionCache then
             RA:ClearInspectionCache()
@@ -103,8 +121,12 @@ local function HandleSlash(raw)
         RA:SetInspectionPaused(true)
         RA:Print("Raid scan paused after the current inspect finishes.")
     elseif command == "resume" then
-        RA:SetInspectionPaused(false)
-        RA:Print("Raid scan resumed.")
+        if RA:IsInspectionEnabled() then
+            RA:SetInspectionPaused(false)
+            RA:Print("Raid scan resumed.")
+        else
+            RA:Print("Enable Capability HUD + talent inspection on My tools before resuming.")
+        end
     elseif command == "compact" then
         RA:SetMode("COMPACT")
     elseif command == "detailed" then
@@ -127,6 +149,10 @@ local function HandleSlash(raw)
         RA:SetDemoMode(not RA:GetDB().demoMode)
         RA:Print("Solo demo mode " .. (RA:GetDB().demoMode and "enabled." or "disabled."))
     elseif command == "demoscan" then
+        if not RA:IsHUDEnabled() then
+            RA:Print("Enable Capability HUD + talent inspection on My tools before using demo data.")
+            return
+        end
         local db = RA:GetDB()
         db.scan.demoPreview = not db.scan.demoPreview
         if not db.demoMode then db.demoMode = true end
@@ -180,7 +206,24 @@ local function HandleSlash(raw)
     end
 end
 
-SLASH_RCPARSENAL1 = "/rcpa"
-SLASH_RCPARSENAL2 = "/arsenal"
-SLASH_RCPARSENAL3 = "/raidarsenal"
+-- Use the normal chat registration path. Do not overwrite native/general
+-- command hashes or another addon's aliases to reclaim a shared command.
+function RA:GetSlashCommandStatus()
+    local hash = _G.hash_SlashCmdList
+    if type(hash) == "table" and hash["/RCP"] and hash["/RCP"] ~= HandleSlash then
+        return "/rcp is registered by another addon. Use /rcparsenal to open this hub."
+    end
+    for key, value in pairs(_G) do
+        if type(key) == "string" and key:match("^SLASH_.+%d+$") and not key:match("^SLASH_RCPARSENAL%d+$")
+            and type(value) == "string" and value:lower() == "/rcp" then
+            return "Another addon also registers /rcp. Use /rcparsenal if it opens the wrong panel."
+        end
+    end
+    return "Legacy Arsenal aliases remain supported."
+end
+SLASH_RCPARSENAL1 = "/rcp"
+SLASH_RCPARSENAL2 = "/rcparsenal"
+SLASH_RCPARSENAL3 = "/rcpa"
+SLASH_RCPARSENAL4 = "/arsenal"
+SLASH_RCPARSENAL5 = "/raidarsenal"
 SlashCmdList["RCPARSENAL"] = HandleSlash

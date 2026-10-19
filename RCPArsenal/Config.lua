@@ -7,7 +7,7 @@ local frame
 local panes = {}
 local tabButtons = {}
 local controls = {}
-local activeTab = "HUD"
+local activeTab = "ADDONS"
 local selectedCategory = "RAID_DEFENSIVE"
 local abilityRows = {}
 local categoryRows = {}
@@ -32,6 +32,9 @@ local actionStatusText
 local actionStatusDetail
 local hudFooter
 local RefreshWorldMarkers
+local RefreshConfig
+local RefreshHub
+local advancedBack
 
 -- Compatibility aliases for the existing page logic. The visual system itself
 -- lives in Theme.lua so the settings window can use soft, layered surfaces
@@ -56,16 +59,14 @@ local COLORS = {
 }
 
 local TAB_DEFS = {
-    { key = "HUD", label = "HUD", subtitle = "Size & appearance", icon = Theme.Assets.NavHUD,
-      heading = "HUD", description = "Customize how the overlay looks and behaves." },
-    { key = "QUICKBAR", label = "QUICK BAR", subtitle = "Raid leader dock", icon = Theme.Assets.Checkmark or Theme.Assets.NavHUD, child = true,
-      heading = "Quick Bar", description = "Configure the puck, flyout behavior, coverage badge, and HUD growth direction." },
-    { key = "CONTENT", label = "CONTENT", subtitle = "Abilities & categories", icon = Theme.Assets.NavContent,
-      heading = "Content", description = "Choose which raid tools appear and control their order." },
-    { key = "SCANNING", label = "SCANNING", subtitle = "Roster collection", icon = Theme.Assets.NavScanning,
-      heading = "Scanning", description = "Manage incremental inspection, tracked groups, and scan previews." },
-    { key = "ACTIONS", label = "ACTIONS", subtitle = "Click callouts", icon = Theme.Assets.NavActions,
-      heading = "Actions", description = "Choose one left-click callout channel and configure encounter callouts." },
+    { key = "ADDONS", label = "ADDONS", subtitle = "Morning Brew", icon = Theme.Assets.NavContent },
+    { key = "MYTOOLS", label = "MY TOOLS", subtitle = "Choose what runs", icon = Theme.Assets.NavHUD },
+    { key = "RAIDTOOLS", label = "RAID TOOLS", subtitle = "Group addon versions", icon = Theme.Assets.NavScanning },
+    { key = "SETTINGS", label = "SETTINGS", subtitle = "Appearance & profiles", icon = Theme.Assets.NavActions },
+}
+local PANE_CONTEXT = {
+    HUD = "MYTOOLS", QUICKBAR = "MYTOOLS", CONTENT = "MYTOOLS", WORLDMARKERS = "MYTOOLS",
+    SCANNING = "RAIDTOOLS", ACTIONS = "RAIDTOOLS",
 }
 
 local TIER_COLORS = {
@@ -281,12 +282,13 @@ local function CreateToggle(parent, labelText, description, getter, setter)
     row.title = Font(row, 11.5, TC.text, "BOLD")
     row.title:SetText(labelText)
     SetPoint(row.title, "TOPLEFT", row, "TOPLEFT", 14, -9)
+    SetPoint(row.title, "TOPRIGHT", row, "TOPRIGHT", -66, -9)
 
     row.description = Font(row, 9.1, TC.textSoft, "REGULAR")
     row.description:SetText(description or "")
-    row.description:SetWordWrap(false)
-    SetPoint(row.description, "TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
-    SetPoint(row.description, "RIGHT", row, "RIGHT", -66, 0)
+    row.description:SetWordWrap(true)
+    SetPoint(row.description, "TOPLEFT", row, "TOPLEFT", 14, -25)
+    SetPoint(row.description, "TOPRIGHT", row, "TOPRIGHT", -66, -25)
 
     row.switch = CreateFrame("Frame", nil, row, "BackdropTemplate")
     SetSize(row.switch, 40, 22)
@@ -501,6 +503,8 @@ local function CreateHeading(parent, titleText, subtitleText)
 
     local subtitle = Font(parent, 10.4, TC.textSoft, "REGULAR")
     subtitle:SetText(subtitleText)
+    subtitle:SetWordWrap(true)
+    SetWidth(subtitle, 856)
     SetPoint(subtitle, "TOPLEFT", title, "BOTTOMLEFT", 0, -5)
     return title, subtitle
 end
@@ -671,7 +675,7 @@ local function CreateHUDPane(parent)
     SetSize(settingsCard, 438, 598)
     SetPoint(settingsCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
 
-    local rightCard = CreateCard(parent, "LIVE PREVIEW", "The actual HUD updates at the same time.", Theme.Assets.GradientBerry)
+    local rightCard = CreateCard(parent, "LAYOUT PREVIEW", "Sample providers show appearance. Enable the HUD separately on My tools.", Theme.Assets.GradientBerry)
     SetSize(rightCard, 500, 248)
     SetPoint(rightCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
 
@@ -973,7 +977,7 @@ end
 local function CreateContentPane(parent)
     CreateHeading(parent, "Content", "Choose what appears, then arrange each category in the exact callout order you prefer.")
 
-    local categoryCard = CreateCard(parent, "CATEGORIES", "Left-click opens a category. Right-click toggles it on or off.")
+    local categoryCard = CreateCard(parent, "CATEGORIES", "Select a category. Its checkbox controls visibility.")
     SetSize(categoryCard, 228, 598)
     SetPoint(categoryCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
 
@@ -984,13 +988,13 @@ local function CreateContentPane(parent)
         SetPoint(row, "TOPLEFT", categoryCard, "TOPLEFT", 18, -64 - ((i - 1) * 62))
         Backdrop(row, TC.surfaceRaised, TC.line, 10, false)
         row.gradient = CreateGradientOverlay(row, Theme.Assets.GradientSunset, 0, 2)
-        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:RegisterForClicks("LeftButtonUp")
 
         local iconAsset = Theme.Assets.NavContent
         local icon = Theme:CreateIcon(row, iconAsset, 18, TC.muted)
         SetPoint(icon, "LEFT", row, "LEFT", 12, 0)
 
-        local checkBack = CreateFrame("Frame", nil, row, "BackdropTemplate")
+        local checkBack = CreateFrame("Button", nil, row, "BackdropTemplate")
         SetSize(checkBack, 18, 18)
         SetPoint(checkBack, "RIGHT", row, "RIGHT", -11, 0)
         Backdrop(checkBack, TC.input, TC.line, 5, false)
@@ -1000,7 +1004,7 @@ local function CreateContentPane(parent)
 
         local label = Font(row, 11.2, TC.textSoft, "BOLD")
         label:SetText(category.shortName or category.name or category.key)
-        label:SetWordWrap(false)
+        label:SetWordWrap(true)
         label:SetJustifyH("LEFT")
         SetPoint(label, "LEFT", icon, "RIGHT", 10, 0)
         SetPoint(label, "RIGHT", checkBack, "LEFT", -9, 0)
@@ -1014,14 +1018,14 @@ local function CreateContentPane(parent)
         row:SetScript("OnLeave", function(self)
             RefreshCategoryRows()
         end)
-        row:SetScript("OnClick", function(_, button)
-            if button == "RightButton" then
-                RA:GetDB().categories[category.key] = not (RA:GetDB().categories[category.key] ~= false)
-                RA:OnCapabilityFiltersChanged()
-            else
-                selectedCategory = category.key
-                RefreshAbilityList(true)
-            end
+        row:SetScript("OnClick", function()
+            selectedCategory = category.key
+            RefreshAbilityList(true)
+            RefreshCategoryRows()
+        end)
+        checkBack:SetScript("OnClick", function()
+            RA:GetDB().categories[category.key] = not (RA:GetDB().categories[category.key] ~= false)
+            RA:OnCapabilityFiltersChanged()
             RefreshCategoryRows()
         end)
         categoryRows[i] = {frame = row, category = category, check = check, label = label, gradient = row.gradient, icon = icon}
@@ -1035,13 +1039,14 @@ local function CreateContentPane(parent)
         end)
     SetPoint(tooltipToggle, "BOTTOMLEFT", categoryCard, "BOTTOMLEFT", 18, 16)
     SetWidth(tooltipToggle, 192)
+    SetHeight(tooltipToggle, 92)
 
     local listCard = CreateCard(parent, "ABILITIES", "Core abilities lead by default; within each tier, longer cooldowns appear first.", Theme.Assets.GradientBerry)
     SetSize(listCard, 708, 598)
     SetPoint(listCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
 
     local search = CreateFrame("EditBox", nil, listCard, "BackdropTemplate")
-    SetSize(search, 246, 34)
+    SetSize(search, 220, 34)
     SetPoint(search, "TOPLEFT", listCard, "TOPLEFT", 18, -62)
     Backdrop(search, TC.input, TC.line, 9, false)
     ApplyReadableFont(search, 10.8, "REGULAR")
@@ -1064,7 +1069,7 @@ local function CreateContentPane(parent)
         RA:ResetAbilityVisibilityToRecommended(selectedCategory)
         RefreshAbilityList(false)
     end, true)
-    SetPoint(recommended, "LEFT", search, "RIGHT", 8, 0)
+    SetPoint(recommended, "TOPLEFT", listCard, "TOPLEFT", 18, -104)
 
     local allOn = CreateButton(listCard, "ALL ON", 72, 34, function()
         for i = 1, #RA.Catalog do
@@ -1093,7 +1098,7 @@ local function CreateContentPane(parent)
     SetPoint(defaultOrder, "LEFT", allOff, "RIGHT", 8, 0)
 
     contentScroll = CreateFrame("ScrollFrame", nil, listCard, "UIPanelScrollFrameTemplate")
-    SetPoint(contentScroll, "TOPLEFT", listCard, "TOPLEFT", 18, -108)
+    SetPoint(contentScroll, "TOPLEFT", listCard, "TOPLEFT", 18, -150)
     SetPoint(contentScroll, "BOTTOMRIGHT", listCard, "BOTTOMRIGHT", -36, 18)
     contentScrollChild = CreateFrame("Frame", nil, contentScroll)
     SetWidth(contentScrollChild, 646)
@@ -1110,10 +1115,10 @@ local function ScanStatusText()
         if db.scan and db.scan.demoPreview then
             return "13 / 20 SCANNING", "Simulated pending-player strip and progress animation are active on the demo HUD."
         end
-        return "DEMO READY", "Enable the scan preview below to test the 13/20 pending-player experience."
+        return "DEMO DATA", "Enable the scan preview below to test the 13/20 pending-player experience."
     end
     if paused then
-        return string.format("%d / %d READY", inspected, total), "Paused after the current inspection."
+        return string.format("%d / %d INSPECTED", inspected, total), "Paused after the current inspection."
     elseif running then
         return string.format("%d / %d SCANNING", processed, scanTotal), currentName and ("Inspecting " .. RA:GetShortName(currentName)) or "Inspecting the next nearby player."
     end
@@ -1124,7 +1129,7 @@ local function ScanStatusText()
     if summary.outOfRange > 0 then details[#details + 1] = summary.outOfRange .. " out of range" end
     if summary.offline > 0 then details[#details + 1] = summary.offline .. " offline" end
     if summary.failed > 0 then details[#details + 1] = summary.failed .. " failed" end
-    return string.format("%d / %d READY", inspected, total), (#details > 0 and table.concat(details, "  ·  ") or "Tracked roster complete.")
+    return string.format("%d / %d INSPECTED", inspected, total), (#details > 0 and table.concat(details, "  ·  ") or "Tracked roster complete.")
 end
 
 local function RefreshScanPane()
@@ -1318,16 +1323,17 @@ local function CreateQuickBarPane(parent)
     SetSize(rightBottom, 476, 302)
     SetPoint(rightBottom, "BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
 
-    local toolboxToggle = CreateToggle(leftCard, "Enable Quick Bar", "Enable the checkmark puck. Raid-leader actions remain locked unless you are raid lead/assist. Demo Mode also shows it outside a raid.",
-        function() return RA:GetDB().leaderToolbox.enabled ~= false end,
+    local toolboxToggle = CreateToggle(leftCard, "Enable Quick Bar", "Independent raid dock. Privileged actions require lead or assist.",
+        function() return RA:GetDB().leaderToolbox.enabled == true end,
         function(value)
-            RA:GetDB().leaderToolbox.enabled = value
+            RA:SetQuickBarEnabled(value)
             if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
         end)
     SetPoint(toolboxToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -64)
     SetWidth(toolboxToggle, 420)
+    SetHeight(toolboxToggle, 44)
 
-    local nonLeaderToggle = CreateToggle(leftCard, "Show when not Leader/Assist", "When enabled, the Quick Bar stays visible to normal raid members. Turn this off to automatically hide it unless you are raid lead or assist.",
+    local nonLeaderToggle = CreateToggle(leftCard, "Show when not Leader/Assist", "Also show the dock to ordinary raid members.",
         function() return RA:GetDB().leaderToolbox.showForNonLeaders ~= false end,
         function(value)
             RA:GetDB().leaderToolbox.showForNonLeaders = value
@@ -1335,8 +1341,9 @@ local function CreateQuickBarPane(parent)
         end)
     SetPoint(nonLeaderToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -112)
     SetWidth(nonLeaderToggle, 420)
+    SetHeight(nonLeaderToggle, 44)
 
-    local missingToggle = CreateToggle(leftCard, "Missing raid coverage", "Show the missing-buff count badge and the Missing flyout.",
+    local missingToggle = CreateToggle(leftCard, "Missing provider classes", "Show provider-class gaps. This does not check active auras.",
         function() return RA:GetDB().leaderToolbox.showMissing ~= false end,
         function(value)
             RA:GetDB().leaderToolbox.showMissing = value
@@ -1344,6 +1351,7 @@ local function CreateQuickBarPane(parent)
         end)
     SetPoint(missingToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -160)
     SetWidth(missingToggle, 420)
+    SetHeight(missingToggle, 44)
 
     local direction = CreateSegmented(leftCard, "FLYOUT DIRECTION", {
         {label = "AUTO", value = "AUTO"},
@@ -1738,12 +1746,13 @@ local function CreateActionsPane(parent)
 end
 
 local function SetTab(tabKey)
+    if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
     activeTab = tabKey
     for key, pane in pairs(panes) do
         pane:SetShown(key == tabKey)
     end
     for key, button in pairs(tabButtons) do
-        local selected = key == tabKey or (key == "QUICKBAR" and tabKey == "WORLDMARKERS")
+        local selected = key == (PANE_CONTEXT[tabKey] or tabKey)
         SetSurfaceColor(button, selected and TC.activeDark or TC.transparent)
         SetBorderColor(button, selected and CopyColor(TC.magenta, 0.34) or TC.transparent)
         button.gradient:SetAlpha(selected and 0.66 or 0)
@@ -1752,7 +1761,12 @@ local function SetTab(tabKey)
         button.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
         button.bar:SetShown(selected)
     end
-    if hudFooter then hudFooter:SetShown(tabKey ~= "WORLDMARKERS") end
+    if hudFooter then hudFooter:SetShown(tabKey == "HUD") end
+    if advancedBack then
+        advancedBack:SetShown(PANE_CONTEXT[tabKey] ~= nil)
+        advancedBack.label:SetText(PANE_CONTEXT[tabKey] == "RAIDTOOLS" and "BACK TO RAID TOOLS" or "BACK TO MY TOOLS")
+    end
+    if RefreshHub then RefreshHub(tabKey) end
     if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
     if tabKey == "CONTENT" then
         RefreshAbilityList(false)
@@ -1762,7 +1776,7 @@ local function SetTab(tabKey)
     end
 end
 
-local function RefreshConfig()
+RefreshConfig = function()
     if not frame then
         return
     end
@@ -1775,6 +1789,7 @@ local function RefreshConfig()
     RefreshAbilityList(false)
     RefreshScanPane()
     UpdatePreview()
+    if RefreshHub then RefreshHub(activeTab) end
 
     if actionStatusText and RA.GetSecureActionStatus then
         local armed, visible, clickMode = RA:GetSecureActionStatus()
@@ -1926,10 +1941,10 @@ local function CreateConfig()
     SetPoint(footer, "BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 14)
     Backdrop(footer, TC.footer, CopyColor(TC.magenta, 0.16), 15, false)
 
-    local logo = Theme:CreateIcon(sidebar, Theme.Assets.Logo, 52, TC.white)
+    local logo = Theme:CreateIcon(sidebar, Theme.Assets.Logo, 42, TC.white)
     SetPoint(logo, "TOPLEFT", sidebar, "TOPLEFT", 18, -18)
 
-    local title = Font(sidebar, 20.5, TC.text, "BOLD")
+    local title = Font(sidebar, 15.5, TC.text, "BOLD")
     title:SetText("RCP ARSENAL")
     SetPoint(title, "TOPLEFT", logo, "TOPRIGHT", 10, -4)
     local version = Font(sidebar, 9.4, TC.magenta, "BOLD")
@@ -1937,7 +1952,7 @@ local function CreateConfig()
     SetPoint(version, "TOPLEFT", title, "BOTTOMLEFT", 0, -3)
 
     local subtitle = Font(sidebar, 10.0, TC.textSoft, "REGULAR")
-    subtitle:SetText("A polished, leader-installed inventory\nof the tools your raid actually brought.")
+    subtitle:SetText("Morning Brew for your raid.\nA quiet hub. Tools you choose.")
     subtitle:SetSpacing(2)
     SetPoint(subtitle, "TOPLEFT", sidebar, "TOPLEFT", 18, -84)
 
@@ -1976,38 +1991,23 @@ local function CreateConfig()
             end
         end)
         button:SetScript("OnLeave", function(self)
-            SetTab(activeTab)
+            local selected = (PANE_CONTEXT[activeTab] or activeTab) == definition.key
+            SetSurfaceColor(self, selected and TC.activeDark or TC.transparent)
+            self.gradient:SetAlpha(selected and 0.66 or 0)
         end)
         button:SetScript("OnClick", function() SetTab(definition.key) end)
         tabButtons[definition.key] = button
     end
 
-    local profileLabel = Font(sidebar, 8.6, TC.muted, "BOLD")
-    profileLabel:SetText("PROFILE")
-    SetPoint(profileLabel, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 170)
-
-    local profileBox = CreateFrame("Frame", nil, sidebar, "BackdropTemplate")
-    SetSize(profileBox, 202, 40)
-    SetPoint(profileBox, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 120)
-    Backdrop(profileBox, TC.input, TC.line, 10, false)
-    local profileName = Font(profileBox, 11.3, TC.text, "BOLD")
-    profileName:SetText("Default")
-    SetPoint(profileName, "LEFT", profileBox, "LEFT", 14, 0)
-    local profileHint = Font(profileBox, 9.0, TC.muted, "BOLD")
-    profileHint:SetText("LOCAL")
-    profileHint:SetJustifyH("RIGHT")
-    SetPoint(profileHint, "RIGHT", profileBox, "RIGHT", -14, 0)
-
-    local importButton = CreateButton(sidebar, "IMPORT", 96, 32, function() OpenProfileDialog("IMPORT") end)
-    SetPoint(importButton, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 76)
-    local exportButton = CreateButton(sidebar, "EXPORT", 96, 32, function() OpenProfileDialog("EXPORT") end, true)
-    SetPoint(exportButton, "BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -18, 76)
-
-    local reset = CreateButton(sidebar, "RESET PROFILE", 202, 32, function()
-        RA:ResetProfile()
-        RefreshConfig()
+    advancedBack = CreateButton(sidebar, "BACK TO MY TOOLS", 206, 34, function()
+        SetTab(PANE_CONTEXT[activeTab] or "MYTOOLS")
     end)
-    SetPoint(reset, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 28)
+    SetPoint(advancedBack, "TOPLEFT", sidebar, "TOPLEFT", 16, -460)
+    local hint = Font(sidebar, 10, TC.muted, "REGULAR")
+    hint:SetText("/rcp opens Morning Brew\n\nVersion replies work with every\noptional tool switched off.")
+    hint:SetWordWrap(true)
+    SetWidth(hint, 200)
+    SetPoint(hint, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 30)
 
     local close = CreateButton(main, "X", 38, 38, function() frame:Hide() end)
     SetPoint(close, "TOPRIGHT", main, "TOPRIGHT", -16, -16)
@@ -2022,10 +2022,17 @@ local function CreateConfig()
         pane:Hide()
         panes[TAB_DEFS[i].key] = pane
     end
-    local markerPane = CreateFrame("Frame", nil, content)
-    markerPane:SetAllPoints(content)
-    markerPane:Hide()
-    panes.WORLDMARKERS = markerPane
+    for key in pairs(PANE_CONTEXT) do
+        local pane = CreateFrame("Frame", nil, content)
+        pane:SetAllPoints(content)
+        pane:Hide()
+        panes[key] = pane
+    end
+    RefreshHub = RA:CreateHubPanes(panes, {
+        Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
+        Toggle = CreateToggle, Slider = CreateSlider, Backdrop = Backdrop,
+        Refresh = function() RefreshConfig() end,
+    })
 
     CreateHUDPane(panes.HUD)
     CreateQuickBarPane(panes.QUICKBAR)
@@ -2034,14 +2041,14 @@ local function CreateConfig()
     CreateActionsPane(panes.ACTIONS)
     CreateWorldMarkersPane(panes.WORLDMARKERS)
 
-    local hudToggle = CreateButton(footer, "HIDE HUD", 166, 42, function(self)
+    local hudToggle = CreateButton(footer, "DISABLE HUD + SCANS", 200, 42, function(self)
         if RA:GetDB().shown then RA:HideHUD() else RA:ShowHUD() end
         self:Refresh()
         RefreshConfig()
     end, true, Theme.Assets.IconEye)
     SetPoint(hudToggle, "LEFT", footer, "LEFT", 12, 0)
     hudToggle.Refresh = function(self)
-        self.label:SetText(RA:GetDB().shown and "HIDE HUD" or "SHOW HUD")
+        self.label:SetText(RA:IsHUDEnabled() and "DISABLE HUD + SCANS" or "ENABLE HUD + SCANS")
     end
     RegisterControl(hudToggle)
 
@@ -2080,10 +2087,10 @@ local function CreateConfig()
     SetPoint(statusText, "RIGHT", footer, "RIGHT", -18, 0)
 
     local function FitToScreen()
-        local availableWidth = math.max(800, UIParent:GetWidth() - 24)
-        local availableHeight = math.max(600, UIParent:GetHeight() - 24)
+        local availableWidth = math.max(1, UIParent:GetWidth() - 24)
+        local availableHeight = math.max(1, UIParent:GetHeight() - 24)
         local scale = math.min(1, availableWidth / FRAME_WIDTH, availableHeight / FRAME_HEIGHT)
-        frame:SetScale(math.max(0.72, scale))
+        frame:SetScale(scale)
     end
 
     frame.UpdatePreview = UpdatePreview
@@ -2126,6 +2133,16 @@ end
 
 RA:RegisterInitializer(function()
     -- Lazy by design: no settings frames are allocated until requested.
+end)
+
+RA:RegisterCallback("READINESS_UPDATED", function()
+    if frame and frame:IsShown() and RefreshHub then RefreshHub(activeTab) end
+end)
+RA:RegisterCallback("TOOLS_CHANGED", function()
+    if frame and frame:IsShown() then RefreshConfig() end
+end)
+RA:RegisterCallback("PERSONAL_TOOLS_CHANGED", function()
+    if frame and frame:IsShown() then RefreshConfig() end
 end)
 
 RA:RegisterCallback("REPORTS_UPDATED", function()

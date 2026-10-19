@@ -464,6 +464,7 @@ function RA:PruneReports()
 end
 
 function RA:ClearInspectionCache()
+    if not self:IsInspectionEnabled() then return false end
     if self.InEncounter or InCombatLockdown() then
         return false
     end
@@ -480,6 +481,7 @@ function RA:ClearInspectionCache()
 end
 
 function RA:OnIgnoredRaidGroupsChanged()
+    if not self:IsInspectionEnabled() then return true end
     if self.InEncounter or InCombatLockdown() then
         return false
     end
@@ -496,6 +498,7 @@ function RA:OnIgnoredRaidGroupsChanged()
 end
 
 function RA:StoreLocalReport()
+    if not self:IsInspectionEnabled() then return end
     local name = self:GetFullUnitName("player")
     local guid = UnitGUID("player")
     if not name or not guid then
@@ -741,7 +744,7 @@ ScheduleMissingRetry = function()
         missingRetryTimer = nil
     end
 
-    if manualPaused or RA.InEncounter or InCombatLockdown() or not IsInGroup() or not RA:HasMissingReports() then
+    if not RA:IsInspectionEnabled() or manualPaused or RA.InEncounter or InCombatLockdown() or not IsInGroup() or not RA:HasMissingReports() then
         return
     end
 
@@ -752,6 +755,7 @@ ScheduleMissingRetry = function()
 end
 
 ProcessInspectionQueue = function()
+    if not RA:IsInspectionEnabled() then RA:StopInspectionScan(); return end
     if not inspectState.running or inspectState.current then
         return
     end
@@ -951,6 +955,7 @@ function RA:GetPendingScanEntries()
 end
 
 function RA:SetInspectionPaused(paused)
+    if not paused and not self:IsInspectionEnabled() then return false end
     paused = paused and true or false
     if manualPaused == paused then
         return
@@ -1107,6 +1112,7 @@ function RA:StopInspectionScan()
 end
 
 function RA:RequestInspectionScan(reason, fullRefresh)
+    if not self:IsInspectionEnabled() then return false end
     self:RefreshRoster()
     self:PruneReports()
     self:StoreLocalReport()
@@ -1198,6 +1204,7 @@ function RA:RequestInspectionScan(reason, fullRefresh)
 end
 
 function RA:ScheduleInspectionScan(reason, delay, fullRefresh)
+    if not self:IsInspectionEnabled() then return false end
     if self.InEncounter or InCombatLockdown() then
         resumeMissingAfterCombat = resumeMissingAfterCombat or self:HasMissingReports()
         return
@@ -1400,6 +1407,7 @@ function RA:BuildAbilityOwners()
 end
 
 function RA:InvalidateTrackedPlayer(unitOrName, reason, delay)
+    if not self:IsInspectionEnabled() then return end
     local name
     local rosterInfo
     if type(unitOrName) == "string" and self.Roster[unitOrName] then
@@ -1437,6 +1445,7 @@ function RA:InvalidateTrackedPlayer(unitOrName, reason, delay)
 end
 
 RA:RegisterInitializer(function()
+    if not RA:IsInspectionEnabled() then return end
     RA:RefreshRoster()
     RA:PruneReports()
     RA:StoreLocalReport()
@@ -1451,6 +1460,7 @@ RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()
 end)
 
 RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
+    if not RA:IsInspectionEnabled() then return end
     local changes = RA:RefreshRoster()
     RA:PruneReports()
     RA:StoreLocalReport()
@@ -1479,16 +1489,19 @@ RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
 end)
 
 RA:RegisterEvent("SPELLS_CHANGED", function()
+    if not RA:IsInspectionEnabled() then return end
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
 
 RA:RegisterEvent("TRAIT_CONFIG_UPDATED", function()
+    if not RA:IsInspectionEnabled() then return end
     RA:StoreLocalReport()
     RA:FireCallback("REPORTS_UPDATED")
 end)
 
 RA:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function(_, unit)
+    if not RA:IsInspectionEnabled() then return end
     if unit == "player" then
         RA:StoreLocalReport()
         RA:FireCallback("REPORTS_UPDATED")
@@ -1505,6 +1518,7 @@ RA:RegisterEvent("READY_CHECK", function()
 end)
 
 RA:RegisterEvent("INSPECT_READY", function(_, guid)
+    if not RA:IsInspectionEnabled() then return end
     local item = inspectState.current
     if not item or guid ~= item.guid then
         return
@@ -1516,11 +1530,13 @@ RA:RegisterEvent("INSPECT_READY", function(_, guid)
 end)
 
 RA:RegisterEvent("PLAYER_REGEN_DISABLED", function()
+    if not RA:IsInspectionEnabled() then return end
     resumeMissingAfterCombat = resumeMissingAfterCombat or inspectState.running or RA:HasMissingReports()
     RA:StopInspectionScan()
 end)
 
 RA:RegisterEvent("PLAYER_REGEN_ENABLED", function()
+    if not RA:IsInspectionEnabled() then return end
     if not manualPaused and not RA.InEncounter and (resumeMissingAfterCombat or RA:HasMissingReports()) then
         resumeMissingAfterCombat = false
         RA:ScheduleInspectionScan("resume missing", 0.45, false)
@@ -1528,22 +1544,34 @@ RA:RegisterEvent("PLAYER_REGEN_ENABLED", function()
 end)
 
 RA:RegisterEvent("ENCOUNTER_START", function()
+    RA.InEncounter = true
+    RA:FireCallback("ENCOUNTER_STATE_CHANGED", true)
+    if not RA:IsInspectionEnabled() then return end
     resumeMissingAfterCombat = resumeMissingAfterCombat or RA:HasMissingReports()
     RA:StopInspectionScan()
-    RA.InEncounter = true
     RA:FreezeReports(true)
-    RA:FireCallback("ENCOUNTER_STATE_CHANGED", true)
 end)
 
 RA:RegisterEvent("ENCOUNTER_END", function()
     RA.InEncounter = false
     RA:UnfreezeReports()
     RA:FireCallback("ENCOUNTER_STATE_CHANGED", false)
+    if not RA:IsInspectionEnabled() then
+        resumeMissingAfterCombat = false
+        return
+    end
 
     -- Do not refresh successful reports after every boss. Only resume if a
     -- tracked player joined during the encounter or somebody is still missing.
     if not manualPaused and (resumeMissingAfterCombat or RA:HasMissingReports()) then
         resumeMissingAfterCombat = false
         RA:ScheduleInspectionScan("missing after encounter", 0.65, false)
+    end
+end)
+
+RA:RegisterCallback("PROFILE_RESET", function()
+    if not RA:IsInspectionEnabled() then
+        resumeMissingAfterCombat = false
+        RA:StopInspectionScan()
     end
 end)

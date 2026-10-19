@@ -19,6 +19,14 @@ local SetHeight = Theme and Theme.SetHeight or function(region, height)
     region:SetHeight(height)
 end
 
+local function SetAbilityIcon(texture, ability)
+    if RA.RegisterSpellIcon then
+        RA:RegisterSpellIcon(texture, ability.spellID)
+    else
+        texture:SetTexture(RA:GetAbilityTexture(ability))
+    end
+end
+
 local HUD
 local hudAnchor
 local shadow
@@ -461,7 +469,7 @@ local function ShowTileTooltip(tile)
     GameTooltip:AddLine("Owner: " .. RA:GetShortName(tile.owner.name), 0.72, 0.78, 0.86)
     GameTooltip:AddLine(" ")
     local actions = RA:GetDB().actions or {}
-    local leftClickMode = actions.leftClickMode or "WHISPER"
+    local leftClickMode = actions.leftClickMode or "OFF"
     if leftClickMode == "SAY" then
         GameTooltip:AddDoubleLine("Left click", "Say callout", 0.35, 0.72, 1, 0.82, 0.87, 0.94)
     elseif leftClickMode == "WHISPER" then
@@ -524,7 +532,7 @@ local function ArmPanicButton()
 end
 
 local function PositionPanicButton(anchorFrame)
-    if not panicHUDButton then return end
+    if not panicHUDButton or InCombatLockdown() then return end
     if not anchorFrame then
         panicHUDButton:Hide()
         return
@@ -550,7 +558,7 @@ local function ConfigureTileActions(tile, ability, owner)
     tile.__rcpaActionAbility = ability and ability.key or nil
 
     local actions = RA:GetDB().actions or {}
-    local leftClickMode = actions.leftClickMode or "WHISPER"
+    local leftClickMode = actions.leftClickMode or "OFF"
     local leftMacro
     if leftClickMode == "SAY" then
         local message = FormatActionText(actions.sayTemplate, ability, owner)
@@ -1067,9 +1075,9 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
     SetPoint(headerStatus, "TOPLEFT", headerTitle, "BOTTOMLEFT", 0, -2)
     headerStatus:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
     if not IsInGroup() then
-        headerStatus:SetText("LOCAL READY")
+        headerStatus:SetText("LOCAL CAPABILITIES")
     else
-        headerStatus:SetText(string.format("%d/%d READY", inspected, total))
+        headerStatus:SetText(string.format("%d/%d INSPECTED", inspected, total))
     end
 
     SetHeight(headerLine, 1)
@@ -1080,7 +1088,7 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
         headerMode:SetText("DEMO")
         headerMode:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     elseif RA.InEncounter then
-        headerMode:SetText("LIVE")
+        headerMode:SetText("PRE-PULL SNAPSHOT")
         headerMode:SetTextColor(COLORS.active[1], COLORS.active[2], COLORS.active[3], 1)
     elseif paused then
         headerMode:SetText("PAUSED")
@@ -1089,7 +1097,7 @@ local function LayoutDetailedHeader(width, inspected, total, isDemo, scanning, p
         headerMode:SetText("SCAN")
         headerMode:SetTextColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
     else
-        headerMode:SetText("READY")
+        headerMode:SetText("PRE-PULL")
         headerMode:SetTextColor(COLORS.muted[1], COLORS.muted[2], COLORS.muted[3], 1)
     end
 end
@@ -1132,7 +1140,7 @@ local function LayoutDetailedRow(row, ability, owners, y, width)
     SetSize(row.icon, DETAILED.iconSize, DETAILED.iconSize)
     row.icon:ClearAllPoints()
     SetPoint(row.icon, "CENTER", row.iconBack, "CENTER", 0, 0)
-    row.icon:SetTexture(RA:GetAbilityTexture(ability))
+    SetAbilityIcon(row.icon, ability)
 
     row.activeBadge:SetShown(isActive)
     row.activeBadge:ClearAllPoints()
@@ -1253,7 +1261,7 @@ local function ConfigureCompactTile(tile, ability, owner, abbreviations, active,
     SetSize(tile.iconFrame, metrics.iconSize, metrics.iconSize)
     tile.iconFrame:ClearAllPoints()
     SetPoint(tile.iconFrame, "TOP", tile, "TOP", 0, 0)
-    tile.icon:SetTexture(RA:GetAbilityTexture(ability))
+    SetAbilityIcon(tile.icon, ability)
 
     tile.nameText:ClearAllPoints()
     ApplyReadableFont(tile.nameText, metrics.nameFont, "BOLD")
@@ -1647,6 +1655,11 @@ function RA:RefreshHUD()
 
     refreshAfterCombat = false
     local db = self:GetDB()
+    if not self:IsHUDEnabled() then
+        HUD:Hide()
+        shadow:Hide()
+        return
+    end
     local ownersByAbility = self:BuildAbilityOwners()
     local inspected, total, isDemo = self:GetVerificationStatus()
     local _, _, _, scanning, currentName, paused = self:GetInspectionProgress()
@@ -1672,6 +1685,7 @@ end
 
 function RA:GetHUDVisibilityReason()
     local db = self:GetDB()
+    if not self:IsHUDEnabled() then return "HUD and inspection are disabled" end
     if not db.shown then
         return "HUD is toggled off"
     end
@@ -1698,6 +1712,11 @@ function RA:UpdateHUDVisibility()
         HUD:Show()
     else
         HUD:Hide()
+        -- PANIC/shadow/handle are UIParent-owned. Repeated hidden refreshes
+        -- must not rely on a second OnHide event from the already-hidden HUD.
+        if panicHUDButton then panicHUDButton:Hide() end
+        if shadow then shadow:Hide() end
+        if moveHandle then moveHandle:Hide() end
     end
 end
 
@@ -1707,8 +1726,6 @@ function RA:RecoverHUD()
         return
     end
     local db = self:GetDB()
-    db.shown = true
-    db.leaderOnly = false
     db.position = { point = "CENTER", relativePoint = "CENTER", x = -360, y = 100 }
     db.positionAnchorVersion = 0
     positionNormalized = false
@@ -1725,8 +1742,7 @@ function RA:ShowHUD()
         self:Print("The secure HUD cannot be shown during combat. Show it before the pull.")
         return
     end
-    self:GetDB().shown = true
-    self:RefreshHUD()
+    self:SetHUDEnabled(true)
 end
 
 function RA:HideHUD()
@@ -1734,8 +1750,7 @@ function RA:HideHUD()
         self:Print("The secure HUD cannot be hidden during combat.")
         return
     end
-    self:GetDB().shown = false
-    self:UpdateHUDVisibility()
+    self:SetHUDEnabled(false)
 end
 
 function RA:SetLocked(locked)
@@ -1760,6 +1775,10 @@ function RA:SetMode(newMode)
 end
 
 function RA:SetDemoMode(enabled)
+    if enabled and not self:IsHUDEnabled() then
+        self:Print("Enable the capability HUD on My tools before using demo data.")
+        return false
+    end
     if InCombatLockdown() then
         self:Print("Demo mode cannot be changed during combat.")
         return
@@ -1818,6 +1837,10 @@ function RA:RearmSecureActions()
 end
 
 local function QueueHUDRefresh()
+    if not RA:IsHUDEnabled() then
+        RA:UpdateHUDVisibility()
+        return
+    end
     if InCombatLockdown() or RA.InEncounter then
         refreshAfterCombat = true
         return
@@ -1893,6 +1916,7 @@ local function RefreshScanVisualsOnly()
 end
 
 local function QueueScanVisualRefresh()
+    if not RA:IsHUDEnabled() then return end
     if scanVisualRefreshQueued then return end
     scanVisualRefreshQueued = true
     C_Timer.After(0, function()
@@ -2112,15 +2136,13 @@ RA:RegisterCallback("REPORTS_FROZEN", QueueHUDRefresh)
 RA:RegisterCallback("INSPECTION_STATE_CHANGED", QueueScanVisualRefresh)
 RA:RegisterCallback("ACCENT_THEME_CHANGED", QueueHUDRefresh)
 RA:RegisterCallback("VISUAL_ASSET_REFRESH", function()
-    -- A true client login can initialize addon frames before all custom media
-    -- and font state has settled. Reapply the glyph/font and rebuild ability
-    -- icons once the world is fully live; /reload already naturally does this.
+    -- PANIC is a glyph, not a spell texture. Registered fonts and icons can
+    -- refresh in place without rebuilding the protected HUD or its geometry.
     if panicHUDButton and panicHUDButton.label then
         if RA.ApplyFont then RA:ApplyFont(panicHUDButton.label, 13, "BOLD", false) end
         panicHUDButton.label:SetText("!")
         panicHUDButton.label:SetTextColor(COLORS.danger[1], COLORS.danger[2], COLORS.danger[3], 1)
     end
-    if not InCombatLockdown() then QueueHUDRefresh() end
 end)
 
 RA:RegisterCallback("PROFILE_RESET", function()
@@ -2135,7 +2157,7 @@ RA:RegisterCallback("ENCOUNTER_STATE_CHANGED", function(inEncounter)
         RA.ConfigFrame:Hide()
     end
 
-    if inEncounter and RA:GetDB().autoShowEncounter then
+    if inEncounter and RA:IsHUDEnabled() and RA:GetDB().autoShowEncounter then
         RA:GetDB().shown = true
         -- Secure tiles must already be visible/configured before combat. Do not
         -- rebuild or show protected frames at the encounter boundary.
@@ -2161,6 +2183,7 @@ end)
 
 
 RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+    if not RA:IsHUDEnabled() then return end
     -- World transitions may change roster data, but they must never rewrite
     -- the user's screen anchor. Refresh content only; position is restored once
     -- when the addon is created and thereafter changes only by explicit drag,

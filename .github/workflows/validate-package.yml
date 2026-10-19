@@ -21,10 +21,10 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Install Lua 5.1 for offline checks
         run: sudo apt-get update -qq && sudo apt-get install -y lua5.1
-      - name: Validate Lua and marker logic
+      - name: Validate Lua and addon behavior
         run: |
           luac5.1 -p RCPArsenal/*.lua
-          lua5.1 tests/world_markers.lua
+          for harness in tests/*.lua; do lua5.1 "$harness"; done
       - name: Build install ZIP and provenance
         run: python3 tools/package.py --output-dir dist --label ci
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
