@@ -1,4 +1,4 @@
 <Bindings>
     <Binding name="CLICK RCPArsenalWorldMarkerCycle:LeftButton" header="RCPARSENAL_MARKERS" category="ADDONS" />
-    <Binding name="CLICK RCPArsenalWorldMarkerClear:LeftButton" header="RCPARSENAL_MARKERS" category="ADDONS" />
+    <Binding name="CLICK RCPArsenalWorldMarkerClear:LeftButton" category="ADDONS" />
 </Bindings>
