@@ -537,6 +537,20 @@ for _,command in ipairs({'sort','split','groupsplit'}) do
     check(output:find('Using 2 saved specializations',1,true) and output:find('Raid is already arranged',1,true), command..' demanded a reload-only rescan or lost guarded cached spec classification')
     check(inspectCalls==requestsBefore and not RA:IsInspectionRunning() and not RA.RaidLeaderToolbox:IsSorting(), command..' queued inspection or an unexpected move for an already arranged cached layout')
 end
+for _,row in ipairs(raid) do
+    check(RA.InspectionCache:Store({name=row.name..'-Realm',guid=row.guid,class='HUNTER',role='DAMAGER',specID=255,classRevision=RA:GetClassCatalogRevision('HUNTER'),verified=true,source='INSPECT',cached=false,sessionVerified=true,confirmedAt=1799996400,capabilities={},evidence={roleOnly=true}}), 'Puck-only reload fixture did not persist confirmed ordinary facts')
+end
+cacheProfile.hudEnabled,cacheProfile.shown=false,false
+local talentsBefore=talentReads
+for _,command in ipairs({'sort','split','groupsplit'}) do
+    RA.Reports,RA.Roster,RA.RosterOrder={},{},{}
+    raid[2].group=command=='sort' and 1 or 2
+    local firstMessage=#messages+1
+    SlashCmdList.RCPARSENAL(command)
+    local output=table.concat(messages,'\n',firstMessage)
+    check(output:find('Using 2 saved specializations',1,true) and output:find('Raid is already arranged',1,true), 'Puck-only '..command..' failed to hydrate saved specs after an empty session')
+    check(inspectCalls==requestsBefore and talentReads==talentsBefore and not RA:IsInspectionRunning() and not RA:IsHUDEnabled() and cacheProfile.leaderToolbox.enabled, 'Puck-only '..command..' enabled or collected inspection data')
+end
 cleanErrors()
 print = nativePrint
 print('PASS: ' .. checks .. ' hub/migration/quiet-lifecycle assertions (actual addon modules; offline frame mocks)')

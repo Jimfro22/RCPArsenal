@@ -760,7 +760,7 @@ local function BuildRaidSnapshot()
         subgroup = tonumber(subgroup)
         if rosterName and subgroup and subgroup >= 1 and subgroup <= 8 then
             groupSizes[subgroup] = groupSizes[subgroup] + 1
-            local fullName = RA:GetFullUnitName(unit) or rosterName
+            local fullName = (RA.GetInspectionUnitName and RA:GetInspectionUnitName(unit, true)) or RA:GetFullUnitName(unit) or rosterName
             local role = UnitGroupRolesAssigned(unit)
             if role ~= nil and IsSecret(role) then role = nil end
             local member = {
@@ -1209,7 +1209,9 @@ local function BuildDesiredGroupsFromSides(eligible, assignment, sideGroups, gro
 end
 
 local function BuildSortPlan(mode)
-    RA:RefreshRoster()
+    -- A deliberate layout may read local saved facts with inspection off.
+    -- This does not grant consent to collect new talent data.
+    RA:RefreshRoster(true)
     local snapshot, err = BuildRaidSnapshot()
     if not snapshot then return nil, err end
 
