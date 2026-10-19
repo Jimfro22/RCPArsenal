@@ -10,7 +10,7 @@ local frames, timers, tickers, events, callbacks, initializers, items
 local healthCalls, itemCalls, scans, accepted, hidden, notices, now
 local combat, encounter, raid, grouped, groupCount, groupCombat, exists
 local dead, petExistsUnknown, petCombatUnknown
-local offer, recovery, healthResult, healthError, itemError, healthRatio, nativeAlpha
+local offer, recovery, healthResult, healthError, itemError, healthRatio, reportedHealthRatio, nativeAlpha
 local profile, RA
 
 function issecretvalue(value) return rawequal(value, secret) end
@@ -52,10 +52,10 @@ local function float32(value)
     return math.ldexp(math.floor(fraction * 2^24 + 0.5) / 2^24, exponent)
 end
 function UnitHealthPercent(unit, predicted, curve)
-    check(unit == "player" and predicted == false and curve ~= nil, "Native curve arguments wrong")
+    check(unit == "player" and predicted == true and curve ~= nil, "Native curve arguments wrong")
     healthCalls = healthCalls + 1
     if healthError then error("Native health display unavailable") end
-    nativeAlpha = curve:Evaluate(float32(healthRatio))
+    nativeAlpha = curve:Evaluate(float32(predicted and healthRatio or reportedHealthRatio or healthRatio))
     return healthResult
 end
 for _, name in ipairs({ "UseItemByName", "UseInventoryItem", "CastSpellByName", "SetBinding", "SetBindingClick",
@@ -194,7 +194,7 @@ local function loadTools(settings)
     combat, encounter, raid, grouped, groupCount, groupCombat, exists = false, false, false, false, 0, {}, {}
     dead, petExistsUnknown, petCombatUnknown = false, false, false
     offer, recovery, healthResult, healthError, itemError = "Healer", 0, secret, false, false
-    healthRatio, nativeAlpha = .35, nil
+    healthRatio, reportedHealthRatio, nativeAlpha = .35, nil, nil
     profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40 } }
     RA = {
         NormalizeReminderText = coreTextRA.NormalizeReminderText,
@@ -501,6 +501,13 @@ for _,eventName in ipairs({"UNIT_HEALTH","UNIT_MAXHEALTH"}) do
     healthRatio=.8;events[eventName](eventName,"player")
     check(frames[1].renderAlpha==0,"Recovery waited for a timer/animation phase")
 end
+-- Predicted native health can already be low while server-reported health
+-- remains above the setting. Never read/compare either in addon code.
+reportedHealthRatio,healthRatio=.75,.59
+local priorItems=itemCalls
+events.UNIT_HEALTH("UNIT_HEALTH","player")
+check(frames[1].renderAlpha==1 and itemCalls==priorItems,"Reminder opted out of native predicted health")
+reportedHealthRatio=nil
 -- UTF-8 limits agree across setter/getter and the actual profile normalizer.
 for _, entry in ipairs({
     {string.rep("界",21), string.rep("界",21)},

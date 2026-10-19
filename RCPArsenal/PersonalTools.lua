@@ -244,8 +244,10 @@ local function ApplyHealthAlpha()
     end
     -- The live result exists only as an argument to its documented display
     -- sink. Never compare, format, convert, store, read back, or branch on it.
+    -- Match native health bars' default predicted-health path. Opting out can
+    -- lag their displayed health; prediction and the curve stay in-engine.
     local ok = pcall(function()
-        reminder:SetAlpha(UnitHealthPercent("player", false, curve))
+        reminder:SetAlpha(UnitHealthPercent("player", true, curve))
     end)
     if not ok then HideReminder("Native health display unavailable; visual suppressed.") else StartBounce() end
 end
