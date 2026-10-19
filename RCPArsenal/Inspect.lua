@@ -68,13 +68,13 @@ local function KnownRole(value)
     return not IsSecret(value) and (value == "TANK" or value == "HEALER" or value == "DAMAGER")
 end
 local function Epoch() return Cache and Cache:Now() or (time and time()) end
-local function UnitNameWithRealm(unit)
+local function UnitNameWithRealm(unit, allowSaved)
     if UnitFullName then
         local base, realm = UnitFullName(unit)
         if IsSecret(base) or IsSecret(realm) then return nil end
         if type(base) == "string" and base ~= "" and (realm == nil or realm == "") then
             local guid = UnitGUID(unit)
-            local previous = Cache and RA:IsInspectionEnabled() and Cache:ResolveName(guid, base)
+            local previous = Cache and (allowSaved == true or RA:IsInspectionEnabled()) and Cache:ResolveName(guid, base)
             if previous then return previous end
             if not IsSecret(guid) and type(guid) == "string" then
                 for name, info in pairs(RA.Roster or {}) do
@@ -89,6 +89,9 @@ local function UnitNameWithRealm(unit)
     local realm = GetNormalizedRealmName and GetNormalizedRealmName() or (GetRealmName and GetRealmName())
     if IsSecret(realm) or type(realm) ~= "string" or realm == "" then return nil end
     return name .. "-" .. realm:gsub("%s", "")
+end
+function RA:GetInspectionUnitName(unit, allowSaved)
+    return UnitNameWithRealm(unit, allowSaved)
 end
 local function InvalidateGUID(guid)
     if IsSecret(guid) or type(guid) ~= "string" then return end
@@ -225,13 +228,16 @@ local function AddSpellAlias(spellSet, spellID, specID)
     MergeSpellSet(spellSet, cached)
 end
 
-local function AddEntrySpell(spellSet, configID, entryID, specID)
+local function AddEntrySpell(spellSet, configID, entryID, specID, requireReadable)
     if type(entryID) ~= "number" or not C_Traits then
         return false, false
     end
 
     local cacheKey = tostring(specID or 0) .. ":" .. tostring(entryID)
     local cached = entryAliasCache[cacheKey]
+    -- A prior partial local read must not stand in for currently readable
+    -- selected entries when deciding whether startup data is complete.
+    if requireReadable then cached = nil end
     if cached == false then
         return false, true
     end
@@ -346,7 +352,7 @@ local function BuildInspectSpellSet(specID, localConfigID)
                 end
 
                 for entryID in pairs(selectedEntries) do
-                    local included, available = AddEntrySpell(selectedSpellSet, configID, entryID, specID)
+                    local included, available = AddEntrySpell(selectedSpellSet, configID, entryID, specID, localConfigID ~= nil)
                     if localConfigID and not available then return nil, nil, "local talent definitions unavailable" end
                     if included then
                         selectedEntryCount = selectedEntryCount + 1
@@ -368,7 +374,10 @@ function RA:IsRaidGroupIgnored(subgroup)
     return db and db.ignoredRaidGroups and db.ignoredRaidGroups[subgroup] == true
 end
 
-function RA:RefreshRoster()
+function RA:RefreshRoster(restoreSaved)
+    -- Explicit roster planning may reuse saved facts with the HUD disabled.
+    -- This only reconciles ordinary identity/facts; it never schedules scans.
+    local allowSaved = self:IsInspectionEnabled() or restoreSaved == true
     local previousRoster = self.Roster or {}
     local roster = {}
     local order = {}
@@ -379,7 +388,7 @@ function RA:RefreshRoster()
             return
         end
 
-        local fullName = UnitNameWithRealm(unit)
+        local fullName = UnitNameWithRealm(unit, allowSaved)
         local guid = UnitGUID(unit)
         if not fullName or not guid or IsSecret(fullName) or IsSecret(guid) then
             return
@@ -398,7 +407,7 @@ function RA:RefreshRoster()
         end
         local prior = previousRoster[fullName]
         if prior and prior.guid ~= guid then prior = nil end
-        local saved = Cache and self:IsInspectionEnabled() and Cache:Get(guid, fullName, classFile, role) or nil
+        local saved = Cache and allowSaved and Cache:Get(guid, fullName, classFile, role) or nil
         classFile = classFile or (old and old.class) or (saved and saved.class) or (prior and prior.class)
         role = role or (old and old.role) or (saved and saved.role) or (prior and prior.role)
         local connected = true
@@ -476,7 +485,7 @@ function RA:RefreshRoster()
     self.Roster = roster
     self.RosterOrder = order
     self.IgnoredRosterCount = ignoredCount
-    if Cache and self:IsInspectionEnabled() then
+    if Cache and allowSaved then
         Cache:RestoreRoster(roster, self.Reports)
         for name, report in pairs(self.Reports) do
             if report.cached and roster[name] and not self.InspectStatus[name] then SetInspectStatus(name, "CACHED", "last confirmed in an earlier lifecycle") end

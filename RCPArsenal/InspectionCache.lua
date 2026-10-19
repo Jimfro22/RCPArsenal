@@ -4,6 +4,24 @@ RA.InspectionCache = Cache
 local initialized = false
 local blocked = {}
 local classes = {WARRIOR=true,PALADIN=true,HUNTER=true,ROGUE=true,PRIEST=true,DEATHKNIGHT=true,SHAMAN=true,MAGE=true,WARLOCK=true,MONK=true,DRUID=true,DEMONHUNTER=true,EVOKER=true}
+-- Supported 12.1 player specializations, matching Blizzard's
+-- ClassSpecializationsFrame.lua SPEC_FORMAT_STRINGS (b9be9379719047977fca4dba1bb1d9988e8840b3).
+-- Unknown future specs require a reviewed catalog update before saved reuse.
+local specClasses = {
+    [250]="DEATHKNIGHT",[251]="DEATHKNIGHT",[252]="DEATHKNIGHT",
+    [577]="DEMONHUNTER",[581]="DEMONHUNTER",[1480]="DEMONHUNTER",
+    [102]="DRUID",[103]="DRUID",[104]="DRUID",[105]="DRUID",
+    [1467]="EVOKER",[1468]="EVOKER",[1473]="EVOKER",
+    [253]="HUNTER",[254]="HUNTER",[255]="HUNTER",
+    [62]="MAGE",[63]="MAGE",[64]="MAGE",
+    [268]="MONK",[269]="MONK",[270]="MONK",
+    [65]="PALADIN",[66]="PALADIN",[70]="PALADIN",
+    [256]="PRIEST",[257]="PRIEST",[258]="PRIEST",
+    [259]="ROGUE",[260]="ROGUE",[261]="ROGUE",
+    [262]="SHAMAN",[263]="SHAMAN",[264]="SHAMAN",
+    [265]="WARLOCK",[266]="WARLOCK",[267]="WARLOCK",
+    [71]="WARRIOR",[72]="WARRIOR",[73]="WARRIOR",
+}
 local roles = {TANK=true,HEALER=true,DAMAGER=true}
 local evidenceTypes = {SELECTED_TALENT=true,BASELINE_SPEC=true,GUARANTEED_CLASS=true}
 local function Secret(value) return type(issecretvalue)=="function" and issecretvalue(value) end
@@ -32,7 +50,7 @@ local function Sanitize(entry,now)
     local revision=Number(entry.classRevision,1,100000)
     if Secret(entry.catalogVersion) or entry.catalogVersion~=RA.CATALOG_VERSION then return nil end
     local confirmed=Number(entry.confirmedAt,1,4102444800)
-    if not spec or not revision or revision~=RA:GetClassCatalogRevision(class) or not confirmed or confirmed>now+300 or now-confirmed>Cache.RETENTION_SECONDS then return nil end
+    if not spec or specClasses[spec]~=class or not revision or revision~=RA:GetClassCatalogRevision(class) or not confirmed or confirmed>now+300 or now-confirmed>Cache.RETENTION_SECONDS then return nil end
     if Secret(entry.role) or (entry.role~=nil and not Cache:IsKnownRole(entry.role)) then return nil end
     if Secret(entry.capabilities) or type(entry.capabilities)~="table" or Secret(entry.evidence) or type(entry.evidence)~="table" then return nil end
     local capabilities,evidence,count={},{},0

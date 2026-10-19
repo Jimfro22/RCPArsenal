@@ -60,8 +60,8 @@ local function Lifecycle(saved,options)
     env.C_ClassTalents={GetTraitTreeForSpec=function() world.talentReads=world.talentReads+1;return 1 end,
         GetActiveConfigID=function() return world.activeConfigID end,
         IsConfigPopulated=function() return world.localPopulated==true end}
-    env.C_Traits={HasValidInspectData=function() return world.inspected~=nil end,GetTreeNodes=function() return {1} end,
-        GetNodeInfo=function(configID) if configID~=-1 and world.localNodesReady==false then return nil end;return {activeRank=1,activeEntry={entryID=100},entryIDsWithCommittedRanks={100}} end,
+    env.C_Traits={HasValidInspectData=function() return world.inspected~=nil end,GetTreeNodes=function() return world.treeNodes or {1} end,
+        GetNodeInfo=function(configID,nodeID) if configID~=-1 and (world.localNodesReady==false or nodeID==world.localMissingNode) then return nil end;return {activeRank=1,activeEntry={entryID=100},entryIDsWithCommittedRanks={100}} end,
         GetEntryInfo=function(configID) if configID~=-1 and world.localDefinitionsReady==false then return nil end;return {definitionID=100} end,
         GetDefinitionInfo=function() return {spellID=world.units[world.inspected or "player"].spell} end}
     env.Enum={TraitNodeType={Selection=2}}
@@ -129,6 +129,9 @@ RA,E,W,Event,Advance=Lifecycle(off)
 for _,name in ipairs({"PLAYER_LOGIN","PLAYER_ENTERING_WORLD","GROUP_ROSTER_UPDATE","READY_CHECK","TRAIT_CONFIG_UPDATED","SPELLS_CHANGED","PLAYER_SPECIALIZATION_CHANGED","INSPECT_READY","PLAYER_REGEN_ENABLED"}) do Event(name,"party1") end
 Advance(30)
 check(#W.notify==0 and W.talentReads==0 and Count(RA.Reports)==0,"disabled/puck-only lifecycle started scan work")
+RA:RefreshRoster(true)
+check(RA:GetScanSummary().cached==3 and RA:GetScanSummary().confirmed==0 and RA.Reports["Healer-Realm"].specID==264,"explicit disabled roster planning failed to restore saved specs")
+check(not RA:IsInspectionEnabled() and #W.notify==0 and W.talentReads==0 and Count(W.timers)==0,"explicit saved roster read enabled collection, read talents, or scheduled timers")
 check(RA:SetHUDEnabled(true),"later explicit HUD enable failed");Advance(1)
 check(#W.notify==0 and RA:GetScanSummary().cached==2,"later enable did not restore cache before queue construction")
 
@@ -159,10 +162,13 @@ check(RA.Reports["Lead-Realm"]==selfReport,"missing active config replaced cache
 W.activeConfigID=7
 Event("TRAIT_CONFIG_UPDATED")
 check(RA.Reports["Lead-Realm"]==selfReport,"unpopulated local config replaced cached self")
-W.localPopulated=true;W.localNodesReady=false
+W.localPopulated=true;W.localNodesReady=false;W.treeNodes={1,2}
 Event("SPELLS_CHANGED")
 check(RA.Reports["Lead-Realm"]==selfReport,"unreadable local talent nodes replaced saved self")
-W.localNodesReady=true;W.localDefinitionsReady=false
+W.localNodesReady=true;W.localMissingNode=2
+Event("SPELLS_CHANGED")
+check(RA.Reports["Lead-Realm"]==selfReport,"partially readable local talents replaced saved self")
+W.localMissingNode=nil;W.localDefinitionsReady=false
 Event("TRAIT_CONFIG_UPDATED")
 check(RA.Reports["Lead-Realm"]==selfReport,"unavailable local definitions replaced saved self")
 W.localDefinitionsReady=true
@@ -185,6 +191,11 @@ W.units.party1.realm="Away";Event("GROUP_ROSTER_UPDATE");Event("READY_CHECK");Ad
 check(#W.notify==0 and RA.Reports["Healer-Away"].cached,"known unchanged cross-realm identity rescanned saved member")
 W.units.party1.realm="Changed";Event("GROUP_ROSTER_UPDATE");Advance(1)
 check(#W.notify==1 and W.notify[1]=="party1" and not E.RaidArsenalDB.inspectionCache.entries["Player-2"],"explicit realm mismatch retained incompatible identity")
+realmSaved.profile.hudEnabled=false;realmUnits.party1.realm=nil
+RA,E,W,Event,Advance=Lifecycle(realmSaved,{units=realmUnits})
+check(RA:GetInspectionUnitName("party1",true)=="Healer-Away","explicit disabled snapshot could not resolve saved qualified identity")
+RA:RefreshRoster(true)
+check(RA.Roster["Healer-Away"] and RA.Reports["Healer-Away"].cached and #W.notify==0 and W.talentReads==0 and Count(W.timers)==0,"explicit cross-realm saved roster read started collection or lost identity")
 
 -- A new or definite changed identity targets only the affected GUID.
 RA,E,W,Event,Advance,Reply=Lifecycle(saved)
@@ -238,6 +249,8 @@ for _,mutate in ipairs({
     function(s) s.inspectionCache.entries["Player-2"].source="DEMO" end,
     function(s) s.inspectionCache.entries["Player-2"].capabilities={invented=true} end,
     function(s) s.inspectionCache.entries["Player-2"].evidence={} end,
+    function(s) local row=s.inspectionCache.entries["Player-2"];row.specID=72;row.capabilities={};row.evidence={roleOnly=true} end,
+    function(s) local row=s.inspectionCache.entries["Player-2"];row.specID=99999;row.capabilities={};row.evidence={roleOnly=true} end,
 }) do
     local broken=Copy(saved);mutate(broken)
     RA,E,W,Event,Advance=Lifecycle(broken)
@@ -257,6 +270,9 @@ check(not cache:Store(fake),"DEMO persisted")
 fake=Copy(RA.Reports["Lead-Realm"]);fake.source="ERROR";check(not cache:Store(fake),"error report persisted")
 fake.source="LOCAL";fake.name=W.secret;check(not cache:Store(fake),"secret identity persisted")
 fake.name="Lead-Realm";fake.verified=W.secret;check(not cache:Store(fake),"secret verification persisted")
+fake.verified=true;fake.capabilities={};fake.evidence={roleOnly=true};fake.class="SHAMAN";fake.classRevision=RA:GetClassCatalogRevision("SHAMAN");fake.specID=72
+check(not cache:Store(fake),"impossible live class/spec pair persisted")
+fake.specID=99999;check(not cache:Store(fake),"unknown live spec persisted")
 fake.verified=true;fake.capabilities=7;check(not cache:Store(fake),"malformed capabilities accepted")
 fake.capabilities={};fake.evidence=7;check(not cache:Store(fake),"malformed evidence accepted")
 fake.evidence={};E.time=function() return nil end;check(not cache:Store(fake),"missing epoch accepted")
