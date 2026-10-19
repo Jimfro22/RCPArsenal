@@ -1,6 +1,6 @@
 # Visual consumable reminders and manual supplies — 0.15.3-alpha.3
 
-Owner-selected scope: visual warnings only; sounds are deferred. Fresh reminder profiles remain OFF. Existing opt-in, threshold, anchor, other tools, profiles, font/logo repair and keybindings are retained. Schema remains 19. The earlier generic-icon-with-empty-bags experiment was local only and is not an ancestor of this change. The owner confirmed the prior reminder worked after buying potions; no blanket trigger failure is claimed.
+This records the alpha.3 visual/supply implementation. Alpha.4 adds an independent optional [native-warning sound](NATIVE_WARNING_AUDIO.md); the configurable visual, inventory map and manual supply protocol below remain unchanged. Fresh reminder profiles remain OFF. Existing opt-in, threshold, anchor, other tools, profiles, font/logo repair and keybindings are retained. Schema remains 19. The earlier generic-icon-with-empty-bags experiment was local only and is not an ancestor of this change. The owner confirmed the prior reminder worked after buying potions; no blanket trigger failure is claimed.
 
 ## Local reminder
 
