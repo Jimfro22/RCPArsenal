@@ -5,12 +5,17 @@ RA.HealingSupplies = Supplies
 -- Reviewed baseline 2026-10-19. Item/use-spell families are data, not a
 -- universal healing classifier. Unknown potion families stay unknown.
 -- Evidence and limits: docs/HEALING_SUPPLIES.md. No third-party code/assets.
-Supplies.MAP_REVISION = 1
-Supplies.MAP_VERSION = "2026-10-19.1"
+Supplies.MAP_REVISION = 2
+Supplies.MAP_VERSION = "2026-10-19.2"
 Supplies.MAX_SLOTS_PER_BAG = 100
+Supplies.MAX_CANDIDATES = 32
 local stones = { [224464] = 1, [5512] = 2 }
-local potions = { [271884] = 1, [271883] = 2, [241304] = 3, [241305] = 4 }
-local healingSpells = { [1295247] = true, [1234768] = true }
+local potions = {}
+-- Facts from AutoPotion 80196daa plus independently verified use-spell records;
+-- independently authored ranking/selection, not imported addon logic.
+for rank, id in ipairs({271884, 271883, 245918, 241304, 245919, 241305,
+    244849, 244839, 244838, 244835, 212944, 211880, 212943, 211879, 212942, 211878}) do potions[id] = rank end
+local healingSpells = { [1295247] = true, [1234768] = true, [1238009] = true, [431416] = true }
 local otherPotions = { [241300] = true, [241288] = true, [241308] = true }
 local otherSpells = { [1236648] = true, [1236994] = true, [1236616] = true }
 local function Secret(value) return type(issecretvalue) == "function" and issecretvalue(value) end
@@ -44,13 +49,13 @@ end
 -- Presence is independent of stack count/Healthstone charges. Results with
 -- unreadable slots never assert absence. Positive evidence remains carried.
 function Supplies:Snapshot()
-    local result = { mapRevision = self.MAP_REVISION, slots = 0, pending = {} }
+    local result = { mapRevision = self.MAP_REVISION, slots = 0, pending = {}, candidates = {} }
     if type(issecretvalue) ~= "function" or not C_Container
         or type(C_Container.GetContainerNumSlots) ~= "function"
         or type(C_Container.GetContainerItemID) ~= "function"
         or type(C_Container.GetContainerItemInfo) ~= "function" then return result end
     local incomplete, unknownStone, unknownPotion, classification = false, false, false, {}
-    local chosen, chosenRank
+    local seen = {}
     for bag = 0, 5 do -- Backpack, four equipped bags, reagent bag; never a bank.
         local ok, slots = pcall(C_Container.GetContainerNumSlots, bag)
         slots = Integer(slots, 0, self.MAX_SLOTS_PER_BAG)
@@ -81,10 +86,11 @@ function Supplies:Snapshot()
                             else
                                 result[entry.kind] = true
                                 local rank = entry.kind == "stone" and entry.rank or 1000 + entry.rank
-                                if not chosenRank or rank < chosenRank then
+                                if not seen[id] then
+                                    seen[id] = true
                                     local icon = Integer(info.iconFileID, 1, 2147483647)
-                                    chosen, chosenRank = { id = id, kind = entry.kind,
-                                        icon = icon or (entry.kind == "stone" and "Interface\\Icons\\INV_Stone_04" or "Interface\\Icons\\INV_Potion_51") }, rank
+                                    result.candidates[#result.candidates + 1] = { id = id, kind = entry.kind, rank = rank,
+                                        icon = icon or (entry.kind == "stone" and "Interface\\Icons\\INV_Stone_04" or "Interface\\Icons\\INV_Potion_51") }
                                 end
                             end
                         end
@@ -96,6 +102,12 @@ function Supplies:Snapshot()
     if result.stone ~= true and not incomplete and not unknownStone then result.stone = false end
     if result.potion ~= true and not incomplete and not unknownPotion then result.potion = false end
     result.partial = incomplete or unknownStone or unknownPotion
+    table.sort(result.candidates, function(a, b) return a.rank == b.rank and a.id < b.id or a.rank < b.rank end)
+    while #result.candidates > self.MAX_CANDIDATES do
+        result.candidatesTruncated = true
+        table.remove(result.candidates)
+    end
+    local chosen = result.candidates[1]
     result.itemID, result.kind, result.icon = chosen and chosen.id, chosen and chosen.kind, chosen and chosen.icon
     return result
 end

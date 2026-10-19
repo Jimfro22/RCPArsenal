@@ -13,7 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 ADDON = ROOT / "RCPArsenal"
 BASELINE = ROOT / "provenance" / "baseline-0.14.1.json"
-ALLOWED_SUFFIXES = {".lua", ".toc", ".xml", ".tga", ".blp", ".png", ".md", ".txt"}
+ALLOWED_SUFFIXES = {".lua", ".toc", ".xml", ".tga", ".blp", ".png", ".md", ".txt", ".ogg"}
 
 
 def sha256(data):
@@ -39,6 +39,20 @@ def collect(check_baseline):
         if path.suffix.lower() not in ALLOWED_SUFFIXES:
             raise ValueError(f"Unreviewed file type in addon payload: {name}")
         payload[name] = path.read_bytes()
+
+    # Only reviewed user-provided audio may enter an install ZIP. Hash validation
+    # also rejects a missing/truncated/replaced sound without guessing native
+    # file availability from a PlaySound return value.
+    audio_manifest = json.loads((BASELINE.parent / "user-alert-audio/manifest.json").read_text())
+    audio = {"RCPArsenal/Media/Audio/" + Path(entry["export"]).name: entry["sha256"] for entry in audio_manifest["files"]}
+    for name in payload:
+        if name.lower().endswith(".ogg") and name not in audio:
+            raise ValueError(f"Unreviewed sound asset: {name}")
+    for name, expected in audio.items():
+        if name not in payload:
+            raise ValueError(f"Missing reviewed sound asset: {name}")
+        if sha256(payload[name]) != expected:
+            raise ValueError(f"Sound asset hash differs: {name}")
 
     toc = payload["RCPArsenal/RCPArsenal.toc"].decode("utf-8-sig")
     meta = dict(re.findall(r"^##\s*([^:]+):\s*(.+)$", toc, re.MULTILINE))

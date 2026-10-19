@@ -88,4 +88,11 @@ check(scans==2 and sent[2].packet=='R|1|abc-2-1|1|u|u','Unknown inventory report
 setup();for i=1,100 do recv('Q|1|abc-'..string.format('%x',i)..'-1|1','Member-Realm','RAID') end
 check(rosterCalls==8 and scans==0,'Unapproved inbound query work not bounded')
 setup();combat=secret;recv('Q|1|abc-1-1|1','Assist-Realm','RAID');check(scans==0 and rosterCalls==0,'Secret combat allowed request')
+setup();RA.HealingSupplies.MAP_REVISION=2
+check(S:Query() and sent[1].packet:match('|2$'),"Expanded map request falsely advertises revision 1")
+local n=sent[1].packet:match('^Q|1|([^|]+)|2$')
+recv('R|1|'..n..'|1|0|0')
+check(S:GetSnapshot().rows[2].status=='no_reply',"Old map zero accepted as current known absence")
+recv('R|1|'..n..'|2|1|0')
+check(S:GetSnapshot().rows[2].stone==true and S:GetSnapshot().rows[2].potion==false,"Matching map reply failed")
 print('PASS: '..checks..' manual supply protocol assertions (actual module; bounded offline mocks)')

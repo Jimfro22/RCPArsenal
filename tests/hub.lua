@@ -360,13 +360,13 @@ check(db.position == navPosition and db.leaderToolbox.position == navPuckPositio
     db.leaderToolbox.position.x == navPuckX and db.leaderToolbox.position.y == navPuckY and db.scale == navScale,
     'Opening settings changed saved geometry')
 check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
-check(hasVisibleText("Uses your carried Healthstone first, then a healing potion. Cooldown readiness isn't checked."), 'Reminder copy claims readiness')
-check(hasVisibleText('SHOW REMINDER') and hasVisibleText('ICON SIZE') and hasVisibleText('TEXT SIZE'), 'Everyday controls hidden')
+check(hasVisibleText("Prefers a ready Healthstone, then a ready healing potion. Use your own item/macro key."), 'Reminder copy claims readiness')
+check(hasVisibleText('SHOW REMINDER') and hasVisibleText('ICON SIZE') and hasVisibleText('TEXT SIZE') and hasVisibleText('EMPTY WARNING SIZE'), 'Everyday controls hidden')
 check(not hasVisibleText('HEALTHSTONE TEXT') and clickVisible('REMINDER TEXT & SOUND +'), 'Text details not initially collapsed')
 check(hasVisibleText('HEALTHSTONE TEXT') and hasVisibleText('HEALING POTION TEXT') and hasVisibleText('PREVIEW SAMPLE'), 'Message/sample options missing')
-check(hasVisibleText('Low-health sound') and hasVisibleText('Native warning - normally 35%'), 'Native audio scope/setting missing')
-check(hasVisibleText('Separate from your visual threshold; Blizzard UI settings apply.'), 'Audio threshold distinction missing')
-check(hasVisibleText('Low with neither supported item: OUT OF POTIONS until recovery or replenishment.') and not hasVisibleText('RAID SUPPLIES'), 'Expanded audio/raid label overlap or empty explanation missing')
+check(hasVisibleText('Low-health sound') and hasVisibleText('Native warning ~35%'), 'Native audio scope/setting missing')
+check(hasVisibleText('CHANNEL'), 'Audio threshold distinction missing')
+check(hasVisibleText('Empty bags: large OUT OF POTIONS! text, with the icon hidden.') and not hasVisibleText('RAID SUPPLIES'), 'Expanded audio/raid label overlap or hide-empty explanation missing')
 local audioToggle
 for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Low-health sound' and obj.switch then audioToggle=obj end end
 check(audioToggle~=nil and RA:GetDB().personalTools.reminderSound==true, 'Default native sound preference missing')
@@ -375,11 +375,16 @@ check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalT
 local oldKit,oldPlaySound=SOUNDKIT,PlaySound
 local previews,beforeSoundTimers,beforeSoundSent=0,#timers,sent
 SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
-PlaySound=function(id,...) check(id==12889 and select('#',...)==0,'Preview changed native sound parameters');previews=previews+1;return true,7777 end
+PlaySound=function(id,channel,...) check(id==12889 and channel=='SFX' and select('#',...)==0,'Preview did not use explicit SFX route');previews=previews+1;return true,7777 end
 check(clickVisible('PREVIEW SOUND') and previews==1, 'Explicit sound preview failed')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder
     and #timers==beforeSoundTimers and sent==beforeSoundSent, 'Audio preview changed opt-in or started timer/network work')
 SOUNDKIT,PlaySound=oldKit,oldPlaySound
+local beforeChoiceSounds=previews
+check(clickVisible('Built-in alert  v') and hasVisibleText('Sound 1'), 'Sound dropdown did not open')
+check(clickVisible('Sound 1') and RA:GetDB().personalTools.reminderSoundChoice=='sound_1', 'Sound selection did not save curated ID')
+check(previews==beforeChoiceSounds and not RA:GetDB().personalTools.consumableReminder, 'Selection played sound or enabled reminder')
+check(hasVisibleText('Show while on cooldown') and RA:GetDB().personalTools.reminderShowOnCooldown==false, 'Show-on-cooldown default/control wrong')
 local personalSnapshot=RA:GetDB().personalTools
 local pos=personalSnapshot.reminderPosition
 RA.PersonalTools:SetOption('reminderStoneText','Stone now')

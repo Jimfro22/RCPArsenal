@@ -39,6 +39,21 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing TOC load entry"):
             self.module.collect(False)
 
+    def test_missing_reviewed_sound_is_rejected(self):
+        (self.module.ADDON / "Media/Audio/RCP_Sound01.ogg").unlink()
+        with self.assertRaisesRegex(ValueError, "Missing reviewed sound asset"):
+            self.module.collect(False)
+
+    def test_modified_reviewed_sound_is_rejected(self):
+        (self.module.ADDON / "Media/Audio/RCP_Sound01.ogg").write_bytes(b"truncated")
+        with self.assertRaisesRegex(ValueError, "Sound asset hash differs"):
+            self.module.collect(False)
+
+    def test_unreviewed_sound_is_rejected(self):
+        (self.module.ADDON / "Media/Audio/fixture.ogg").write_bytes(b"fixture")
+        with self.assertRaisesRegex(ValueError, "Unreviewed sound asset"):
+            self.module.collect(False)
+
     def test_symlink_payload_is_rejected(self):
         (self.module.ADDON / "fixture.lua").symlink_to(ROOT / "tools/package.py")
         with self.assertRaisesRegex(ValueError, "Symlinks"):
