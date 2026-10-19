@@ -12,6 +12,7 @@ function RA:CreateNorthernSkyPane(parent, kit)
     local panels, tabs, profileRows, sectionButtons, placementInputs = {}, {}, {}, {}, {}
     local message, confirmation, confirmTitle, confirmBody, confirmAction
     local recoveryOverlay, recoveryBox, recoveryTitle, recoveryData, recoveryKind = nil, nil, nil, nil, "originalExport"
+    local recoveryChoices = {}
     local placementSample
     local function Literal(value)
         return type(value) == "string" and value:gsub("|", "||") or "Unknown"
@@ -63,7 +64,9 @@ function RA:CreateNorthernSkyPane(parent, kit)
     end
     local function ReleaseUndo(kind)
         local expected = kind == "recovery" and currentStatus.recovery and currentStatus.recovery.token or currentStatus.context
-        Confirm("Keep current state and release Arsenal undo?", "Northern Sky will stay exactly as it is. Arsenal will forget this session's previous undo or recovery record, so it can no longer restore that backup. Copy any recovery text first. No Northern Sky setting is changed by this action.", function()
+        local backupKind = kind == "recovery" and currentStatus.recovery and currentStatus.recovery.kind or kind
+        local label = ({note = "note", profile = "profile", placement = "placement"})[backupKind] or "recovery"
+        Confirm("Keep current state and release " .. label .. " backup?", "Northern Sky will stay exactly as it is. Arsenal will forget this session's " .. label .. " undo or recovery record, so it can no longer restore that backup. Copy any recovery text first. No Northern Sky setting is changed by this action.", function()
             local ok, reason = A:ReleaseUndo(kind, expected); Say(ok, reason)
         end)
     end
@@ -277,6 +280,29 @@ function RA:CreateNorthernSkyPane(parent, kit)
     Width(placementReason, 590)
     Text(placementCard, "Adjust position, dimensions, and text size for this local profile.", 10.5, 20, -348, 900)
 
+    local function RecoveryText(kind)
+        if not recoveryData then return nil end
+        if kind ~= "placement" then
+            local value = recoveryData[kind]
+            return type(value) == "string" and value or nil
+        end
+        local placement = recoveryData.placement
+        if type(placement) ~= "table" or type(placement.values) ~= "table" then return nil end
+        local lines = {"Northern Sky placement backup", "Profile: " .. tostring(recoveryData.original or "Unknown"),
+            "Section: " .. tostring(placement.label or placement.section or "Unknown")}
+        for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "TimerFontSize", "Size"}) do
+            local value = placement.values[key]
+            lines[#lines + 1] = key .. " = " .. (value == nil and "unset" or tostring(value))
+        end
+        return table.concat(lines, "\n")
+    end
+    local function SelectRecovery(kind)
+        recoveryKind = kind
+        recoveryBox:SetText(RecoveryText(kind) or "")
+        for key, button in pairs(recoveryChoices) do
+            Enable(button, RecoveryText(key) ~= nil); button:SetSelected(key == kind)
+        end
+    end
     local function ShowRecovery()
         local ok, reason, data = A:GetRecoveryBackup()
         if not ok then Say(false, reason); return end
@@ -291,13 +317,12 @@ function RA:CreateNorthernSkyPane(parent, kit)
             card:EnableMouse(true); kit.Backdrop(card, C.surface, C.lineStrong, 14, true)
             recoveryTitle = Text(card, "", 12, 20, -20, 740, C.text)
             recoveryBox = Editor(card, 20, -120, 740, 270, 0)
-            local choices = {{"originalExport","ORIGINAL PROFILE EXPORT"},{"shared","SHARED NOTE BACKUP"},{"personal","PERSONAL NOTE BACKUP"}}
+            local choices = {{"originalExport","ORIGINAL PROFILE EXPORT"},{"shared","SHARED NOTE BACKUP"},{"personal","PERSONAL NOTE BACKUP"},{"placement","PLACEMENT SETTINGS"}}
             for i, choice in ipairs(choices) do
-                local button = kit.Button(card, choice[2], 238, 30, function()
-                    recoveryKind = choice[1]
-                    recoveryBox:SetText(recoveryData and recoveryData[recoveryKind] or "")
-                end)
-                Point(button, "TOPLEFT", card, "TOPLEFT", 20+(i-1)*250, -76)
+                local key = choice[1]
+                local button = kit.Button(card, choice[2], 179, 30, function() SelectRecovery(key) end)
+                recoveryChoices[key] = button
+                Point(button, "TOPLEFT", card, "TOPLEFT", 20+(i-1)*187, -76)
             end
             Text(card, "Local backup only. Select/copy it before repair or releasing this record.", 9.8, 20, -396, 700)
             local release = kit.Button(card, "KEEP CURRENT / RELEASE BACKUP", 310, 32, function()
@@ -309,8 +334,11 @@ function RA:CreateNorthernSkyPane(parent, kit)
             local close = kit.Button(card, "CLOSE", 140, 32, function() recoveryOverlay:Hide() end)
             Point(close, "BOTTOMRIGHT", card, "BOTTOMRIGHT", -20, 18)
         end
-        recoveryTitle:SetText("Recovery backup · original " .. Literal(data.original) .. " · observed " .. Literal(data.observedProfile) .. "\n" .. Literal(data.phase) .. ": " .. Literal(data.reason))
-        recoveryBox:SetText(data[recoveryKind] or "")
+        local label = ({note = "Note", profile = "Profile", placement = "Placement"})[data.kind] or "Profile"
+        recoveryTitle:SetText(label .. " recovery backup · original " .. Literal(data.original) .. " · observed " .. Literal(data.observedProfile) .. "\n" .. Literal(data.phase) .. ": " .. Literal(data.reason))
+        local initial = data.kind == "placement" and "placement" or (data.kind == "note" and "shared" or "originalExport")
+        if RecoveryText(initial) == nil then initial = "shared" end
+        SelectRecovery(initial)
         recoveryOverlay:Show()
     end
     local recoveryEntry = kit.Button(parent, "RECOVERY BACKUP", 210, 30, ShowRecovery)

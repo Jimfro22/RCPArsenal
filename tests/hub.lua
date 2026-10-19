@@ -343,10 +343,10 @@ local noteWrites, profileWrites, placementWrites, selections = 0,0,0,0
 local nsrtContext, sharedText = 'ui-1', 'Shared runtime original'
 local noteUndo, profileUndo, placementUndo = false,false,false
 local restoreCalls, releaseCalls = 0,0
-local savedText
+local savedText, recoveryFixture
 local capabilities = {notes=true,profiles=true,applyNote=true,applyProfile=true,placement=true,setPlacement=true,openSettings=true}
 function adapter:GetStatus()
-    return {available=true,version='12.1.32',compatible=true,profile='Original',context=nsrtContext,capabilities=capabilities,reasons={},canRestoreNote=noteUndo,canRestoreProfile=profileUndo,canRestorePlacement=placementUndo,hasNoteBackup=noteUndo,hasProfileBackup=profileUndo,hasPlacementBackup=placementUndo}
+    return {available=true,version='12.1.32',compatible=true,profile='Original',context=nsrtContext,capabilities=capabilities,reasons={},canRestoreNote=noteUndo,canRestoreProfile=profileUndo,canRestorePlacement=placementUndo,hasNoteBackup=noteUndo,hasProfileBackup=profileUndo,hasPlacementBackup=placementUndo,recovery=recoveryFixture}
 end
 function adapter:Refresh() return true end
 function adapter:GetNotes() return true,nil,{personal='Personal text',shared=sharedText,profile='Original',activeName='Raid note',context=nsrtContext} end
@@ -365,7 +365,14 @@ function adapter:RestoreLastNote(context)
 end
 function adapter:RestoreLastProfile(context) check(context == nsrtContext, 'Profile restore UI omitted/freshened expected context'); restoreCalls=restoreCalls+1; profileUndo=false; return true end
 function adapter:RestoreLastPlacement(context) check(context == nsrtContext, 'Placement restore UI omitted expected context'); restoreCalls=restoreCalls+1; placementUndo=false; return true end
-function adapter:ReleaseUndo(kind,context) check(kind == 'note' and context == nsrtContext, 'Keep Current UI lost kind/context'); releaseCalls=releaseCalls+1; noteUndo=false; return true end
+function adapter:GetRecoveryBackup() return recoveryFixture ~= nil,nil,recoveryFixture end
+function adapter:ReleaseUndo(kind,context)
+    if kind == 'recovery' then
+        check(recoveryFixture and context == recoveryFixture.token, 'Recovery release UI lost record token')
+        recoveryFixture=nil
+    else check(kind == 'note' and context == nsrtContext, 'Keep Current UI lost kind/context'); noteUndo=false end
+    releaseCalls=releaseCalls+1; return true
+end
 function adapter:GetPlacement(section)
     return true,nil,{label='Test placement',context=nsrtContext,values={Anchor='CENTER',relativeTo='CENTER',xOffset=0,yOffset=0,Width=200,Height=40},fields={
         {key='Anchor',label='Anchor',options={'CENTER','TOP'}},{key='relativeTo',label='Relative',options={'CENTER','TOP'}},
@@ -416,6 +423,33 @@ check(clickVisible('RESTORE LAST') and clickVisible('CONFIRM') and restoreCalls 
 check(clickVisible('PREVIEW PLACEMENT'), 'Placement sample did not reopen')
 RA:CloseConfig()
 check(not named.RCPArsenalNSRTPlacementSample:IsShown(), 'Closing hub left NSRT placement sample visible')
+local function recoveryEditor(fragment)
+    for _,obj in ipairs(objects) do
+        if obj.kind == 'EditBox' and obj:IsVisible() and (obj:GetText() or ''):find(fragment,1,true) then return obj end
+    end
+end
+RA:OpenConfig('NORTHERNSKY')
+recoveryFixture={kind='note',token='failed-note-token',original='Original',observedProfile='Original',phase='note-activation-failed',reason='Newer note retained',shared='Previous shared note recovery',personal='Previous personal note recovery'}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP') and recoveryEditor('Previous shared note recovery'), 'Note recovery did not default to the shared backup from Notes')
+check(not clickVisible('ORIGINAL PROFILE EXPORT') and not clickVisible('PLACEMENT SETTINGS'), 'Note recovery offered unavailable export/placement content')
+check(clickVisible('PERSONAL NOTE BACKUP') and recoveryEditor('Previous personal note recovery'), 'Personal recovery backup was not selectable')
+check(clickVisible('CLOSE'), 'Note recovery could not close')
+recoveryFixture={kind='placement',token='failed-placement-token',original='Original',observedProfile='Original',phase='placement-refresh-failed',reason='Newer placement retained',shared='Shared backup',personal='Personal backup',placement={section='BarSettings',label='Bars',values={Anchor='TOPRIGHT',relativeTo='CENTER',xOffset=-83,yOffset=41,Width=287,Height=29,TimerFontSize=17}}}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP'), 'Placement recovery was not reachable from Notes')
+local placementBackupEditor=recoveryEditor('Northern Sky placement backup')
+check(placementBackupEditor and placementBackupEditor:GetText():find('Section: Bars',1,true) and placementBackupEditor:GetText():find('Anchor = TOPRIGHT',1,true)
+    and placementBackupEditor:GetText():find('xOffset = -83',1,true) and placementBackupEditor:GetText():find('Width = 287',1,true)
+    and placementBackupEditor:GetText():find('TimerFontSize = 17',1,true) and placementBackupEditor:GetText():find('FontSize = unset',1,true), 'Placement recovery omitted copyable prior coordinates/dimensions/font or unset fields')
+check(not clickVisible('ORIGINAL PROFILE EXPORT') and clickVisible('SELECT TEXT') and placementBackupEditor:HasFocus(), 'Placement recovery offered missing export or could not select backup text')
+check(clickVisible('KEEP CURRENT / RELEASE BACKUP') and releaseCalls == 1 and hasVisibleText('Keep current state and release placement backup?'), 'Placement release skipped review or identified the wrong backup')
+check(clickVisible('CONFIRM') and releaseCalls == 2 and not recoveryFixture, 'Placement recovery could not release its exact record')
+recoveryFixture={kind='profile',token='profile-token',original='Original',observedProfile='Copy',phase='import-failed',reason='Inspect settings',originalExport='Native profile export recovery',shared='Shared backup',personal='Personal backup'}
+RA:FireCallback('NSRT_ADAPTER_CHANGED')
+check(clickVisible('RECOVERY BACKUP') and recoveryEditor('Native profile export recovery') and not clickVisible('PLACEMENT SETTINGS'), 'Profile recovery did not default to its available native export')
+RA:CloseConfig()
+check(not recoveryEditor('Native profile export recovery'), 'Closing hub left recovery content visible')
 for key in pairs(adapter) do adapter[key]=nil end
 for key,value in pairs(originals) do adapter[key]=value end
 cleanErrors()
