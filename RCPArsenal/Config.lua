@@ -35,6 +35,10 @@ local RefreshWorldMarkers
 local RefreshConfig
 local RefreshHub
 local advancedBack
+local cooldownScroll
+local cooldownTabs = {}
+local panicStatus
+local scanStripState
 
 -- Compatibility aliases for the existing page logic. The visual system itself
 -- lives in Theme.lua so the settings window can use soft, layered surfaces
@@ -59,19 +63,22 @@ local COLORS = {
 }
 
 local TAB_DEFS = {
-    { key = "HUD", label = "HUD", subtitle = "Enable, appearance & position", group = "ARSENAL", icon = Theme.Assets.NavHUD },
+    { key = "COOLDOWNS", label = "AVAILABLE COOLDOWNS", group = "ARSENAL", icon = Theme.Assets.NavHUD },
+    { key = "ADDONS", label = "ADDONS & VERSIONS", group = "ARSENAL", icon = Theme.Assets.NavContent },
     { key = "QUICKBAR", label = "QUICK BAR", subtitle = "Puck & raid controls", group = "ARSENAL", icon = Theme.Assets.NavHUD },
-    { key = "CONTENT", label = "CONTENT", subtitle = "Abilities & order", group = "ARSENAL", icon = Theme.Assets.NavContent },
-    { key = "SCANNING", label = "SCANNING", subtitle = "Inspections & groups", group = "ARSENAL", icon = Theme.Assets.NavScanning },
-    { key = "ACTIONS", label = "CALLOUTS & PANIC", subtitle = "Click actions & messages", group = "ARSENAL", icon = Theme.Assets.NavActions },
     { key = "WORLDMARKERS", label = "WORLD MARKERS", subtitle = "Sequence & keybindings", group = "ARSENAL", icon = Theme.Assets.NavActions },
-    { key = "ADDONS", label = "ADDONS", subtitle = "Your raid checklist", group = "RAID SETUP", icon = Theme.Assets.NavContent },
-    { key = "RAIDTOOLS", label = "VERSION CHECK", subtitle = "Group addon versions", group = "RAID SETUP", icon = Theme.Assets.NavScanning },
     { key = "MYTOOLS", label = "PERSONAL TOOLS", subtitle = "Resurrection & reminders", group = "OTHER", icon = Theme.Assets.NavHUD },
     { key = "SETTINGS", label = "PROFILES & RECOVERY", subtitle = "Import, export & reset", group = "OTHER", icon = Theme.Assets.NavActions },
 }
 local PANE_CONTEXT = {
     NORTHERNSKY = "ADDONS",
+    CONTENT = "COOLDOWNS", HUD = "COOLDOWNS", SCANNING = "COOLDOWNS", ACTIONS = "COOLDOWNS",
+}
+local COOLDOWN_TABS = {
+    {key = "CONTENT", label = "CATEGORIES", width = 162},
+    {key = "HUD", label = "DISPLAY & POSITION", width = 228},
+    {key = "SCANNING", label = "SCANNING", width = 162},
+    {key = "ACTIONS", label = "CALLOUTS & PANIC", width = 218},
 }
 local function PaneContext(key)
     return PANE_CONTEXT[key]
@@ -137,7 +144,7 @@ local function ApplyReadableFont(fontString, size, weight, shadow)
 end
 
 local function Font(parent, size, color, style)
-    local fs = parent:CreateFontString(nil, "OVERLAY")
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     local weight = style == "REGULAR" and "REGULAR" or ((style == "BOLD" or size >= 11) and "BOLD" or "REGULAR")
     ApplyReadableFont(fs, size, weight, false)
     fs:SetTextColor(unpack(color or COLORS.text))
@@ -169,13 +176,16 @@ local function CreateButton(parent, label, width, height, onClick, emphasis, ico
     end
 
     button.label = Font(button, 11.2, emphasis and COLORS.white or COLORS.text, "BOLD")
-    button.label:SetText(label)
+    RA:SetVisualText(button.label, label)
     button.label:SetJustifyH("CENTER")
+    button.label:SetWordWrap(false)
+    SetHeight(button.label, 20)
     if iconAsset then
         SetPoint(button.label, "LEFT", button.icon, "RIGHT", 8, 0)
         SetPoint(button.label, "RIGHT", button, "RIGHT", -12, 0)
     else
-        SetPoint(button.label, "CENTER", button, "CENTER", 0, 0)
+        SetPoint(button.label, "LEFT", button, "LEFT", 8, 0)
+        SetPoint(button.label, "RIGHT", button, "RIGHT", -8, 0)
     end
 
     button.emphasis = emphasis == true
@@ -252,12 +262,12 @@ local function CreateCard(parent, titleText, subtitleText, accentAsset)
 
     if titleText then
         card.title = Font(card, 13.5, TC.text, "BOLD")
-        card.title:SetText(titleText)
+        RA:SetVisualText(card.title, titleText)
         SetPoint(card.title, "TOPLEFT", card, "TOPLEFT", 18, -13)
     end
     if subtitleText then
         card.subtitle = Font(card, 9.7, TC.textSoft, "REGULAR")
-        card.subtitle:SetText(subtitleText)
+        RA:SetVisualText(card.subtitle, subtitleText)
         card.subtitle:SetWordWrap(true)
         SetPoint(card.subtitle, "TOPLEFT", card, "TOPLEFT", 18, -34)
         SetPoint(card.subtitle, "TOPRIGHT", card, "TOPRIGHT", -18, -34)
@@ -288,12 +298,13 @@ local function CreateToggle(parent, labelText, description, getter, setter)
     Backdrop(row, TC.surfaceRaised, TC.line, 10, false)
 
     row.title = Font(row, 11.5, TC.text, "BOLD")
-    row.title:SetText(labelText)
+    SetHeight(row.title, 16)
+    RA:SetVisualText(row.title, labelText)
     SetPoint(row.title, "TOPLEFT", row, "TOPLEFT", 14, -9)
     SetPoint(row.title, "TOPRIGHT", row, "TOPRIGHT", -66, -9)
 
     row.description = Font(row, 9.1, TC.textSoft, "REGULAR")
-    row.description:SetText(description or "")
+    RA:SetVisualText(row.description, description or "")
     row.description:SetWordWrap(true)
     SetPoint(row.description, "TOPLEFT", row, "TOPLEFT", 14, -25)
     SetPoint(row.description, "TOPRIGHT", row, "TOPRIGHT", -66, -25)
@@ -348,7 +359,7 @@ local function CreateSlider(parent, labelText, minimum, maximum, step, getter, s
     SetHeight(control, 50)
 
     control.title = Font(control, 10.8, TC.text, "BOLD")
-    control.title:SetText(labelText)
+    RA:SetVisualText(control.title, labelText)
     SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
 
     control.value = Font(control, 10.5, TC.orange, "BOLD")
@@ -388,7 +399,7 @@ local function CreateSlider(parent, labelText, minimum, maximum, step, getter, s
         local value = RoundStep(rawValue, step)
         local ratio = (value - minimum) / math.max(0.0001, maximum - minimum)
         SetWidth(control.fill, math.max(2, (control.track:GetWidth() - 2) * ratio))
-        control.value:SetText(formatter and formatter(value) or tostring(value))
+        RA:SetVisualText(control.value, formatter and formatter(value) or tostring(value))
         if not control.refreshing then
             setter(value)
         end
@@ -400,7 +411,7 @@ local function CreateSlider(parent, labelText, minimum, maximum, step, getter, s
         self.slider:SetValue(value)
         local ratio = (value - minimum) / math.max(0.0001, maximum - minimum)
         SetWidth(self.fill, math.max(2, (self.track:GetWidth() - 2) * ratio))
-        self.value:SetText(formatter and formatter(value) or tostring(value))
+        RA:SetVisualText(self.value, formatter and formatter(value) or tostring(value))
         self.refreshing = false
     end
 
@@ -411,7 +422,7 @@ local function CreateSegmented(parent, labelText, options, getter, setter)
     local control = CreateFrame("Frame", nil, parent)
     SetHeight(control, 54)
     control.title = Font(control, 10.8, TC.text, "BOLD")
-    control.title:SetText(labelText)
+    RA:SetVisualText(control.title, labelText)
     SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
     control.buttons = {}
 
@@ -422,8 +433,11 @@ local function CreateSegmented(parent, labelText, options, getter, setter)
         button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
         button.text = Font(button, 9.6, TC.textSoft, "BOLD")
         button.text:SetJustifyH("CENTER")
-        button.text:SetText(option.label)
-        SetPoint(button.text, "CENTER", button, "CENTER", 0, 0)
+        button.text:SetWordWrap(false)
+        RA:SetVisualText(button.text, option.label)
+        SetPoint(button.text, "LEFT", button, "LEFT", 4, 0)
+        SetPoint(button.text, "RIGHT", button, "RIGHT", -4, 0)
+        SetHeight(button.text, 18)
         button:SetScript("OnClick", function()
             setter(option.value)
             control:Refresh()
@@ -462,11 +476,11 @@ local function CreateEditBox(parent, labelText, description, getter, setter)
     SetHeight(control, 78)
 
     control.title = Font(control, 10.8, TC.text, "BOLD")
-    control.title:SetText(labelText)
+    RA:SetVisualText(control.title, labelText)
     SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
 
     control.description = Font(control, 9.0, TC.muted, "REGULAR")
-    control.description:SetText(description or "")
+    RA:SetVisualText(control.description, description or "")
     SetPoint(control.description, "TOPRIGHT", control, "TOPRIGHT", 0, -1)
     control.description:SetJustifyH("RIGHT")
 
@@ -506,11 +520,11 @@ end
 
 local function CreateHeading(parent, titleText, subtitleText)
     local title = Font(parent, 21, TC.text, "BOLD")
-    title:SetText(titleText)
+    RA:SetVisualText(title, titleText)
     SetPoint(title, "TOPLEFT", parent, "TOPLEFT", 2, 0)
 
     local subtitle = Font(parent, 10.4, TC.textSoft, "REGULAR")
-    subtitle:SetText(subtitleText)
+    RA:SetVisualText(subtitle, subtitleText)
     subtitle:SetWordWrap(true)
     SetWidth(subtitle, 856)
     SetPoint(subtitle, "TOPLEFT", title, "BOTTOMLEFT", 0, -5)
@@ -627,7 +641,7 @@ local function UpdatePreview()
         SetSize(lane.label, math.max(1, metrics.labelWidth), height)
         SetPoint(lane.label, "LEFT", lane, "LEFT", metrics.lanePadding, 0)
         lane.label:SetShown(hasLabel)
-        lane.label:SetText(db.compact.categoryLabels == "FULL" and string.upper(category.name) or category.compactLabel)
+        RA:SetVisualText(lane.label, db.compact.categoryLabels == "FULL" and string.upper(category.name) or category.compactLabel)
         ApplyReadableFont(lane.label, metrics.categoryFont, "BOLD")
 
         for itemIndex = 1, #data.items do
@@ -654,7 +668,7 @@ local function UpdatePreview()
             ApplyReadableFont(tile.name, metrics.nameFont, "BOLD")
             SetPoint(tile.name, "TOPLEFT", tile.iconFrame, "BOTTOMLEFT", -3, -1)
             SetPoint(tile.name, "TOPRIGHT", tile.iconFrame, "BOTTOMRIGHT", 3, -1)
-            tile.name:SetText(string.sub(item.name, 1, metrics.nameLength))
+            RA:SetVisualText(tile.name, string.sub(item.name, 1, metrics.nameLength))
             tile.name:SetShown(metrics.nameLength > 0)
             local r, g, b = RA:GetClassColor(item.class)
             tile.name:SetTextColor(r, g, b, 1)
@@ -673,11 +687,11 @@ local function UpdatePreview()
     local previewScale = math.min(1, availableWidth / math.max(1, rawWidth), availableHeight / math.max(1, rawHeight))
     previewHUD:SetScale(previewScale)
     SetSize(previewHUD, rawWidth, rawHeight)
-    previewBadge:SetText(string.format("HUD %d%%  |  ICON %d", math.floor((db.scale or 1) * 100 + 0.5), metrics.iconSize or 28))
+    RA:SetVisualText(previewBadge, string.format("HUD %d%%  |  ICON %d", math.floor((db.scale or 1) * 100 + 0.5), metrics.iconSize or 28))
 end
 
 local function CreateHUDPane(parent)
-    CreateHeading(parent, "HUD", "Enable HUD + inspection below. Unlock, then drag the grip beside the HUD. Viewing settings does not enable it.")
+    CreateHeading(parent, "Display & Position", "Unlock in the footer, then drag the HUD grip. Quick Bar keeps its own position.")
 
     local settingsCard = CreateCard(parent, "LAYOUT", "Scale the complete HUD or tune its physical tile density independently.")
     SetSize(settingsCard, 438, 598)
@@ -715,11 +729,11 @@ local function CreateHUDPane(parent)
         local show = not rightCard:IsShown()
         rightCard:SetShown(show)
         styleCard:SetShown(not show)
-        self.label:SetText(show and "HIDE SAMPLE" or "SHOW SAMPLE")
+        RA:SetVisualText(self.label, show and "HIDE SAMPLE" or "SHOW SAMPLE")
     end)
     SetPoint(sample, "BOTTOMRIGHT", positionCard, "BOTTOMRIGHT", -18, 18)
     local function HideSample()
-        rightCard:Hide(); styleCard:Show(); sample.label:SetText("SHOW SAMPLE")
+        rightCard:Hide(); styleCard:Show(); RA:SetVisualText(sample.label, "SHOW SAMPLE")
     end
     parent:HookScript("OnHide", HideSample)
     RA.ConfigFrame:HookScript("OnHide", HideSample)
@@ -792,7 +806,7 @@ local function CreateHUDPane(parent)
     SetSize(hudDirection, 464, 54)
     hudDirection:Layout(464)
     local positionHelp = Font(positionCard, 9.3, TC.textSoft, "REGULAR")
-    positionHelp:SetText("Unlock below, then drag the HUD grip.\nRecenter resets only the HUD position.")
+    RA:SetVisualText(positionHelp, "Unlock below, then drag the HUD grip.\nRecenter resets only the HUD position.")
     SetWidth(positionHelp, 300)
     SetPoint(positionHelp, "TOPLEFT", positionCard, "TOPLEFT", 18, -134)
 
@@ -862,7 +876,7 @@ local function RefreshCategoryRows()
 
         -- Reapply the actual text on every refresh. This also repairs category
         -- labels after font/media changes and prevents an empty cached string.
-        entry.label:SetText(entry.category.shortName or entry.category.name or entry.category.key)
+        RA:SetVisualText(entry.label, entry.category.shortName or entry.category.name or entry.category.key)
         entry.label:SetTextColor(unpack(selected and TC.white or TC.textSoft))
         SetSurfaceColor(entry.frame, selected and TC.activeDark or TC.surfaceRaised)
         SetBorderColor(entry.frame, selected and CopyColor(TC.magenta, 0.36) or TC.line)
@@ -985,10 +999,10 @@ local function RefreshAbilityList(resetScroll)
         row:ClearAllPoints()
         SetPoint(row, "TOPLEFT", contentScrollChild, "TOPLEFT", 0, -((index - 1) * 59))
         row.icon:SetTexture(RA:GetAbilityTexture(ability))
-        row.name:SetText(RA:GetAbilityName(ability))
+        RA:SetVisualText(row.name, RA:GetAbilityName(ability))
         local classLabel = ability.class and string.gsub(ability.class, "_", " ") or "MULTIPLE CLASSES"
         local cooldown = RA.GetCooldownLabel and RA:GetCooldownLabel(ability) or ""
-        row.meta:SetText(cooldown ~= "" and (classLabel .. "  ·  " .. cooldown .. " cooldown") or classLabel)
+        RA:SetVisualText(row.meta, cooldown ~= "" and (classLabel .. "  ·  " .. cooldown .. " cooldown") or classLabel)
         local enabled = AbilitySetting(ability)
         SetSurfaceColor(row.checkBack, enabled and TC.activeDark or TC.input)
         SetBorderColor(row.checkBack, enabled and CopyColor(TC.magenta, 0.40) or TC.line)
@@ -998,7 +1012,7 @@ local function RefreshAbilityList(resetScroll)
         row.name:SetTextColor(unpack(enabled and TC.text or TC.muted))
         row.meta:SetTextColor(unpack(enabled and TC.textSoft or TC.faint))
 
-        row.tier:SetText(ability.tier or "OPTIONAL")
+        RA:SetVisualText(row.tier, ability.tier or "OPTIONAL")
         local tierColor = TIER_COLORS[ability.tier] or TC.textSoft
         row.tier:SetTextColor(unpack(tierColor))
         SetBorderColor(row.tierBack, CopyColor(tierColor, 0.35))
@@ -1019,7 +1033,7 @@ local function RefreshAbilityList(resetScroll)
 end
 
 local function CreateContentPane(parent)
-    CreateHeading(parent, "Content", "Choose what appears, then arrange each category in the exact callout order you prefer.")
+    CreateHeading(parent, "Categories", "Choose which provider abilities appear and arrange their callout order.")
 
     local categoryCard = CreateCard(parent, "CATEGORIES", "Select a category. Its checkbox controls visibility.")
     SetSize(categoryCard, 228, 598)
@@ -1047,7 +1061,7 @@ local function CreateContentPane(parent)
         SetPoint(check, "CENTER", checkBack, "CENTER", 0, 0)
 
         local label = Font(row, 11.2, TC.textSoft, "BOLD")
-        label:SetText(category.shortName or category.name or category.key)
+        RA:SetVisualText(label, category.shortName or category.name or category.key)
         label:SetWordWrap(true)
         label:SetJustifyH("LEFT")
         SetPoint(label, "LEFT", icon, "RIGHT", 10, 0)
@@ -1098,7 +1112,7 @@ local function CreateContentPane(parent)
     search:SetAutoFocus(false)
     search:SetTextInsets(12, 12, 0, 0)
     search.instructions = Font(search, 9.4, TC.muted, "REGULAR")
-    search.instructions:SetText("Search abilities")
+    RA:SetVisualText(search.instructions, "Search abilities")
     SetPoint(search.instructions, "LEFT", search, "LEFT", 12, 0)
     search:SetScript("OnTextChanged", function(self)
         searchText = self:GetText() or ""
@@ -1176,36 +1190,52 @@ local function ScanStatusText()
     return string.format("%d / %d RESOLVED", inspected, total), table.concat(details, "  ·  ")
 end
 
+local function ScanStripStatusText()
+    if not RA:IsInspectionEnabled() then return "Inspection off" end
+    if RA.InEncounter then return "Hidden during encounter" end
+    local _, _, _, running, _, paused = RA:GetInspectionProgress()
+    local pending = RA:GetPendingScanEntries()
+    if #pending == 0 and not running then return "No work pending" end
+    if paused then return "Paused" end
+    if running then return "Scanning" end
+    local summary = RA:GetScanSummary()
+    if (summary.outOfRange or 0) > 0 then return "Waiting for range" end
+    return "Waiting for pending players"
+end
+
 local function RefreshScanPane()
     if not scanStatusValue then
         return
     end
     local primary, secondary = ScanStatusText()
-    scanStatusValue:SetText(primary)
+    RA:SetVisualText(scanStatusValue, primary)
     if scanStatusDetail then
-        scanStatusDetail:SetText(secondary or "")
+        RA:SetVisualText(scanStatusDetail, secondary or "")
     end
     if scanStatusPill then
         scanStatusPill.tooltipText = secondary
     end
+    if scanStripState then RA:SetVisualText(scanStripState, ScanStripStatusText()) end
 
     local inspected, total, isDemo = RA:GetVerificationStatus()
     local _, _, _, running, _, paused = RA:GetInspectionProgress()
     if isDemo then
-        scanPrimaryButton.label:SetText("SCAN MISSING")
+        RA:SetVisualText(scanPrimaryButton.label, "SCAN MISSING")
     elseif paused then
-        scanPrimaryButton.label:SetText("RESUME SCAN")
+        RA:SetVisualText(scanPrimaryButton.label, "RESUME SCAN")
     elseif running then
-        scanPrimaryButton.label:SetText("PAUSE SCAN")
+        RA:SetVisualText(scanPrimaryButton.label, "PAUSE SCAN")
     elseif inspected < total then
-        scanPrimaryButton.label:SetText("RETRY MISSING")
+        RA:SetVisualText(scanPrimaryButton.label, "RETRY MISSING")
     else
-        scanPrimaryButton.label:SetText("SCAN MISSING")
+        RA:SetVisualText(scanPrimaryButton.label, "SCAN MISSING")
     end
+    scanPrimaryButton:SetEnabled(RA:IsInspectionEnabled())
+    scanPrimaryButton:SetAlpha(RA:IsInspectionEnabled() and 1 or 0.45)
 end
 
 local function CreateScanningPane(parent)
-    CreateHeading(parent, "Scanning", "Viewing does not enable inspection. C marks saved talents; enable inspection on HUD before scanning.")
+    CreateHeading(parent, "Scanning", "C marks saved talents. The master above enables inspection; viewing settings does not.")
 
     scanStatusPill = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     SetSize(scanStatusPill, 220, 36)
@@ -1226,7 +1256,7 @@ local function CreateScanningPane(parent)
     scanStatusPill:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     scanStatusDetail = Font(parent, 9.0, TC.textSoft, "REGULAR")
-    scanStatusDetail:SetText("Only new, moved-in, or unresolved players enter the queue.")
+    RA:SetVisualText(scanStatusDetail, "Only new, moved-in, or unresolved players enter the queue.")
     SetPoint(scanStatusDetail, "TOPRIGHT", scanStatusPill, "BOTTOMRIGHT", 0, -6)
     scanStatusDetail:SetJustifyH("RIGHT")
 
@@ -1240,6 +1270,10 @@ local function CreateScanningPane(parent)
     SetPoint(showStrip, "TOPLEFT", displayCard, "TOPLEFT", 18, -62)
     SetWidth(showStrip, 420)
 
+    scanStripState = Font(displayCard, 9.4, TC.orange, "BOLD")
+    SetPoint(scanStripState, "TOPLEFT", displayCard, "TOPLEFT", 20, -378)
+    SetWidth(scanStripState, 416)
+
     local demoScan = CreateToggle(displayCard, "Demo the scanning state", "While Demo is on, show a simulated 13/20 progress bar and animated target.",
         function() return RA:GetDB().scan.demoPreview == true end,
         function(value)
@@ -1252,10 +1286,10 @@ local function CreateScanningPane(parent)
     demoScan:Hide()
     local advancedDemo = CreateButton(displayCard, "ADVANCED: DEMO", 210, 32, function(self)
         demoScan:SetShown(not demoScan:IsShown())
-        self.label:SetText(demoScan:IsShown() and "HIDE DEMO OPTIONS" or "ADVANCED: DEMO")
+        RA:SetVisualText(self.label, demoScan:IsShown() and "HIDE DEMO OPTIONS" or "ADVANCED: DEMO")
     end)
     SetPoint(advancedDemo, "TOPLEFT", displayCard, "TOPLEFT", 18, -258)
-    local function HideDemoOptions() demoScan:Hide(); advancedDemo.label:SetText("ADVANCED: DEMO") end
+    local function HideDemoOptions() demoScan:Hide(); RA:SetVisualText(advancedDemo.label, "ADVANCED: DEMO") end
     parent:HookScript("OnHide", HideDemoOptions)
     RA.ConfigFrame:HookScript("OnHide", HideDemoOptions)
 
@@ -1287,7 +1321,7 @@ local function CreateScanningPane(parent)
         button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
 
         button.number = Font(button, 18, TC.text, "BOLD")
-        button.number:SetText(tostring(group))
+        RA:SetVisualText(button.number, tostring(group))
         button.number:SetJustifyH("CENTER")
         SetPoint(button.number, "TOP", button, "TOP", 0, -12)
         button.state = Font(button, 8.0, TC.textSoft, "BOLD")
@@ -1306,7 +1340,7 @@ local function CreateScanningPane(parent)
             SetBorderColor(self, ignored and TC.line or CopyColor(TC.magenta, 0.36))
             self.gradient:SetAlpha(ignored and 0 or 0.64)
             self.number:SetTextColor(unpack(ignored and TC.muted or TC.white))
-            self.state:SetText(ignored and "IGNORED" or "TRACKED")
+            RA:SetVisualText(self.state, ignored and "IGNORED" or "TRACKED")
             self.state:SetTextColor(unpack(ignored and TC.faint or TC.orange))
         end
         groupsCard.groupButtons[group] = button
@@ -1318,6 +1352,7 @@ local function CreateScanningPane(parent)
     SetPoint(actionsCard, "BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
 
     scanPrimaryButton = CreateButton(actionsCard, "SCAN MISSING", 170, 38, function()
+        if not RA:IsInspectionEnabled() then return end
         local _, _, _, running, _, paused = RA:GetInspectionProgress()
         if paused then
             RA:SetInspectionPaused(false)
@@ -1332,11 +1367,16 @@ local function CreateScanningPane(parent)
     SetPoint(scanPrimaryButton, "BOTTOMLEFT", actionsCard, "BOTTOMLEFT", 18, 20)
 
     local full = CreateButton(actionsCard, "FULL RESCAN", 150, 38, function()
+        if not RA:IsInspectionEnabled() then return end
         RA:SetInspectionPaused(false)
         RA:RequestInspectionScan("settings full rescan", true)
         C_Timer.After(0.1, RefreshScanPane)
     end)
     SetPoint(full, "LEFT", scanPrimaryButton, "RIGHT", 10, 0)
+    RegisterControl({Refresh = function()
+        full:SetEnabled(RA:IsInspectionEnabled())
+        full:SetAlpha(RA:IsInspectionEnabled() and 1 or 0.45)
+    end})
 
     local clear = CreateButton(actionsCard, "CLEAR CACHE", 150, 38, function()
         RA:ClearInspectionCache()
@@ -1351,7 +1391,7 @@ local function CreateSecureTestButton(parent, label, macroText, width)
     Backdrop(button, TC.activeDark, CopyColor(TC.magenta, 0.28), 9, false)
     button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0.64, 2)
     button.label = Font(button, 10.4, TC.white, "BOLD")
-    button.label:SetText(label)
+    RA:SetVisualText(button.label, label)
     button.label:SetJustifyH("CENTER")
     SetPoint(button.label, "CENTER", button, "CENTER", 0, 0)
     button:RegisterForClicks("AnyDown", "AnyUp")
@@ -1396,7 +1436,7 @@ local function CreateQuickBarPane(parent)
     SetWidth(nonLeaderToggle, 420)
     SetHeight(nonLeaderToggle, 44)
 
-    local missingToggle = CreateToggle(leftCard, "Missing provider classes", "Show provider-class gaps. This does not check active auras.",
+    local missingToggle = CreateToggle(leftCard, "Missing provider classes", "Defaults on each time Quick Bar is enabled. You can turn it off here.",
         function() return RA:GetDB().leaderToolbox.showMissing ~= false end,
         function(value)
             RA:GetDB().leaderToolbox.showMissing = value
@@ -1459,14 +1499,14 @@ local function CreateQuickBarPane(parent)
     local behaviorText = Font(rightTop, 10.0, TC.textSoft, "REGULAR")
     behaviorText:SetWordWrap(true)
     behaviorText:SetSpacing(5)
-    behaviorText:SetText("• Hover: opens immediately\n• Left click puck: start configured countdown; click again to cancel\n• Mouse leaves: uses the close delay\n• Click elsewhere: closes immediately\n• Middle click puck: pin / unpin\n• Right click puck: start a ready check\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
+    RA:SetVisualText(behaviorText, "• Hover: opens immediately\n• Left click puck: start configured countdown; click again to cancel\n• Mouse leaves: uses the close delay\n• Click elsewhere: closes immediately\n• Middle click puck: pin / unpin\n• Right click puck: start a ready check\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
     SetPoint(behaviorText, "TOPLEFT", rightTop, "TOPLEFT", 20, -66)
     SetWidth(behaviorText, 430)
 
     local directionHelp = Font(rightBottom, 9.3, TC.textSoft, "REGULAR")
     directionHelp:SetWordWrap(true)
     directionHelp:SetSpacing(5)
-    directionHelp:SetText("Enable Quick Bar to show its checkmark puck while in a raid.\n\nOutside combat, hold the left mouse button and drag the puck to move it. Dragging does not start a countdown.\n\nReset below changes only the puck position. Move the HUD from the HUD page; World Markers has its own sidebar page.")
+    RA:SetVisualText(directionHelp, "Enable Quick Bar to show its checkmark puck while in a raid. Provider coverage checks roster classes, not active auras or cooldown availability.\n\nOutside combat, hold the left mouse button and drag the puck to move it. Dragging does not start a countdown.\n\nReset below changes only the puck position. Move the HUD under Available Cooldowns > Display & Position.")
     SetPoint(directionHelp, "TOPLEFT", rightBottom, "TOPLEFT", 20, -66)
     SetWidth(directionHelp, 430)
 end
@@ -1491,7 +1531,7 @@ local function CreateWorldMarkersPane(parent)
     SetSize(orderCard, 950, 270)
     SetPoint(orderCard, "TOPLEFT", parent, "TOPLEFT", 0, -126)
     local empty = Font(orderCard, 11, TC.textSoft, "REGULAR")
-    empty:SetText("Add at least one marker to use the cycler.")
+    RA:SetVisualText(empty, "Add at least one marker to use the cycler.")
     SetPoint(empty, "TOPLEFT", orderCard, "TOPLEFT", 18, -166)
     local selection = Font(orderCard, 9.4, TC.textSoft, "REGULAR")
     SetPoint(selection, "BOTTOMLEFT", orderCard, "BOTTOMLEFT", 386, 28)
@@ -1586,10 +1626,10 @@ local function CreateWorldMarkersPane(parent)
     SetSize(bindingCard, 950, 194)
     SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -410)
     local placeLabel = Font(bindingCard, 11, TC.text, "BOLD")
-    placeLabel:SetText("Place next world marker")
+    RA:SetVisualText(placeLabel, "Place next world marker")
     SetPoint(placeLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -70)
     local clearLabel = Font(bindingCard, 11, TC.text, "BOLD")
-    clearLabel:SetText("Clear all world markers")
+    RA:SetVisualText(clearLabel, "Clear all world markers")
     SetPoint(clearLabel, "TOPLEFT", bindingCard, "TOPLEFT", 18, -100)
     local placeKey = Font(bindingCard, 11, TC.orange, "REGULAR")
     SetPoint(placeKey, "LEFT", placeLabel, "LEFT", 280, 0)
@@ -1607,7 +1647,7 @@ local function CreateWorldMarkersPane(parent)
     end)
     SetPoint(setup, "TOPRIGHT", bindingCard, "TOPRIGHT", -18, -70)
     local bindingHelp = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
-    bindingHelp:SetText("AddOns > RCP Arsenal — World markers. Blizzard handles conflicts and saves your keys.\nClear all also restarts at slot 1; it keeps your order. Disabling keeps your bindings but makes both actions inactive.")
+    RA:SetVisualText(bindingHelp, "AddOns > RCP Arsenal — World markers. Blizzard handles conflicts and saves your keys.\nClear all also restarts at slot 1; it keeps your order. Disabling keeps your bindings but makes both actions inactive.")
     bindingHelp:SetSpacing(4)
     bindingHelp:SetWordWrap(true)
     SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -137)
@@ -1649,21 +1689,21 @@ local function CreateWorldMarkersPane(parent)
         for _, button in ipairs({left, right, remove, setup}) do
             button:SetAlpha(button:IsEnabled() and 1 or 0.45)
         end
-        selection:SetText(message ~= "" and message or (selected and ("Selected: " .. markers.Definitions[order[selected]].name) or "Select a numbered slot to edit it."))
-        placeKey:SetText(markers:GetBindingText(markers.PlaceBinding))
-        clearKey:SetText(markers:GetBindingText(markers.ClearBinding))
+        RA:SetVisualText(selection, message ~= "" and message or (selected and ("Selected: " .. markers.Definitions[order[selected]].name) or "Select a numbered slot to edit it."))
+        RA:SetVisualText(placeKey, markers:GetBindingText(markers.PlaceBinding))
+        RA:SetVisualText(clearKey, markers:GetBindingText(markers.ClearBinding))
         if pending then
-            state:SetText("Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
+            RA:SetVisualText(state, "Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
         elseif combat then
-            state:SetText("Change setup after combat. Each place keypress advances once; placement is checked by Blizzard.")
+            RA:SetVisualText(state, "Change setup after combat. Each place keypress advances once; placement is checked by Blizzard.")
         elseif #order == 0 then
-            state:SetText("Add at least one marker to use the cycler. Place-next is inactive.")
+            RA:SetVisualText(state, "Add at least one marker to use the cycler. Place-next is inactive.")
         elseif not settings.enabled then
-            state:SetText("Cycler off. Prepare your order and bindings, then enable when ready.")
+            RA:SetVisualText(state, "Cycler off. Prepare your order and bindings, then enable when ready.")
         else
-            state:SetText("Each keypress attempts the next slot, even if rejected. Enabling, order changes and clear restart at slot 1.")
+            RA:SetVisualText(state, "Each keypress attempts the next slot, even if rejected. Enabling, order changes and clear restart at slot 1.")
         end
-        permission:SetText(markers:GetPermissionText())
+        RA:SetVisualText(permission, markers:GetPermissionText())
     end
     RegisterControl({Refresh = function() RefreshWorldMarkers() end})
 end
@@ -1725,9 +1765,18 @@ local function CreateActionsPane(parent)
         function(value)
             RA:GetDB().leaderToolbox.panicEnabled = value
             if RA.RefreshPanicButton then RA:RefreshPanicButton() else ApplyVisualChange() end
+            RefreshConfig()
         end)
     SetPoint(panicToggle, "TOPLEFT", rightCard, "TOPLEFT", 18, -220)
     SetWidth(panicToggle, 440)
+
+    panicStatus = Font(parent, 10, TC.orange, "BOLD")
+    SetPoint(panicStatus, "TOPLEFT", parent, "TOPLEFT", 0, -508)
+    SetWidth(panicStatus, 930)
+    local panicHelp = Font(parent, 9.4, TC.textSoft, "REGULAR")
+    RA:SetVisualText(panicHelp, "Panic moves with the HUD and needs a visible ability category. Sending its Raid Warning requires permission.")
+    SetPoint(panicHelp, "TOPLEFT", parent, "TOPLEFT", 0, -534)
+    SetWidth(panicHelp, 930)
 
     local panicEdit = CreateEditBox(rightCard, "PANIC RAID WARNING", "One message only; no mass whispering.",
         function() return RA:GetDB().leaderToolbox.panicMessage end,
@@ -1764,7 +1813,7 @@ local function CreateActionsPane(parent)
     SetWidth(actionStatusDetail, 600)
 
     local warning = Font(statusCard, 8.7, TC.orange, "REGULAR")
-    warning:SetText("Raid Warning can be blocked during encounters when a raid member is outside the instance.")
+    RA:SetVisualText(warning, "Raid Warning can be blocked during encounters when a raid member is outside the instance.")
     warning:SetWordWrap(true)
     SetPoint(warning, "BOTTOMLEFT", statusCard, "BOTTOMLEFT", 24, 101)
     SetWidth(warning, 600)
@@ -1787,11 +1836,16 @@ local function CreateActionsPane(parent)
 end
 
 local function SetTab(tabKey)
+    if tabKey == "RAIDTOOLS" then tabKey = "ADDONS" end
+    if tabKey == "COOLDOWNS" then tabKey = "CONTENT" end
+    if not panes[tabKey] then tabKey = "ADDONS" end
     if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
     activeTab = tabKey
     for key, pane in pairs(panes) do
-        pane:SetShown(key == tabKey)
+        pane:SetShown(key == tabKey or (key == "COOLDOWNS" and PaneContext(tabKey) == "COOLDOWNS"))
     end
+    for key, button in pairs(cooldownTabs) do button:SetSelected(key == tabKey) end
+    if cooldownScroll then cooldownScroll:SetVerticalScroll(0) end
     for key, button in pairs(tabButtons) do
         local selected = key == (PaneContext(tabKey) or tabKey)
         SetSurfaceColor(button, selected and TC.activeDark or TC.transparent)
@@ -1803,8 +1857,8 @@ local function SetTab(tabKey)
     end
     if hudFooter then hudFooter:SetShown(tabKey == "HUD") end
     if advancedBack then
-        advancedBack:SetShown(PANE_CONTEXT[tabKey] ~= nil)
-        advancedBack.label:SetText("BACK TO ADDONS")
+        advancedBack:SetShown(tabKey == "NORTHERNSKY")
+        RA:SetVisualText(advancedBack.label, "BACK TO ADDONS")
     end
     if RefreshHub then RefreshHub(tabKey) end
     if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
@@ -1829,19 +1883,20 @@ RefreshConfig = function()
     RefreshAbilityList(false)
     RefreshScanPane()
     UpdatePreview()
+    if panicStatus then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
     if RefreshHub then RefreshHub(activeTab) end
 
     if actionStatusText and RA.GetSecureActionStatus then
         local armed, visible, clickMode = RA:GetSecureActionStatus()
-        actionStatusText:SetText(string.format("%d / %d VISIBLE TILES ARMED", armed, visible))
-        actionStatusDetail:SetText("Secure macros execute on " .. clickMode .. ". Left-click uses exactly one selected channel (Whisper, Say, or Off); right-click requests Raid Warning. Reopen or rearm after changing action templates.")
+        RA:SetVisualText(actionStatusText, string.format("%d / %d VISIBLE TILES ARMED", armed, visible))
+        RA:SetVisualText(actionStatusDetail, "Secure macros execute on " .. clickMode .. ". Left-click uses exactly one selected channel (Whisper, Say, or Off); right-click requests Raid Warning. Reopen or rearm after changing action templates.")
     end
 
     local primary = ScanStatusText()
     local reason = RA.GetHUDVisibilityReason and RA:GetHUDVisibilityReason() or nil
     local hudState = reason and ("HUD HIDDEN: " .. reason) or "HUD VISIBLE"
     local fontName = RA.GetFontStatus and select(1, RA:GetFontStatus()) or "Blizzard font"
-    statusText:SetText(primary .. "  •  " .. hudState .. "  •  " .. fontName)
+    RA:SetVisualText(statusText, primary .. "  •  " .. hudState .. "  •  " .. fontName)
 end
 
 local function CreateProfileDialog()
@@ -1895,11 +1950,11 @@ local function CreateProfileDialog()
         if profileDialogMode == "EXPORT" then
             profileDialogBox:SetFocus()
             profileDialogBox:HighlightText()
-            profileDialogStatus:SetText("Press Ctrl+C to copy the highlighted profile string.")
+            RA:SetVisualText(profileDialogStatus, "Press Ctrl+C to copy the highlighted profile string.")
             profileDialogStatus:SetTextColor(unpack(TC.textSoft))
         else
             local ok, message = RA:ImportProfileString(profileDialogBox:GetText())
-            profileDialogStatus:SetText(message or (ok and "Profile imported." or "Import failed."))
+            RA:SetVisualText(profileDialogStatus, message or (ok and "Profile imported." or "Import failed."))
             profileDialogStatus:SetTextColor(unpack(ok and TC.success or TC.danger))
             if ok then
                 RefreshConfig()
@@ -1922,22 +1977,22 @@ local function OpenProfileDialog(mode)
     end
     CreateProfileDialog()
     profileDialogMode = mode == "IMPORT" and "IMPORT" or "EXPORT"
-    profileDialogStatus:SetText("")
+    RA:SetVisualText(profileDialogStatus, "")
     if profileDialogMode == "EXPORT" then
         local text, err = RA:ExportProfileString()
-        profileDialog.title:SetText("EXPORT SETTINGS")
-        profileDialog.subtitle:SetText("Copy this profile string to share your HUD, content, scanning, and action settings.")
-        profileDialog.primary.label:SetText("SELECT ALL")
+        RA:SetVisualText(profileDialog.title, "EXPORT SETTINGS")
+        RA:SetVisualText(profileDialog.subtitle, "Copy this profile string to share your HUD, content, scanning, and action settings.")
+        RA:SetVisualText(profileDialog.primary.label, "SELECT ALL")
         profileDialogBox:SetText(text or "")
-        profileDialogStatus:SetText(err or "Screen position and inspection cache are intentionally excluded.")
+        RA:SetVisualText(profileDialogStatus, err or "Screen position and inspection cache are intentionally excluded.")
         profileDialogBox:SetFocus()
         profileDialogBox:HighlightText()
     else
-        profileDialog.title:SetText("IMPORT SETTINGS")
-        profileDialog.subtitle:SetText("Paste a RCP Arsenal profile string below. Your local HUD position will be preserved.")
-        profileDialog.primary.label:SetText("IMPORT PROFILE")
+        RA:SetVisualText(profileDialog.title, "IMPORT SETTINGS")
+        RA:SetVisualText(profileDialog.subtitle, "Paste a RCP Arsenal profile string below. Your local HUD position will be preserved.")
+        RA:SetVisualText(profileDialog.primary.label, "IMPORT PROFILE")
         profileDialogBox:SetText("")
-        profileDialogStatus:SetText("Unknown abilities from a different catalog version are safely ignored.")
+        RA:SetVisualText(profileDialogStatus, "Unknown abilities from a different catalog version are safely ignored.")
         profileDialogBox:SetFocus()
     end
     profileDialog:Show()
@@ -1985,14 +2040,14 @@ local function CreateConfig()
     SetPoint(logo, "TOPLEFT", sidebar, "TOPLEFT", 18, -18)
 
     local title = Font(sidebar, 15.5, TC.text, "BOLD")
-    title:SetText("RCP ARSENAL")
+    RA:SetVisualText(title, "RCP ARSENAL")
     SetPoint(title, "TOPLEFT", logo, "TOPRIGHT", 10, -4)
     local version = Font(sidebar, 9.4, TC.magenta, "BOLD")
-    version:SetText("v" .. RA.VERSION)
+    RA:SetVisualText(version, "v" .. RA.VERSION)
     SetPoint(version, "TOPLEFT", title, "BOTTOMLEFT", 0, -3)
 
     local subtitle = Font(sidebar, 10.0, TC.textSoft, "REGULAR")
-    subtitle:SetText("Morning Brew for your raid.\nA quiet hub. Tools you choose.")
+    RA:SetVisualText(subtitle, "Morning Brew for your raid.\nA quiet hub. Tools you choose.")
     subtitle:SetSpacing(2)
     SetPoint(subtitle, "TOPLEFT", sidebar, "TOPLEFT", 18, -84)
 
@@ -2001,7 +2056,7 @@ local function CreateConfig()
         local definition = TAB_DEFS[i]
         if definition.group ~= navGroup then
             local heading = Font(sidebar, 8.8, TC.muted, "BOLD")
-            heading:SetText(definition.group)
+            RA:SetVisualText(heading, definition.group)
             SetPoint(heading, "TOPLEFT", sidebar, "TOPLEFT", 20, navTop)
             navTop = navTop - 20
             navGroup = definition.group
@@ -2024,11 +2079,14 @@ local function CreateConfig()
         SetPoint(button.icon, "LEFT", button, "LEFT", 13, 0)
 
         button.title = Font(button, 10.8, TC.textSoft, "BOLD")
-        button.title:SetText(definition.label)
+        RA:SetVisualText(button.title, definition.label)
         SetPoint(button.title, "LEFT", button.icon, "RIGHT", 12, 0)
+        SetPoint(button.title, "RIGHT", button, "RIGHT", -8, 0)
+        SetHeight(button.title, 20)
+        button.title:SetWordWrap(false)
 
         button:SetScript("OnEnter", function(self)
-            if activeTab ~= definition.key then
+            if (PaneContext(activeTab) or activeTab) ~= definition.key then
                 SetSurfaceColor(self, TC.surfaceHover)
                 self.gradient:SetAlpha(0.10)
             end
@@ -2048,7 +2106,7 @@ local function CreateConfig()
     advancedBack:SetFrameLevel(main:GetFrameLevel() + 20)
     SetPoint(advancedBack, "TOPRIGHT", main, "TOPRIGHT", -68, -20)
     local hint = Font(sidebar, 10, TC.muted, "REGULAR")
-    hint:SetText("Tools stay optional.\n/rcp opens the addon checklist.")
+    RA:SetVisualText(hint, "Tools stay optional.\n/rcp opens the addon checklist.")
     hint:SetWordWrap(true)
     SetWidth(hint, 200)
     SetPoint(hint, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 30)
@@ -2067,10 +2125,41 @@ local function CreateConfig()
         panes[TAB_DEFS[i].key] = pane
     end
     for key in pairs(PANE_CONTEXT) do
-        local pane = CreateFrame("Frame", nil, content)
-        pane:SetAllPoints(content)
+        if key == "NORTHERNSKY" then
+            local pane = CreateFrame("Frame", nil, content)
+            pane:SetAllPoints(content)
+            pane:Hide()
+            panes[key] = pane
+        end
+    end
+
+    local cooldownHost = panes.COOLDOWNS
+    CreateHeading(cooldownHost, "Available Cooldowns", "Shows which raid members can provide each ability. Cooldown use and remaining time aren't tracked.")
+    local master = CreateToggle(cooldownHost, "Enable Available Cooldowns — HUD & inspection",
+        "Off stops this HUD and inspection. Quick Bar remains independent.",
+        function() return RA:IsHUDEnabled() end,
+        function(value) RA:SetHUDEnabled(value); RefreshConfig() end)
+    SetPoint(master, "TOPLEFT", cooldownHost, "TOPLEFT", 0, -58)
+    SetWidth(master, 950)
+    local tabX = 0
+    for _, definition in ipairs(COOLDOWN_TABS) do
+        local key = definition.key
+        local button = CreateButton(cooldownHost, definition.label, definition.width, 32, function() SetTab(key) end)
+        SetPoint(button, "TOPLEFT", cooldownHost, "TOPLEFT", tabX, -118)
+        cooldownTabs[key] = button
+        tabX = tabX + definition.width + 8
+    end
+    cooldownScroll = CreateFrame("ScrollFrame", nil, cooldownHost, "UIPanelScrollFrameTemplate")
+    SetPoint(cooldownScroll, "TOPLEFT", cooldownHost, "TOPLEFT", 0, -164)
+    SetPoint(cooldownScroll, "BOTTOMRIGHT", cooldownHost, "BOTTOMRIGHT", 0, 0)
+    local cooldownBody = CreateFrame("Frame", nil, cooldownScroll)
+    SetSize(cooldownBody, 950, 660)
+    cooldownScroll:SetScrollChild(cooldownBody)
+    for _, definition in ipairs(COOLDOWN_TABS) do
+        local pane = CreateFrame("Frame", nil, cooldownBody)
+        pane:SetAllPoints(cooldownBody)
         pane:Hide()
-        panes[key] = pane
+        panes[definition.key] = pane
     end
     RefreshHub = RA:CreateHubPanes(panes, {
         Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
@@ -2085,22 +2174,11 @@ local function CreateConfig()
     CreateActionsPane(panes.ACTIONS)
     CreateWorldMarkersPane(panes.WORLDMARKERS)
 
-    local hudToggle = CreateButton(footer, "DISABLE HUD + INSPECTION", 200, 42, function(self)
-        if RA:GetDB().shown then RA:HideHUD() else RA:ShowHUD() end
-        self:Refresh()
-        RefreshConfig()
-    end, true, Theme.Assets.IconEye)
-    SetPoint(hudToggle, "LEFT", footer, "LEFT", 12, 0)
-    hudToggle.Refresh = function(self)
-        self.label:SetText(RA:IsHUDEnabled() and "DISABLE HUD + INSPECTION" or "ENABLE HUD + INSPECTION")
-    end
-    RegisterControl(hudToggle)
-
     local recover = CreateButton(footer, "RECENTER HUD", 144, 42, function()
         if RA.RecoverHUD then RA:RecoverHUD() end
         RefreshConfig()
     end, false, Theme.Assets.IconTarget)
-    SetPoint(recover, "LEFT", hudToggle, "RIGHT", 10, 0)
+    SetPoint(recover, "LEFT", footer, "LEFT", 12, 0)
 
     local lock = CreateButton(footer, "LOCK HUD", 144, 42, function(self)
         RA:SetLocked(not RA:GetDB().locked)
@@ -2108,7 +2186,7 @@ local function CreateConfig()
     end, false, Theme.Assets.IconLock)
     SetPoint(lock, "LEFT", recover, "RIGHT", 10, 0)
     lock.Refresh = function(self)
-        self.label:SetText(RA:GetDB().locked and "UNLOCK HUD" or "LOCK HUD")
+        RA:SetVisualText(self.label, RA:GetDB().locked and "UNLOCK HUD" or "LOCK HUD")
         self:SetSelected(RA:GetDB().locked)
     end
     RegisterControl(lock)
@@ -2120,7 +2198,7 @@ local function CreateConfig()
     end, false, Theme.Assets.IconPlay)
     SetPoint(demo, "LEFT", lock, "RIGHT", 10, 0)
     demo.Refresh = function(self)
-        self.label:SetText(RA:GetDB().demoMode and "DEMO ON" or "DEMO OFF")
+        RA:SetVisualText(self.label, RA:GetDB().demoMode and "DEMO ON" or "DEMO OFF")
         self:SetSelected(RA:GetDB().demoMode)
     end
     RegisterControl(demo)
@@ -2150,6 +2228,7 @@ function RA:OpenConfig(tabKey)
         self:Print("Configuration is locked during combat.")
         return
     end
+    if tabKey == "RAIDTOOLS" then tabKey = "ADDONS" end
     if tabKey and panes[tabKey] then
         activeTab = tabKey
     elseif tabKey and not frame then
@@ -2199,7 +2278,10 @@ end)
 RA:RegisterCallback("INSPECTION_STATE_CHANGED", function()
     -- Scan target/progress changes should not rebuild every settings control.
     -- Only the scanning pane needs to react while an inspect pass is running.
-    if frame and frame:IsShown() then RefreshScanPane() end
+    if frame and frame:IsShown() then
+        RefreshScanPane()
+        if panicStatus then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
+    end
 end)
 RA:RegisterCallback("PROFILE_RESET", function()
     if frame and frame:IsShown() then RefreshConfig() end

@@ -6,6 +6,7 @@ local _, RA = ...
 -- The dock can remain visible in combat, but raid subgroup operations are never
 -- attempted during combat lockdown. No permanent OnUpdate polling is used.
 --
+-- Click READY CHECK: the same ready check as right-clicking the puck
 -- Left-click SORT: Tanks > Melee > Ranged > Healers
 -- Right-click SORT: compact sort-options flyout
 -- Left-click ODD/EVEN: split across odd/even group pairs
@@ -21,8 +22,9 @@ RA.RaidLeaderToolbox = Toolbox
 local CLOSE_DELAY_DEFAULT = 1.0
 local MOVE_TIMEOUT = 1.25
 local MAX_SORT_STEPS = 96
-local DOCK_WIDTH = 276
-local DOCK_WIDTH_NO_MISSING = 211
+local DOCK_LAYOUT = { padding = 7, gap = 6, readyMinWidth = 88, readyMaxWidth = 132, sortWidth = 60, splitWidth = 92, missingWidth = 59 }
+DOCK_LAYOUT.widthNoMissing = DOCK_LAYOUT.padding * 2 + DOCK_LAYOUT.readyMinWidth + DOCK_LAYOUT.sortWidth + DOCK_LAYOUT.splitWidth + DOCK_LAYOUT.gap * 2
+DOCK_LAYOUT.width = DOCK_LAYOUT.widthNoMissing + DOCK_LAYOUT.gap + DOCK_LAYOUT.missingWidth
 local DOCK_HEIGHT = 48
 local PUCK_SIZE = 30
 
@@ -36,6 +38,7 @@ local dockMonitor
 local dockPinned = false
 local monitorButtonsDown = { left = false, right = false, middle = false }
 local lastLayoutSnapshot
+local readyCheckButton
 local sortButton
 local splitButton
 local missingButton
@@ -172,7 +175,7 @@ local function SetSurface(frame, background, border, baseKey)
 end
 
 local function Font(parent, size, color, weight)
-    local fs = parent:CreateFontString(nil, "OVERLAY")
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     if RA.ApplyFont then
         RA:ApplyFont(fs, size, weight or "REGULAR", false)
     else
@@ -243,6 +246,25 @@ local function PrintLeadAccessRequired(action)
     end
 end
 
+local function GetReadyCheckUnavailableReason()
+    if not IsInRaid() then return "Ready Check is available in a raid." end
+    if not IsLeaderOrAssistant() then return "Ready Check requires raid lead or assist." end
+    if not C_PartyInfo or type(C_PartyInfo.DoReadyCheck) ~= "function" then
+        return "Ready Check is unavailable on this client."
+    end
+    return nil
+end
+
+local function RunReadyCheck()
+    local reason = GetReadyCheckUnavailableReason()
+    if reason then
+        RA:Print(reason)
+        return false
+    end
+    C_PartyInfo.DoReadyCheck()
+    return true
+end
+
 local function GetToolboxDB()
     local db = RA:GetDB()
     if not db then return nil end
@@ -250,7 +272,7 @@ local function GetToolboxDB()
     local t = db.leaderToolbox
     if t.enabled == nil then t.enabled = false end
     if t.showForNonLeaders == nil then t.showForNonLeaders = true end
-    if t.showMissing == nil then t.showMissing = false end
+    if t.showMissing == nil then t.showMissing = true end
     t.closeDelay = math.max(0.15, math.min(3.0, tonumber(t.closeDelay) or CLOSE_DELAY_DEFAULT))
     t.tooltipDelay = math.max(0.20, math.min(2.5, tonumber(t.tooltipDelay) or 0.75))
     t.puckSize = math.floor(math.max(24, math.min(44, tonumber(t.puckSize) or PUCK_SIZE)) + 0.5)
@@ -610,10 +632,10 @@ local function RefreshMissingData()
     end
 
     if missingButton then
-        missingButton.count:SetText(tostring(missingData.total))
+        RA:SetVisualText(missingButton.count, tostring(missingData.total))
         local color = missingData.total == 0 and TC.success or TC.magenta
         missingButton.count:SetTextColor(color[1], color[2], color[3], color[4] or 1)
-        missingButton.label:SetText(missingData.total == 0 and "PROVIDERS" or "MISSING")
+        RA:SetVisualText(missingButton.label, missingData.total == 0 and "PROVIDERS" or "MISSING")
     end
 
     if missingBadge then
@@ -621,7 +643,7 @@ local function RefreshMissingData()
         local show = db and db.showMissing ~= false and missingData.total > 0 and toolboxWasVisible
         missingBadge:SetShown(show and true or false)
         if show then
-            missingBadge.label:SetText(tostring(missingData.total))
+            RA:SetVisualText(missingBadge.label, tostring(missingData.total))
             local color = missingData.total <= 2 and (TC.orange or TC.warning) or (TC.danger or TC.magenta)
             missingBadge.label:SetTextColor(color[1], color[2], color[3], 1)
             SetSurface(missingBadge, CopyColor(TC.surfaceRaised, 0.995), CopyColor(color, 0.86), "missingBadge")
@@ -668,7 +690,7 @@ local function LayoutMissingPanel()
         if #items == 0 then return end
         sectionsShown = sectionsShown + 1
         local header = sectionsShown == 1 and missingPanel.sectionOne or missingPanel.sectionTwo
-        header:SetText(label)
+        RA:SetVisualText(header, label)
         header:Show()
         header:ClearAllPoints()
         SetPoint(header, "TOPLEFT", missingPanel, "TOPLEFT", 16, y)
@@ -683,7 +705,7 @@ local function LayoutMissingPanel()
             else
                 row.icon:SetTexture(GetSpellTexture(items[i].spellID))
             end
-            row.text:SetText(items[i].effect and (items[i].name .. "  |  " .. items[i].effect) or items[i].name)
+            RA:SetVisualText(row.text, items[i].effect and (items[i].name .. "  |  " .. items[i].effect) or items[i].name)
             row:ClearAllPoints()
             SetPoint(row, "TOPLEFT", missingPanel, "TOPLEFT", 13, y)
             row:Show()
@@ -696,7 +718,7 @@ local function LayoutMissingPanel()
     missingPanel.sectionTwo:Hide()
 
     if missingData.total == 0 then
-        missingPanel.empty:SetText("ALL MAJOR PROVIDER CLASSES PRESENT")
+        RA:SetVisualText(missingPanel.empty, "ALL MAJOR PROVIDER CLASSES PRESENT")
         missingPanel.empty:SetTextColor(TC.success[1], TC.success[2], TC.success[3], 1)
         missingPanel.empty:Show()
         SetHeight(missingPanel, 82)
@@ -1284,17 +1306,17 @@ local function SetActionButtonState(button, text, state)
     if not button then return end
     button.__state = state or "DEFAULT"
     if button == sortButton then
-        button.label:SetText(text or "SORT")
+        RA:SetVisualText(button.label, text or "SORT")
     elseif button == splitButton then
         if text then
-            button.left:SetText(text)
-            button.right:SetText("")
+            RA:SetVisualText(button.left, text)
+            RA:SetVisualText(button.right, "")
         else
-            button.left:SetText("ODD")
-            button.right:SetText("EVEN")
+            RA:SetVisualText(button.left, "ODD")
+            RA:SetVisualText(button.right, "EVEN")
         end
     elseif button.label then
-        button.label:SetText(text or button.__defaultLabel or "ACTION")
+        RA:SetVisualText(button.label, text or button.__defaultLabel or "ACTION")
     end
 
     local background, border = TC.surfaceRaised, CopyColor(TC.lineStrong, 0.55)
@@ -1667,7 +1689,7 @@ local function RefreshSortOptions()
     if not sortOptionsPanel then return end
     local groups = {}
     for group = 1, 8 do if not RA:IsRaidGroupIgnored(group) then groups[#groups + 1] = tostring(group) end end
-    sortOptionsPanel.groups:SetText("TRACKED GROUPS: " .. table.concat(groups, ", "))
+    RA:SetVisualText(sortOptionsPanel.groups, "TRACKED GROUPS: " .. table.concat(groups, ", "))
     sortOptionsPanel.cancel:SetShown(sortState.active)
     if sortOptionsPanel.undo then
         sortOptionsPanel.undo:SetShown(lastLayoutSnapshot ~= nil and not sortState.active)
@@ -1678,6 +1700,7 @@ local function RefreshAccessAppearance()
     if not sortButton or not splitButton then return end
     local locked = InCombatLockdown() or not IsLeaderOrAssistant()
 
+    SetActionButtonState(readyCheckButton, nil, GetReadyCheckUnavailableReason() and "LOCKED" or "DEFAULT")
     if sortState.active then
         SetActionButtonState(sortButton, nil, "WORKING")
     else
@@ -1706,10 +1729,22 @@ local function RefreshDockGeometry()
         end
     end
 
+    local readyWidth = DOCK_LAYOUT.readyMinWidth
+    local label = readyCheckButton and readyCheckButton.label
+    local measure = label and (label.GetUnboundedStringWidth or label.GetStringWidth)
+    if type(measure) == "function" then
+        local ok, width = pcall(measure, label)
+        if ok and type(width) == "number" and width == width and width >= 0 and width < 10000 then
+            readyWidth = math.max(DOCK_LAYOUT.readyMinWidth, math.min(DOCK_LAYOUT.readyMaxWidth, math.ceil(width) + 20))
+        end
+    end
+    if readyCheckButton then SetWidth(readyCheckButton, readyWidth) end
+
     missingButton:SetShown(showMissing)
     if missingBadge and not showMissing then missingBadge:Hide() end
     if not showMissing and missingPanel then missingPanel:Hide() end
-    SetWidth(dock, showMissing and DOCK_WIDTH or DOCK_WIDTH_NO_MISSING)
+    local baseWidth = showMissing and DOCK_LAYOUT.width or DOCK_LAYOUT.widthNoMissing
+    SetWidth(dock, baseWidth + readyWidth - DOCK_LAYOUT.readyMinWidth)
     AnchorDock()
 end
 
@@ -1722,9 +1757,6 @@ end
 local function RefreshDockStaticIcons()
     if puck and puck.logo then
         ApplyCrispIcon(puck.logo, Theme and (Theme.Assets.Checkmark or Theme.Assets.Logo) or "Interface\\Icons\\INV_Misc_GroupNeedMore")
-    end
-    if dock and dock.logo then
-        ApplyCrispIcon(dock.logo, Theme and (Theme.Assets.Checkmark or Theme.Assets.Logo) or "Interface\\Icons\\INV_Misc_GroupNeedMore")
     end
     if sortButton and sortButton.icon then
         ApplyCrispIcon(sortButton.icon, Theme and Theme.Assets.DockSort or "Interface\\Buttons\\UI-SortArrow")
@@ -1837,7 +1869,7 @@ local function CreateToolbox()
     SetPoint(missingBadge, "BOTTOMRIGHT", puck, "BOTTOMRIGHT", 5, -5)
     ApplySurface(missingBadge, CopyColor(TC.surfaceRaised, 0.995), CopyColor(TC.orange, 0.86), 8, "missingBadge")
     missingBadge.label = Font(missingBadge, 9.5, TC.orange, "BOLD")
-    missingBadge.label:SetText("1")
+    RA:SetVisualText(missingBadge.label, "1")
     SetPoint(missingBadge.label, "CENTER", missingBadge, "CENTER", 0, 0)
     missingBadge:SetScript("OnEnter", function(self)
         OpenDock()
@@ -1864,36 +1896,41 @@ local function CreateToolbox()
     dock:SetFrameLevel(17)
     dock:SetClampedToScreen(true)
     dock:EnableMouse(true)
-    SetSize(dock, DOCK_WIDTH, DOCK_HEIGHT)
+    SetSize(dock, DOCK_LAYOUT.width, DOCK_HEIGHT)
     ApplySurface(dock, CopyColor(TC.canvasDeep or TC.surface, 0.99), CopyColor(TC.lineStrong, 0.72), 11, "dock")
     if Theme and Theme.AddShadow then Theme:AddShadow(dock, 11, 0.46) end
     dock.accent = CreateAccentEdge(dock)
 
-    dock.logo = dock:CreateTexture(nil, "ARTWORK")
-    ApplyCrispIcon(dock.logo, Theme and (Theme.Assets.Checkmark or Theme.Assets.Logo) or "Interface\\Icons\\INV_Misc_GroupNeedMore")
-    dock.logo:SetTexCoord(0, 1, 0, 1)
-    SetSize(dock.logo, 34, 34)
-    SetPoint(dock.logo, "LEFT", dock, "LEFT", 7, 0)
+    readyCheckButton = CreateDockButton(dock, DOCK_LAYOUT.readyMinWidth, "readyCheckButton")
+    SetPoint(readyCheckButton, "LEFT", dock, "LEFT", DOCK_LAYOUT.padding, 0)
+    readyCheckButton.__defaultLabel = "Ready Check"
+    readyCheckButton.label = Font(readyCheckButton, 9.0, TC.text, "BOLD")
+    RA:SetVisualText(readyCheckButton.label, "Ready Check")
+    readyCheckButton.label:SetJustifyH("CENTER")
+    readyCheckButton.label:SetWordWrap(false)
+    SetPoint(readyCheckButton.label, "LEFT", readyCheckButton, "LEFT", 8, 0)
+    SetPoint(readyCheckButton.label, "RIGHT", readyCheckButton, "RIGHT", -8, 0)
+    SetHeight(readyCheckButton.label, 18)
 
-    sortButton = CreateDockButton(dock, 60, "sortButton")
-    SetPoint(sortButton, "LEFT", dock.logo, "RIGHT", 7, 0)
+    sortButton = CreateDockButton(dock, DOCK_LAYOUT.sortWidth, "sortButton")
+    SetPoint(sortButton, "LEFT", readyCheckButton, "RIGHT", DOCK_LAYOUT.gap, 0)
     sortButton.icon = sortButton:CreateTexture(nil, "ARTWORK")
     ApplyCrispIcon(sortButton.icon, Theme and Theme.Assets.DockSort or "Interface\\Buttons\\UI-SortArrow")
     SetSize(sortButton.icon, 18, 18)
     SetPoint(sortButton.icon, "TOP", sortButton, "TOP", 0, -3)
     sortButton.label = Font(sortButton, 7.7, TC.text, "BOLD")
-    sortButton.label:SetText("SORT")
+    RA:SetVisualText(sortButton.label, "SORT")
     SetPoint(sortButton.label, "BOTTOM", sortButton, "BOTTOM", 0, 5)
 
-    splitButton = CreateDockButton(dock, 92, "splitButton")
-    SetPoint(splitButton, "LEFT", sortButton, "RIGHT", 6, 0)
+    splitButton = CreateDockButton(dock, DOCK_LAYOUT.splitWidth, "splitButton")
+    SetPoint(splitButton, "LEFT", sortButton, "RIGHT", DOCK_LAYOUT.gap, 0)
     splitButton.left = Font(splitButton, 9.0, TC.magenta, "BOLD")
-    splitButton.left:SetText("ODD")
+    RA:SetVisualText(splitButton.left, "ODD")
     splitButton.left:SetJustifyH("CENTER")
     SetPoint(splitButton.left, "LEFT", splitButton, "LEFT", 8, 0)
     SetWidth(splitButton.left, 34)
     splitButton.right = Font(splitButton, 9.0, TC.textSoft, "BOLD")
-    splitButton.right:SetText("EVEN")
+    RA:SetVisualText(splitButton.right, "EVEN")
     splitButton.right:SetJustifyH("CENTER")
     SetPoint(splitButton.right, "RIGHT", splitButton, "RIGHT", -8, 0)
     SetWidth(splitButton.right, 36)
@@ -1902,13 +1939,13 @@ local function CreateToolbox()
     SetSize(splitButton.divider, 1, 20)
     SetPoint(splitButton.divider, "CENTER", splitButton, "CENTER", 0, 0)
 
-    missingButton = CreateDockButton(dock, 59, "missingButton")
-    SetPoint(missingButton, "LEFT", splitButton, "RIGHT", 6, 0)
+    missingButton = CreateDockButton(dock, DOCK_LAYOUT.missingWidth, "missingButton")
+    SetPoint(missingButton, "LEFT", splitButton, "RIGHT", DOCK_LAYOUT.gap, 0)
     missingButton.count = Font(missingButton, 14.0, TC.magenta, "BOLD")
-    missingButton.count:SetText("0")
+    RA:SetVisualText(missingButton.count, "0")
     SetPoint(missingButton.count, "TOP", missingButton, "TOP", 0, -4)
     missingButton.label = Font(missingButton, 6.8, TC.textSoft, "BOLD")
-    missingButton.label:SetText("MISSING")
+    RA:SetVisualText(missingButton.label, "MISSING")
     SetPoint(missingButton.label, "BOTTOM", missingButton, "BOTTOM", 0, 5)
 
     missingPanel = CreateFrame("Frame", "RCPArsenalMissingRaidCoverage", UIParent, "BackdropTemplate")
@@ -1921,7 +1958,7 @@ local function CreateToolbox()
     if Theme and Theme.AddShadow then Theme:AddShadow(missingPanel, 12, 0.48) end
     missingPanel.accent = CreateAccentEdge(missingPanel)
     missingPanel.title = Font(missingPanel, 9.4, TC.text, "BOLD")
-    missingPanel.title:SetText("MISSING MAJOR RAID BUFFS / DEBUFFS")
+    RA:SetVisualText(missingPanel.title, "MISSING MAJOR RAID BUFFS / DEBUFFS")
     SetPoint(missingPanel.title, "TOPLEFT", missingPanel, "TOPLEFT", 15, -16)
     missingPanel.sectionOne = Font(missingPanel, 8.2, TC.magenta, "BOLD")
     missingPanel.sectionTwo = Font(missingPanel, 8.2, TC.orange, "BOLD")
@@ -1940,10 +1977,10 @@ local function CreateToolbox()
     if Theme and Theme.AddShadow then Theme:AddShadow(sortOptionsPanel, 12, 0.48) end
     sortOptionsPanel.accent = CreateAccentEdge(sortOptionsPanel)
     sortOptionsPanel.title = Font(sortOptionsPanel, 9.5, TC.text, "BOLD")
-    sortOptionsPanel.title:SetText("SORT OPTIONS")
+    RA:SetVisualText(sortOptionsPanel.title, "SORT OPTIONS")
     SetPoint(sortOptionsPanel.title, "TOPLEFT", sortOptionsPanel, "TOPLEFT", 15, -15)
     sortOptionsPanel.order = Font(sortOptionsPanel, 8.0, TC.textSoft, "BOLD")
-    sortOptionsPanel.order:SetText("TANKS > MELEE > RANGED > HEALERS")
+    RA:SetVisualText(sortOptionsPanel.order, "TANKS > MELEE > RANGED > HEALERS")
     SetPoint(sortOptionsPanel.order, "TOPLEFT", sortOptionsPanel, "TOPLEFT", 15, -42)
     sortOptionsPanel.groups = Font(sortOptionsPanel, 7.2, TC.muted, "BOLD")
     SetPoint(sortOptionsPanel.groups, "TOPLEFT", sortOptionsPanel, "TOPLEFT", 15, -61)
@@ -1953,7 +1990,7 @@ local function CreateToolbox()
     SetPoint(sortOptionsPanel.undo, "BOTTOMLEFT", sortOptionsPanel, "BOTTOMLEFT", 13, 48)
     sortOptionsPanel.undo.__defaultLabel = "UNDO LAST SORT"
     sortOptionsPanel.undo.label = Font(sortOptionsPanel.undo, 8.0, TC.orange, "BOLD")
-    sortOptionsPanel.undo.label:SetText("UNDO LAST SORT")
+    RA:SetVisualText(sortOptionsPanel.undo.label, "UNDO LAST SORT")
     SetPoint(sortOptionsPanel.undo.label, "CENTER", sortOptionsPanel.undo, "CENTER", 0, 0)
     sortOptionsPanel.undo:Hide()
 
@@ -1961,14 +1998,14 @@ local function CreateToolbox()
     SetSize(sortOptionsPanel.run, 104, 30)
     SetPoint(sortOptionsPanel.run, "BOTTOMLEFT", sortOptionsPanel, "BOTTOMLEFT", 13, 12)
     sortOptionsPanel.run.label = Font(sortOptionsPanel.run, 8.0, TC.text, "BOLD")
-    sortOptionsPanel.run.label:SetText("RUN NORMAL SORT")
+    RA:SetVisualText(sortOptionsPanel.run.label, "RUN NORMAL SORT")
     SetPoint(sortOptionsPanel.run.label, "CENTER", sortOptionsPanel.run, "CENTER", 0, 0)
 
     sortOptionsPanel.cancel = CreateDockButton(sortOptionsPanel, 82, "sortOptionCancel")
     SetSize(sortOptionsPanel.cancel, 82, 30)
     SetPoint(sortOptionsPanel.cancel, "LEFT", sortOptionsPanel.run, "RIGHT", 8, 0)
     sortOptionsPanel.cancel.label = Font(sortOptionsPanel.cancel, 8.0, TC.textSoft, "BOLD")
-    sortOptionsPanel.cancel.label:SetText("CANCEL")
+    RA:SetVisualText(sortOptionsPanel.cancel.label, "CANCEL")
     SetPoint(sortOptionsPanel.cancel.label, "CENTER", sortOptionsPanel.cancel, "CENTER", 0, 0)
     sortOptionsPanel:Hide()
 
@@ -2001,13 +2038,7 @@ local function CreateToolbox()
             if puckWasDragged then return end
             TogglePuckCountdown()
         elseif button == "RightButton" then
-            if not IsLeaderOrAssistant() then
-                PrintLeadAccessRequired("Ready Check")
-                return
-            end
-            if C_PartyInfo and C_PartyInfo.DoReadyCheck then
-                C_PartyInfo.DoReadyCheck()
-            end
+            RunReadyCheck()
         elseif button == "MiddleButton" then
             dockPinned = not dockPinned
             if puck.pinDot then puck.pinDot:SetShown(dockPinned) end
@@ -2021,6 +2052,7 @@ local function CreateToolbox()
     dock:SetScript("OnEnter", OpenDock)
     dock:SetScript("OnLeave", ScheduleClose)
 
+    HookHover(readyCheckButton)
     HookHover(sortButton)
     HookHover(splitButton)
     HookHover(missingButton, OpenMissingPanel)
@@ -2029,6 +2061,8 @@ local function CreateToolbox()
     HookHover(sortOptionsPanel.run)
     HookHover(sortOptionsPanel.cancel)
     HookHover(sortOptionsPanel.undo)
+
+    readyCheckButton:SetScript("OnClick", RunReadyCheck)
 
     sortButton:SetScript("OnClick", function(_, button)
         if not IsLeaderOrAssistant() then
@@ -2070,6 +2104,20 @@ local function CreateToolbox()
         if sortState.active then StopSort("Raid sorting cancelled.", "WARNING") end
         sortOptionsPanel:Hide()
     end)
+
+    readyCheckButton:SetScript("OnEnter", function(self)
+        OpenDock()
+        ScheduleDelayedTooltip(self, function(owner)
+            GameTooltip:SetOwner(owner, "ANCHOR_TOP")
+            GameTooltip:SetText("Ready Check")
+            GameTooltip:AddLine("Click to ask raid members to confirm they are ready.", 0.82, 0.87, 0.94, true)
+            GameTooltip:AddLine("Also available by right-clicking the Quick Bar puck.", 0.82, 0.87, 0.94, true)
+            local reason = GetReadyCheckUnavailableReason()
+            if reason then GameTooltip:AddLine(reason, 1.0, 0.62, 0.24, true) end
+            GameTooltip:Show()
+        end)
+    end)
+    readyCheckButton:HookScript("OnLeave", function(self) CancelDelayedTooltip(self); ScheduleClose() end)
 
     sortButton:SetScript("OnEnter", function(self)
         OpenDock()
@@ -2285,6 +2333,9 @@ end)
 
 RA:RegisterCallback("VISUAL_ASSET_REFRESH", function()
     RefreshDockStaticIcons()
+    -- A recovered font can change caption width. Defer layout until the
+    -- existing post-combat visibility refresh if recovery occurs in combat.
+    if not InCombatLockdown() then RefreshDockGeometry() end
 end)
 
 RA:RegisterCallback("ACCENT_THEME_CHANGED", function()
@@ -2294,6 +2345,7 @@ RA:RegisterCallback("ACCENT_THEME_CHANGED", function()
     SetSurface(puck, TC.canvasDeep, CopyColor(TC.lineStrong, 0.68), "puck")
     SetSurface(dock, CopyColor(TC.canvasDeep, 0.99), CopyColor(TC.lineStrong, 0.72), "dock")
     local locked = InCombatLockdown() or not IsLeaderOrAssistant()
+    SetActionButtonState(readyCheckButton, nil, GetReadyCheckUnavailableReason() and "LOCKED" or "DEFAULT")
     SetActionButtonState(sortButton, nil, sortState.active and "WORKING" or (locked and "LOCKED" or "DEFAULT"))
     SetActionButtonState(splitButton, nil, locked and "LOCKED" or "DEFAULT")
     RefreshMissingData()

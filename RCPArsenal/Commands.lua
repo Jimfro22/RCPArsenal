@@ -5,7 +5,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp hud|r, |cff3aa7ff/rcp quickbar|r, |cff3aa7ff/rcp content|r, |cff3aa7ff/rcp scanning|r - open Arsenal settings")
     print("  |cff3aa7ff/rcp callouts|r, |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp profiles|r - callouts, personal tools, or profiles")
     print("  |cff3aa7ff/rcp versions|r - request group addon versions as leader or assistant")
-    print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open the addon checklist")
+    print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open Addons & Versions")
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
     print("  |cff3aa7ff/rcp markers|r - set up the optional world marker cycler and keybindings")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
@@ -35,7 +35,7 @@ end
 
 local function StartScan(fullRefresh)
     if not RA:IsInspectionEnabled() then
-        RA:Print("Enable HUD + talent inspection on the HUD page before scanning.")
+        RA:Print("Enable HUD + talent inspection in Available Cooldowns before scanning.")
         return
     end
     local reason = fullRefresh and "slash full rescan" or "slash scan missing"
@@ -86,6 +86,8 @@ local function HandleSlash(raw)
 
     if command == "" or command == "config" or command == "addons" then
         RA:OpenConfig("ADDONS")
+    elseif command == "cooldowns" then
+        RA:OpenConfig("COOLDOWNS")
     elseif command == "hud" then
         RA:OpenConfig("HUD")
     elseif command == "quickbar" then
@@ -101,11 +103,11 @@ local function HandleSlash(raw)
     elseif command == "tools" then
         RA:OpenConfig("MYTOOLS")
     elseif command == "raid" then
-        RA:OpenConfig("RAIDTOOLS")
+        RA:OpenConfig("ADDONS")
     elseif command == "settings" or command == "profiles" then
         RA:OpenConfig("SETTINGS")
     elseif command == "versions" then
-        RA:OpenConfig("RAIDTOOLS")
+        RA:OpenConfig("ADDONS")
         local ok, reason = RA.Readiness:QueryGroup()
         if not ok then RA:Print(reason) end
     elseif command == "markers" then
@@ -124,7 +126,7 @@ local function HandleSlash(raw)
         StartScan(true)
     elseif command == "clearcache" then
         if not RA:IsInspectionEnabled() then
-            RA:Print("Enable HUD + talent inspection on the HUD page before scanning.")
+            RA:Print("Enable HUD + talent inspection in Available Cooldowns before scanning.")
         elseif InCombatLockdown() then
             RA:Print("Inspection cache cannot be cleared during combat.")
         elseif RA.ClearInspectionCache then
@@ -139,7 +141,7 @@ local function HandleSlash(raw)
             RA:SetInspectionPaused(false)
             RA:Print("Raid scan resumed.")
         else
-            RA:Print("Enable HUD + talent inspection on the HUD page before resuming.")
+            RA:Print("Enable HUD + talent inspection in Available Cooldowns before resuming.")
         end
     elseif command == "compact" then
         RA:SetMode("COMPACT")
@@ -164,7 +166,7 @@ local function HandleSlash(raw)
         RA:Print("Solo demo mode " .. (RA:GetDB().demoMode and "enabled." or "disabled."))
     elseif command == "demoscan" then
         if not RA:IsHUDEnabled() then
-            RA:Print("Enable HUD + talent inspection on the HUD page before using demo data.")
+            RA:Print("Enable HUD + talent inspection in Available Cooldowns before using demo data.")
             return
         end
         local db = RA:GetDB()

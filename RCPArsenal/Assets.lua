@@ -13,6 +13,28 @@ local generation = 0
 local refreshing = false
 local FALLBACK_ICON = 134400
 
+-- Captions belong to the addon, not the native glyph cache. Callers use this
+-- for owned labels so a font failure cannot erase their only copy of the text.
+-- Editable input keeps its own current draft and is never retained here.
+function RA:SetVisualText(region, text)
+    if not region or not region.SetText then return false end
+    if issecretvalue and issecretvalue(text) then return false end
+    if region.GetObjectType and region:GetObjectType() == "EditBox" then
+        return pcall(region.SetText, region, text)
+    end
+    region.__raVisualText = text == nil and "" or tostring(text)
+    local ok = pcall(region.SetText, region, region.__raVisualText)
+    return ok
+end
+
+function RA:GetVisualText(region)
+    if region.__raVisualText ~= nil then return region.__raVisualText end
+    if region.GetText then
+        local ok, text = pcall(region.GetText, region)
+        if ok and not (issecretvalue and issecretvalue(text)) then return text end
+    end
+end
+
 local function IsVisible(region)
     if region.IsVisible then return region:IsVisible() end
     if region.IsShown and not region:IsShown() then return false end
@@ -69,11 +91,6 @@ local function RefreshRegistration(region, entry)
     if entry.kind == "font" then
         if RA.ApplyFont then
             entry.ready = RA:ApplyFont(region, entry.size, entry.weight, entry.shadow, true)
-            -- Reapplying a font must also invalidate an already assigned glyph.
-            if region.GetText and region.SetText then
-                local text = region:GetText()
-                if text ~= nil then region:SetText(text) end
-            end
         end
         return
     end
@@ -140,7 +157,14 @@ end
 function RA:WatchVisualAssets(frame)
     if not frame or not frame.HookScript or frame.__rcpaAssetWatch then return end
     frame.__rcpaAssetWatch = true
-    frame:HookScript("OnShow", function() RA:RequestVisualAssetRefresh() end)
+    frame:HookScript("OnShow", function()
+        -- Hidden controls may first appear after login's warm-up burst has
+        -- finished, or while its next pass is several seconds away. Rebind
+        -- visible texture/font resources now, then use the same bounded queue.
+        -- This pass never rebuilds a dock/HUD or touches inspection/attributes.
+        RA:RefreshVisualAssets()
+        RA:RequestVisualAssetRefresh()
+    end)
     frame:HookScript("OnHide", function()
         if not HasVisibleAssets() then RA:CancelVisualAssetRefresh() end
     end)

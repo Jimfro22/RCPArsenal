@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.2-alpha.3"
+RA.VERSION = "0.15.3-alpha.1"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -117,7 +117,7 @@ local DEFAULTS = {
             puckSize = 30,
             countdownSeconds = 15,
             flyoutDirection = "AUTO", -- AUTO, RIGHT, LEFT, DOWN, UP
-            showMissing = false,
+            showMissing = true,
             panicEnabled = false,
             panicMessage = "PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!",
             position = {
@@ -486,7 +486,7 @@ local function MigrateProfile(profile)
     leaderToolbox.enabled = leaderToolbox.enabled == true
     if leaderToolbox.showForNonLeaders == nil then leaderToolbox.showForNonLeaders = true end
     leaderToolbox.showForNonLeaders = leaderToolbox.showForNonLeaders ~= false
-    leaderToolbox.showMissing = leaderToolbox.showMissing == true
+    leaderToolbox.showMissing = leaderToolbox.showMissing ~= false
     leaderToolbox.panicEnabled = leaderToolbox.panicEnabled == true
     leaderToolbox.panicMessage = tostring(leaderToolbox.panicMessage or "PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!")
     leaderToolbox.closeDelay = math.max(0.15, math.min(3.0, tonumber(leaderToolbox.closeDelay) or 1.0))
@@ -613,7 +613,11 @@ end
 
 function RA:SetQuickBarEnabled(enabled)
     if InCombatLockdown() then return false, "Change this after combat." end
-    self:GetDB().leaderToolbox.enabled = enabled == true
+    local toolbox = self:GetDB().leaderToolbox
+    -- Explicit activation adopts provider coverage even for legacy defaults.
+    -- Ordinary refresh/normalization preserves a later deliberate OFF choice.
+    if enabled == true then toolbox.showMissing = true end
+    toolbox.enabled = enabled == true
     if self.RaidLeaderToolbox then self.RaidLeaderToolbox:Refresh() end
     self:FireCallback("TOOLS_CHANGED")
     return true

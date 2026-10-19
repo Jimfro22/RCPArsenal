@@ -241,16 +241,16 @@ SlashCmdList.RCPARSENAL('settings')
 check(RA.ConfigFrame:IsShown(), 'Real config did not open')
 cleanErrors()
 local function hasVisibleText(text)
-    for _, region in ipairs(objects) do if region.text == text and region:IsVisible() and (text ~= 'Morning Brew' or (region.fontSize or 0) >= 20) then return true end end
+    for _, region in ipairs(objects) do if region.text == text and region:IsVisible() and (text ~= 'Addons & versions' or (region.fontSize or 0) >= 20) then return true end end
     return false
 end
-check(hasVisibleText('Profiles & Recovery') and not hasVisibleText('Morning Brew'), 'Profiles pane navigation failed')
+check(hasVisibleText('Profiles & Recovery') and not hasVisibleText('Addons & versions'), 'Profiles pane navigation failed')
 SlashCmdList.RCPARSENAL('')
-check(hasVisibleText('Morning Brew') and not hasVisibleText('Profiles & Recovery'), 'Bare /rcp did not return to Addons')
+check(hasVisibleText('Addons & versions') and not hasVisibleText('Profiles & Recovery'), 'Bare /rcp did not return to Addons')
 check(talentReads == 0 and inspectCalls == 0 and sent == 0, 'Opening the hub performed scans or network requests')
 SlashCmdList.RCPARSENAL('raid')
-check(hasVisibleText('Version check'), 'Version check pane missing')
-check(hasVisibleText('OPTIONAL'), 'Optional addons are not visibly separated')
+check(hasVisibleText('Addons & versions'), 'Version check pane missing')
+check(hasVisibleText('Arsenal') and hasVisibleText('BigWigs'), 'Combined addon headers are missing')
 SlashCmdList.RCPARSENAL('scan'); SlashCmdList.RCPARSENAL('rescan'); SlashCmdList.RCPARSENAL('resume'); SlashCmdList.RCPARSENAL('clearcache'); SlashCmdList.RCPARSENAL('demoscan')
 check(not db.hudEnabled and not db.demoMode and talentReads == 0, 'Legacy slash actions silently enabled inspection')
 RA:OpenConfig('MYTOOLS'); cleanErrors()
@@ -296,9 +296,9 @@ local navHUD, navPuck, navMarkers = db.hudEnabled, db.leaderToolbox.enabled, db.
 local navReads, navInspects, navSent = talentReads, inspectCalls, sent
 local navPosition, navPuckPosition = db.position, db.leaderToolbox.position
 local navX, navY, navPuckX, navPuckY, navScale = db.position.x, db.position.y, db.leaderToolbox.position.x, db.leaderToolbox.position.y, db.scale
-local routes = {{'HUD','HUD'}, {'QUICK BAR','Quick Bar'}, {'CONTENT','Content'}, {'SCANNING','Scanning'},
-    {'CALLOUTS & PANIC','Callouts & Panic'}, {'WORLD MARKERS','World marker cycler'}, {'ADDONS','Morning Brew'},
-    {'VERSION CHECK','Version check'}, {'PERSONAL TOOLS','Personal tools'}, {'PROFILES & RECOVERY','Profiles & Recovery'}}
+local routes = {{'AVAILABLE COOLDOWNS','Available Cooldowns'}, {'ADDONS & VERSIONS','Addons & versions'},
+    {'QUICK BAR','Quick Bar'}, {'WORLD MARKERS','World marker cycler'},
+    {'PERSONAL TOOLS','Personal tools'}, {'PROFILES & RECOVERY','Profiles & Recovery'}}
 local previousBottom = 0
 for _, route in ipairs(routes) do
     for _, obj in ipairs(objects) do
@@ -315,20 +315,36 @@ for _, route in ipairs(routes) do
     for _, other in ipairs(routes) do check(selectedNav(other[1]) == (route[1] == other[1]), route[1] .. ' selected the wrong sidebar destination') end
     check(not clickVisible('BACK TO ADDONS') and not clickVisible('BACK TO QUICK BAR'), route[1] .. ' retained a competing parent route')
 end
-check(clickNav('ADDONS') and clickVisible('SETUP') and selectedNav('ADDONS'), 'Northern Sky lost its Addons context')
-check(clickVisible('BACK TO ADDONS') and hasHeading('Morning Brew'), 'Nested Northern Sky Back did not return to Addons')
-check(clickNav('HUD') and hasVisibleText('HUD GROWTH DIRECTION') and not clickVisible('HIDE SAMPLE'), 'HUD position controls or initially hidden sample are wrong')
-check(hasVisibleText('HUD OPACITY'), 'Live HUD opacity is hidden behind the optional sample')
+check(clickNav('ADDONS & VERSIONS') and clickVisible('Northern Sky') and clickVisible('SETUP') and selectedNav('ADDONS & VERSIONS'), 'Northern Sky lost its Addons context')
+check(clickVisible('BACK TO ADDONS') and hasHeading('Addons & versions'), 'Nested Northern Sky Back did not return to Addons')
+check(clickNav('AVAILABLE COOLDOWNS') and hasHeading('Categories'), 'Available Cooldowns did not start on Categories')
+local coverageExplanation="Shows which raid members can provide each ability. Cooldown use and remaining time aren't tracked."
+check(hasVisibleText(coverageExplanation) and hasVisibleText('Enable Available Cooldowns — HUD & inspection'), 'Master or honest coverage explanation is absent above Categories')
+local masterFrame, cooldownScroller
+for _,obj in ipairs(objects) do
+    if obj.title and obj.title.text=='Enable Available Cooldowns — HUD & inspection' then masterFrame=obj end
+end
+for _,obj in ipairs(objects) do
+    if obj.kind=='ScrollFrame' and obj.parent==masterFrame.parent then cooldownScroller=obj end
+end
+check(cooldownScroller and -masterFrame.points[1][5] < -cooldownScroller.points[1][5], 'Categories body scroll does not keep the master above it')
+local headingParent
+for _,obj in ipairs(objects) do if obj.text==coverageExplanation then headingParent=obj.parent end end
+check(headingParent==masterFrame.parent and cooldownScroller.child~=headingParent, 'Coverage explanation scrolls with the settings body')
+for _, old in ipairs({'HUD','CONTENT','SCANNING','CALLOUTS & PANIC','VERSION CHECK'}) do check(not clickNav(old), 'Duplicate primary destination remains: '..old) end
+check(clickVisible('DISPLAY & POSITION') and hasVisibleText('HUD GROWTH DIRECTION') and not clickVisible('HIDE SAMPLE'), 'Display controls or initially hidden sample are wrong')
+check(hasVisibleText('HUD OPACITY') and hasVisibleText(coverageExplanation), 'Live opacity or fixed coverage explanation is hidden')
 check(clickVisible('SHOW SAMPLE') and clickVisible('HIDE SAMPLE'), 'HUD sample was not explicitly collapsible')
 check(hasVisibleText('HUD OPACITY') and hasVisibleText('PRESENTATION'), 'Closing the sample hid common appearance settings')
 check(clickNav('QUICK BAR') and not hasVisibleText('HUD GROWTH DIRECTION') and visibleButton('RESET PUCK POSITION'), 'Quick Bar retained unrelated HUD controls or lost its position reset')
-check(clickNav('CALLOUTS & PANIC') and not clickVisible('TEST WHISPER') and not clickVisible('TEST PANIC'), 'Callout diagnostics are initially exposed')
+check(clickNav('AVAILABLE COOLDOWNS') and clickVisible('CALLOUTS & PANIC') and not clickVisible('TEST WHISPER') and not clickVisible('TEST PANIC'), 'Callout diagnostics are initially exposed')
+check(hasVisibleText('Panic: Off'), 'Disabled Panic reason is missing')
 check(clickVisible('ADVANCED: TEST CALLOUTS') and hasVisibleText('SECURE CALLOUT STATUS') and clickVisible('CLOSE TESTS'), 'Callout tests could not explicitly open/close')
 check(clickVisible('ADVANCED: TEST CALLOUTS'), 'Callout tests could not reopen')
 RA:CloseConfig(); RA:OpenConfig('ACTIONS')
 check(not hasVisibleText('SECURE CALLOUT STATUS'), 'Closing the host reopened diagnostic tests')
-check(not clickVisible('TEST PANIC') and clickVisible('HUD POSITION') and selectedNav('HUD'), 'Panic position link did not select HUD')
-check(clickNav('SCANNING') and not hasVisibleText('Demo the scanning state'), 'Scan demo is initially exposed')
+check(not clickVisible('TEST PANIC') and clickVisible('HUD POSITION') and selectedNav('AVAILABLE COOLDOWNS'), 'Panic position link did not select Available Cooldowns')
+check(clickVisible('SCANNING') and not hasVisibleText('Demo the scanning state') and hasVisibleText('Inspection off'), 'Scan demo or off-state explanation is wrong')
 check(clickVisible('ADVANCED: DEMO') and hasVisibleText('Demo the scanning state'), 'Scan demo could not be deliberately revealed')
 check(clickNav('PROFILES & RECOVERY') and not clickVisible('RESET PROFILE'), 'Full reset is not initially behind Advanced')
 check(db.hudEnabled == navHUD and db.leaderToolbox.enabled == navPuck and db.worldMarkers.enabled == navMarkers,
@@ -352,12 +368,12 @@ check(RA.PersonalTools:GetState().previewMode == nil and not RA:GetDB().personal
 -- Reusing link modal prevents stacked windows and host-close resurrection.
 RA:OpenConfig('ADDONS')
 local link
-for _, obj in ipairs(objects) do if obj.label and obj.label.text == 'LINK' and obj:IsVisible() then link = obj; break end end
+for _, obj in ipairs(objects) do if obj.label and obj.label.text == 'DOWNLOAD LINK' and obj:IsVisible() then link = obj; break end end
 check(link ~= nil, 'Catalog link control missing')
 link:Fire('OnClick'); local count = #objects
 link:Fire('OnClick'); check(count == #objects, 'Repeated link click stacked dialogs')
 RA:CloseConfig(); RA:OpenConfig('ADDONS')
-check(not hasVisibleText('BigWigs — copy link to your browser'), 'Host close resurfaced a modal')
+check(not hasVisibleText('Northern Sky Raid Tools — copy link to your browser'), 'Host close resurfaced a modal')
 RA:OpenConfig('HUD')
 check(not named.RCPArsenalHUD:IsShown() and not db.hudEnabled, 'Opening appearance enabled the HUD')
 RA:RecoverHUD(); check(not db.hudEnabled and not db.shown, 'Reset position enabled the HUD')
@@ -375,13 +391,19 @@ check(RA:GetDB().readiness == targets and RA:GetDB().personalTools == personal a
 local schedule = RA.ScheduleInspectionScan
 local scheduled = 0
 RA.ScheduleInspectionScan = function() scheduled = scheduled + 1; return true end
+db=RA:GetDB()
 -- A puck-only raid startup must remain scan-free, including pinned shutdown.
 IsInRaid = function() return true end
 IsInGroup = function() return true end
 GetNumGroupMembers = function() return 1 end
 GetRaidRosterInfo = function() return 'Test-Realm',2,1,80,'Mage','MAGE','Raid',true,false,nil,false,'DAMAGER' end
 IsMouseButtonDown = function() return false end
+db.leaderToolbox.showMissing=false
 check(RA:SetQuickBarEnabled(true) and scheduled == 0 and not RA:IsHUDEnabled(), 'Puck enable started inspection')
+check(db.leaderToolbox.showMissing, 'Explicit enable did not adopt provider coverage for legacy false')
+db.leaderToolbox.showMissing=false
+RA:NormalizeProfile(db); RA:OpenConfig('QUICKBAR'); RA:RequestVisualAssetRefresh(); RA.RaidLeaderToolbox:Refresh()
+check(not db.leaderToolbox.showMissing, 'Settings, normalization or visual refresh changed deliberate provider OFF')
 check(named.RCPArsenalRaidLeaderPuck:IsShown(), 'Puck-only raid view did not show')
 check(talentReads == 0 and inspectCalls == 0, 'Puck-only startup read talents or inspected')
 RA.RaidLeaderToolbox:SetPinned(true)
@@ -389,7 +411,7 @@ check(named.RCPArsenalRaidLeaderToolbox:IsShown(), 'Pinned dock did not open')
 check(RA:SetQuickBarEnabled(false), 'Puck disable failed')
 check(not named.RCPArsenalRaidLeaderToolbox:IsShown() and not named.RCPArsenalRaidLeaderPuck:IsShown(), 'Pinned dock stayed visible when switched off')
 check(named.RCPArsenalQuickBarClickMonitor.scripts.OnUpdate == nil, 'Disabled dock retained update monitor')
-check(RA:SetQuickBarEnabled(true), 'Puck reenable failed')
+check(RA:SetQuickBarEnabled(true) and db.leaderToolbox.showMissing, 'Puck reenable did not restore provider coverage default')
 IsInRaid = function() return false end
 IsInGroup = function() return false end
 GetNumGroupMembers = function() return 0 end
@@ -550,6 +572,22 @@ local cacheProfile=RA:GetDB()
 cacheProfile.hudEnabled,cacheProfile.shown,cacheProfile.demoMode,cacheProfile.mode=true,true,false,'COMPACT'
 local requestsBefore=inspectCalls
 RA:RefreshHUD()
+cacheProfile.leaderToolbox.panicEnabled=true
+RA:RefreshHUD()
+check(RA:GetPanicVisibilityText()=='Visible', 'Enabled Panic did not report its visible native button')
+cacheProfile.shown=false;RA:RefreshHUD()
+check(RA:GetPanicVisibilityText():find('Waiting for visible HUD category',1,true), 'Hidden HUD failed to explain enabled Panic')
+cacheProfile.shown=true;cacheProfile.leaderToolbox.panicEnabled=false
+cacheProfile.scan.showStrip=true
+RA:SetInspectionPaused(true);RA:RefreshHUD()
+check(#RA:GetPendingScanEntries()==0 and RA:IsInspectionPaused(), 'Resolved-paused strip fixture has unexpected work')
+local resolvedShell
+for _,obj in ipairs(objects) do if obj.text=='1/1' then resolvedShell=obj.parent end end
+check(not resolvedShell or not resolvedShell:IsShown(), 'Paused flag kept a resolved empty scan strip visible')
+RA:OpenConfig('SCANNING')
+check(hasVisibleText('No work pending') and not visibleButton('DISABLE HUD + INSPECTION'), 'No-work strip reason or duplicate master is wrong')
+RA:SetInspectionPaused(false)
+RA:CloseConfig()
 local savedTile
 for _,obj in ipairs(objects) do if obj.owner and obj.owner.name==name and obj:IsVisible() then savedTile=obj; break end end
 check(savedTile and savedTile.cacheLabel:IsShown(), 'Compact cached provider lacked a visible C marker')

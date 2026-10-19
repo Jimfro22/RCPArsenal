@@ -7,13 +7,14 @@ function RA:CreateHubPanes(panes, kit)
     local Point, Size, Width = T.SetPoint, T.SetSize, T.SetWidth
     local Font, Button, Card = kit.Font, kit.Button, kit.Card
     local selectedAddon = "arsenal"
-    local refreshers, matrixRows, addonRows, selectors = {}, {}, {}, {}
-    local feedback, targetBox, matrixTitle, matrixMeta, matrixScroll, matrixChild
+    local refreshers, matrixRows, selectors, targetDrafts = {}, {}, {}, {}
+    local feedback, targetBox, matrixMeta, matrixScroll, matrixChild, showDetails
     local lastTargetID, lastTargetValue
     local linkOverlay, linkBox, linkTitle, resetOverlay
+    local function SetText(region, value) RA:SetVisualText(region, value or "") end
     local function Text(parent, value, size, x, y, width, color)
         local text = Font(parent, size or 11, color or C.textSoft, "REGULAR")
-        text:SetText(value or "")
+        SetText(text, value)
         text:SetWordWrap(true)
         Point(text, "TOPLEFT", parent, "TOPLEFT", x or 0, y or 0)
         if width then Width(text, width) end
@@ -28,7 +29,7 @@ function RA:CreateHubPanes(panes, kit)
         return "Unknown"
     end
     local function Result(ok, message)
-        if feedback then feedback:SetText(message or (ok and "Saved." or "Unavailable.")) end
+        if feedback then SetText(feedback, message or (ok and "Saved." or "Unavailable.")) end
     end
     function RA:HideHubTransientDialogs()
         if linkOverlay then linkOverlay:Hide() end
@@ -59,7 +60,7 @@ function RA:CreateHubPanes(panes, kit)
             Point(close, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 15)
             RA.ConfigFrame:HookScript("OnHide", function() linkOverlay:Hide() end)
         end
-        linkTitle:SetText(entry.name .. " — copy link to your browser")
+        SetText(linkTitle, entry.name .. " — copy link to your browser")
         linkBox:SetText(entry.url); linkBox:SetCursorPosition(0)
         linkOverlay:Show(); linkBox:SetFocus(); linkBox:HighlightText()
     end
@@ -71,38 +72,252 @@ function RA:CreateHubPanes(panes, kit)
     RA.ConfigFrame:HookScript("OnHide", function() RA:HideHubTransientDialogs() end)
 
     local addons = panes.ADDONS
-    kit.Heading(addons, "Morning Brew", "Your raid's addon shelf. Install or update addons with your addon manager, then reload WoW.")
-    local localMeta = Text(addons, "", 10, 0, -61, 760)
+    kit.Heading(addons, "Addons & versions", "One roster, all seven addons. Select a column for its local setup, download link, and approved target.")
+    matrixMeta = Text(addons, "", 9.4, 0, -54, 540)
     local refresh = Button(addons, "REFRESH LOCAL", 156, 32, function()
-        RA.AddonCatalog:RefreshLocal(); refreshers.ADDONS()
+        -- This action may notify synchronously; the renderer below never calls
+        -- RefreshLocal, so READINESS_UPDATED cannot recurse through it.
+        if not RA.Readiness:RefreshLocal() then RA.AddonCatalog:RefreshLocal() end
+        refreshers.ADDONS()
     end)
-    Point(refresh, "TOPRIGHT", addons, "TOPRIGHT", 0, -55)
+    Point(refresh, "TOPRIGHT", addons, "TOPRIGHT", -234, -54)
+    local query = Button(addons, "CHECK GROUP VERSIONS", 218, 32, function()
+        local ok, reason = RA.Readiness:QueryGroup(); Result(ok, reason)
+        refreshers.ADDONS()
+    end, true)
+    Point(query, "TOPRIGHT", addons, "TOPRIGHT", 0, -54)
+
+    local labels = {current="Matches local target",outdated="Older than local target",ahead="Newer than local target",different="Different version",
+        no_target="No target set",unknown="Unknown",missing="Missing",disabled="Disabled",not_loaded="Enabled, not loaded",offline="Offline"}
+    local compact = {current="Matches target",outdated="Older",ahead="Newer",different="Different",no_target="No target",unknown="Unknown",
+        missing="Missing",disabled="Disabled",not_loaded="Not loaded",offline="Offline"}
+    local responseLabels = {unknown="No response",["local"]="Local",local_report="Local",offline="Offline",responding="Responding",partial="Partial response",complete="Reported"}
+    local shortNames = {arsenal="Arsenal",northernsky="Northern Sky",rclootcouncil="RCLootCouncil",simulationcraft="Simulationcraft",wowutils="WowUtils",autopotion="AutoPotion",bigwigs="BigWigs"}
+    local function Age(stamp)
+        return type(stamp)=="number" and tostring(math.max(0, math.floor((GetTime() or 0)-stamp))) .. "s ago" or "Unknown"
+    end
+    local function LocalState(addon, target)
+        local comparison = RA.Readiness:CompareVersion(addon.version, target)
+        if addon.installed==false then return "missing",comparison end
+        if addon.installed==nil then return "unknown",comparison end
+        if addon.enabled==false then return "disabled",comparison end
+        if addon.loaded==false then return "not_loaded",comparison end
+        if addon.enabled==nil or addon.loaded==nil then return "unknown",comparison end
+        return comparison,comparison
+    end
+    local function Tooltip(owner, lines)
+        GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+        GameTooltip:SetText(lines[1], 1, 1, 1)
+        for i=2,#lines do GameTooltip:AddLine(lines[i],0.76,0.80,0.86,true) end
+        GameTooltip:Show()
+    end
+    Text(addons, "PLAYER / RESPONSE", 9, 10, -116, 166, C.muted)
     for i, entry in ipairs(RA.AddonCatalog.Entries) do
-        local row = CreateFrame("Frame", nil, addons, "BackdropTemplate")
-        Size(row, 950, 73); Point(row, "TOPLEFT", addons, "TOPLEFT", 0, -100 - (i - 1) * 79)
-        kit.Backdrop(row, C.surface, C.line, 10, false)
-        Text(row, entry.name, 13, 16, -10, 295, C.text)
-        Text(row, entry.priority, 9, 320, -12, 110, entry.priority == "Optional" and C.orange or C.magenta)
-        Text(row, entry.description, 9.8, 16, -34, 410)
-        local details = Text(row, "", 10, 452, -12, 354)
-        details:SetSpacing(4)
-        local link = Button(row, entry.id == "northernsky" and "SETUP" or "LINK", 94, 32, function()
-            if entry.id == "northernsky" then RA:OpenConfig("NORTHERNSKY") else CopyLink(entry) end
+        local id = entry.id
+        local header = Button(addons, shortNames[id] or entry.name, 102, 38, function()
+            targetBox:ClearFocus()
+            selectedAddon, lastTargetID = id, nil
+            showDetails(true)
+            refreshers.ADDONS()
         end)
-        Point(link, "RIGHT", row, "RIGHT", -14, 0)
-        addonRows[entry.id] = details
+        Point(header, "TOPLEFT", addons, "TOPLEFT", 180+(i-1)*105, -103)
+        RA:ApplyFont(header.label, 9.2, "BOLD", false)
+        header.label:SetWordWrap(true)
+        header:HookScript("OnEnter",function(self)
+            Tooltip(self,{Literal(entry.name) .. " · " .. Literal(entry.priority),Literal(entry.description),"Select this column to edit its local target or open setup/download."})
+        end)
+        header:HookScript("OnLeave",function() GameTooltip:Hide() end)
+        selectors[id]=header
     end
-    refreshers.ADDONS = function()
-        local report = RA.AddonCatalog:GetLocalReport()
-        localMeta:SetText("Arsenal " .. Literal(report.version) .. "  ·  build " .. Literal(report.build) .. "  ·  protocol " .. tostring(report.protocol or "Unknown"))
-        for id, details in pairs(addonRows) do
-            local row = report.byID[id] or {}
-            details:SetText("Installed " .. Tri(row.installed) .. "  ·  Enabled " .. Tri(row.enabled) .. "  ·  Loaded " .. Tri(row.loaded) .. "\nVersion " .. Literal(row.version))
+    matrixScroll=CreateFrame("ScrollFrame",nil,addons,"UIPanelScrollFrameTemplate")
+    Size(matrixScroll,924,282);Point(matrixScroll,"TOPLEFT",addons,"TOPLEFT",0,-149)
+    matrixChild=CreateFrame("Frame",nil,matrixScroll)
+    Width(matrixChild,915);T.SetHeight(matrixChild,282);matrixScroll:SetScrollChild(matrixChild)
+    local empty=Text(matrixChild,"Roster unavailable. Local addon details remain below.",10,10,-12,880,C.muted)
+
+    local details=Card(addons,"LOCAL SETUP & APPROVED TARGET","Select any addon column above. Targets compare installed versions; they do not check the web for newest releases.")
+    Size(details,950,204);Point(details,"TOPLEFT",addons,"TOPLEFT",0,-450)
+    local collapsed=Text(addons,"Addon details: select a column for its local setup and approved target.",10,0,-461,720,C.muted)
+    local reveal=Button(addons,"SHOW DETAILS",180,30,function() showDetails(true) end)
+    Point(reveal,"TOPRIGHT",addons,"TOPRIGHT",0,-450)
+    local hide=Button(details,"HIDE DETAILS",128,28,function() showDetails(false) end)
+    Point(hide,"TOPRIGHT",details,"TOPRIGHT",-18,-10)
+    showDetails=function(value) details:SetShown(value);collapsed:SetShown(not value);reveal:SetShown(not value) end
+    showDetails(true)
+    local detailTitle=Text(details,"",12,18,-62,520,C.text)
+    local description=Text(details,"",9.3,18,-84,520)
+    local localMeta=Text(details,"",9.2,18,-110,520)
+    Text(details,"TARGET VERSION (LOCAL)",9,560,-62,370,C.magenta)
+    targetBox=CreateFrame("EditBox",nil,details,"BackdropTemplate")
+    Size(targetBox,184,30);Point(targetBox,"TOPLEFT",details,"TOPLEFT",560,-80)
+    kit.Backdrop(targetBox,C.input,C.line,8,false)
+    RA:ApplyFont(targetBox,11,"REGULAR",false)
+    targetBox:SetTextInsets(10,10,0,0);targetBox:SetAutoFocus(false);targetBox:SetMaxLetters(64)
+    local targetHint=Text(details,"",8.3,560,-113,372,C.muted)
+    targetHint:SetWordWrap(false)
+    targetBox:HookScript("OnEnter",function(self)
+        local settings=RA.Readiness:GetTargets()
+        Tooltip(self,{"Exact local target — " .. Literal(RA.AddonCatalog:GetEntry(selectedAddon).name),
+            "Target set " .. tostring(settings.revision or 0) .. " · " .. (settings.origin~="" and Literal(settings.origin) or "Local only"),
+            "Saving compares this exact approved string. Download links do not check the web for newest releases."})
+    end)
+    targetBox:HookScript("OnLeave",function() GameTooltip:Hide() end)
+    targetBox:SetScript("OnTextChanged",function(box,userInput)
+        if userInput then targetDrafts[selectedAddon]=box:GetText() or "" end
+    end)
+    targetBox:SetScript("OnEscapePressed",function(box)
+        targetDrafts[selectedAddon]=nil;box:ClearFocus();lastTargetID=nil;refreshers.ADDONS()
+    end)
+    local function SaveTarget()
+        local id=selectedAddon
+        local ok,reason=RA.Readiness:SetTarget(id,targetBox:GetText() or "")
+        if ok then targetDrafts[id]=nil end
+        targetBox:ClearFocus();lastTargetID=nil;Result(ok,reason);refreshers.ADDONS()
+    end
+    targetBox:SetScript("OnEnterPressed",SaveTarget)
+    local save=Button(details,"SAVE",92,30,SaveTarget)
+    Point(save,"TOPLEFT",details,"TOPLEFT",754,-80)
+    local clear=Button(details,"CLEAR",78,30,function()
+        local id=selectedAddon
+        local ok,reason=RA.Readiness:SetTarget(id,nil)
+        if ok then targetDrafts[id]=nil end
+        targetBox:ClearFocus();lastTargetID=nil;Result(ok,reason);refreshers.ADDONS()
+    end)
+    Point(clear,"TOPLEFT",details,"TOPLEFT",854,-80)
+    local download=Button(details,"DOWNLOAD LINK",180,30,function() CopyLink(RA.AddonCatalog:GetEntry(selectedAddon)) end)
+    Point(download,"TOPLEFT",details,"TOPLEFT",560,-130)
+    local setup=Button(details,"SETUP",180,30,function()
+        if selectedAddon=="northernsky" then RA:OpenConfig("NORTHERNSKY")
+        elseif selectedAddon=="arsenal" then RA:OpenConfig("SETTINGS") end
+    end)
+    Point(setup,"TOPLEFT",details,"TOPLEFT",752,-130)
+    local capture=Button(details,"USE MY ENABLED ADDON VERSIONS",292,30,function()
+        local ok,count=RA.Readiness:UseLocalTargets()
+        Result(ok,ok and (tostring(count) .. " targets updated from this character.") or count)
+        refreshers.ADDONS()
+    end)
+    Point(capture,"TOPLEFT",details,"TOPLEFT",18,-162)
+    feedback=Text(details,"No response means unknown. Only a received report can establish a missing addon.",9.1,324,-165,606,C.muted)
+
+    local function UpdateCell(cell,member,addon,snapshot,localReport)
+        local isLocal=member.isPlayer==true
+        local received=isLocal or addon.receivedAt~=nil
+        local state,comparison=addon.state,addon.versionState
+        if isLocal then state,comparison=LocalState(addon,snapshot.targets[addon.id]) end
+        if member.status=="offline" then state="offline"
+        elseif member.status=="unknown" then state="no_response"
+        elseif not received then state="unreported" end
+        local pendingReload=received and addon.installed==true and addon.enabled==false and addon.loaded==true
+        local version=(state=="offline" or state=="no_response" or state=="unreported") and "Unknown" or Literal(addon.version)
+        local caption=state=="no_response" and "No response" or (state=="unreported" and "Not reported" or compact[state] or "Unknown")
+        if pendingReload and state=="disabled" then caption="Reload pending" end
+        SetText(cell.version,version);SetText(cell.state,caption)
+        local color=C.textSoft
+        if state=="offline" or state=="no_response" or state=="unreported" or state=="unknown" or (snapshot.stale and not isLocal) then color=C.muted
+        elseif state=="missing" or state=="disabled" or state=="not_loaded" or comparison=="outdated" or comparison=="different" then color=C.orange
+        elseif state=="current" then color=C.text end
+        cell.state:SetTextColor(unpack(color))
+        local lines={Literal(RA.AddonCatalog:GetEntry(addon.id).name) .. " — " .. Literal(member.name),
+            "Response: " .. (responseLabels[member.status] or "Unknown"),"Version: " .. version,
+            "Local target: " .. (snapshot.targets[addon.id] and Literal(snapshot.targets[addon.id]) or "No target set")}
+        lines[#lines+1]="Status: " .. (state=="no_response" and "Unknown — no response" or (state=="unreported" and "Unknown — not reported" or labels[state] or "Unknown"))
+        if received and state~="offline" and state~="no_response" then
+            lines[#lines+1]="Comparison: " .. (labels[comparison] or "Unknown")
+            lines[#lines+1]="Installed " .. Tri(addon.installed) .. " · Enabled " .. Tri(addon.enabled) .. " · Loaded " .. Tri(addon.loaded)
+            if pendingReload then lines[#lines+1]="Disabled for the next reload; this code is still loaded now." end
+            if addon.id=="arsenal" then lines[#lines+1]="Build " .. Literal(addon.build) .. " · Protocol " .. tostring(addon.protocol or "Unknown") end
+            lines[#lines+1]=(isLocal and "Local metadata refreshed " .. Age(localReport.refreshedAt) or "Report received " .. Age(addon.receivedAt))
+        elseif state=="offline" then lines[#lines+1]="Offline is distinct from a missing addon."
+        else lines[#lines+1]="This addon has not been reported. Its installation and version are unknown." end
+        if not isLocal then
+            lines[#lines+1]="Group query: " .. (snapshot.queriedAt and Age(snapshot.queriedAt) or "Not queried")
+            if snapshot.stale then lines[#lines+1]="STALE: query again for current results." end
         end
+        cell.tooltip=lines
     end
+    refreshers.ADDONS=function()
+        local snapshot=RA.Readiness:GetSnapshot()
+        local localReport=RA.AddonCatalog:GetLocalReport()
+        snapshot.targets=snapshot.targets or {}
+        local settings=RA.Readiness:GetTargets()
+        local target=RA.AddonCatalog:NormalizeVersion(settings.targets[selectedAddon]) or ""
+        if lastTargetID~=selectedAddon or (not targetBox:HasFocus() and lastTargetValue~=target) then
+            targetBox:SetText(targetDrafts[selectedAddon]~=nil and targetDrafts[selectedAddon] or target)
+            lastTargetID,lastTargetValue=selectedAddon,target
+        end
+        local entry=RA.AddonCatalog:GetEntry(selectedAddon)
+        local localAddon=localReport.byID[selectedAddon] or {}
+        SetText(detailTitle,entry.name .. " · " .. entry.priority)
+        SetText(description,entry.description)
+        SetText(localMeta,"Installed " .. Tri(localAddon.installed) .. " · Enabled " .. Tri(localAddon.enabled) .. " · Loaded " .. Tri(localAddon.loaded)
+            .. "\nVersion " .. Literal(localAddon.version) .. (selectedAddon=="arsenal" and (" · Build " .. Literal(localAddon.build) .. " · Protocol " .. tostring(localAddon.protocol or "Unknown")) or ""))
+        SetText(targetHint,(targetDrafts[selectedAddon]~=nil and "Draft · " or "") .. "Target set " .. tostring(settings.revision or 0) .. " · " .. (settings.origin~="" and Literal(settings.origin) or "Local only"))
+        for id,button in pairs(selectors) do button:SetSelected(id==selectedAddon) end
+        setup:SetShown(selectedAddon=="northernsky" or selectedAddon=="arsenal")
+        SetText(setup.label,selectedAddon=="arsenal" and "PROFILES" or "SETUP")
+        local eligible,reason=RA.Readiness:GetQueryEligibility()
+        query:SetEnabled(eligible);query:SetAlpha(eligible and 1 or 0.55)
+        local status=snapshot.restriction or snapshot.reason or (snapshot.status=="checking" and "Checking group addon versions…" or "No response means unknown.")
+        SetText(matrixMeta,(snapshot.stale and "STALE · " or "") .. (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "No group query")
+            .. " · Local " .. Age(localReport.refreshedAt) .. "\n" .. (not eligible and reason or status or ""))
+        local combat=(InCombatLockdown and InCombatLockdown()) or (IsEncounterInProgress and IsEncounterInProgress())
+        for _,button in ipairs({save,clear,capture}) do button:SetEnabled(not combat);button:SetAlpha(combat and 0.55 or 1) end
+        local rows={}
+        for _,member in ipairs(snapshot.rows or {}) do if member.isPlayer then rows[#rows+1]=member end end
+        for _,member in ipairs(snapshot.rows or {}) do if not member.isPlayer then rows[#rows+1]=member end end
+        empty:SetShown(#rows==0)
+        for i,member in ipairs(rows) do
+            local row=matrixRows[i]
+            if not row then
+                row=CreateFrame("Frame",nil,matrixChild)
+                Size(row,915,32);Point(row,"TOPLEFT",matrixChild,"TOPLEFT",0,-(i-1)*34)
+                kit.Backdrop(row,C.surface,C.line,5,false)
+                row.name=Text(row,"",10.1,10,-3,164,C.text);row.name:SetWordWrap(false)
+                row.response=Text(row,"",8.6,10,-18,164,C.muted);row.response:SetWordWrap(false)
+                row:EnableMouse(true)
+                row:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip) end)
+                row:SetScript("OnLeave",function() GameTooltip:Hide() end)
+                row.cells={}
+                for j,definition in ipairs(RA.AddonCatalog.Entries) do
+                    local cell=CreateFrame("Frame",nil,row)
+                    Size(cell,105,32);Point(cell,"TOPLEFT",row,"TOPLEFT",180+(j-1)*105,0)
+                    cell.version=Text(cell,"",9.4,4,-3,97,C.text);cell.version:SetWordWrap(false)
+                    cell.state=Text(cell,"",8.4,4,-18,97,C.textSoft);cell.state:SetWordWrap(false)
+                    cell:EnableMouse(true)
+                    cell:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip) end)
+                    cell:SetScript("OnLeave",function() GameTooltip:Hide() end)
+                    row.cells[definition.id]=cell
+                end
+                matrixRows[i]=row
+            end
+            SetText(row.name,Literal(member.name));SetText(row.response,(responseLabels[member.status] or "Unknown")
+                .. ((member.status=="partial" or member.status=="responding") and (" " .. tostring(member.receivedCount or 0) .. "/7") or ""))
+            row.tooltip={Literal(member.name),responseLabels[member.status] or "Unknown",member.isPlayer and ("Local metadata refreshed " .. Age(localReport.refreshedAt))
+                or (snapshot.stale and "STALE group snapshot" or (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "Not queried"))}
+            for _,definition in ipairs(RA.AddonCatalog.Entries) do
+                local addon=(member.isPlayer and localReport.byID[definition.id]) or (member.addons and member.addons[definition.id]) or {id=definition.id}
+                UpdateCell(row.cells[definition.id],member,addon,snapshot,localReport)
+            end
+            row:Show()
+        end
+        for i=#rows+1,#matrixRows do matrixRows[i]:Hide() end
+        T.SetHeight(matrixChild,math.max(282,#rows*34))
+    end
+    refreshers.RAIDTOOLS=refreshers.ADDONS -- compatibility for callers during UI integration
+    local matrixTicker
+    addons:HookScript("OnShow",function()
+        if not matrixTicker and C_Timer and C_Timer.NewTicker then
+            matrixTicker=C_Timer.NewTicker(1,function() if addons:IsVisible() then refreshers.ADDONS() end end)
+        end
+    end)
+    local function StopMatrixTicker()
+        if matrixTicker then matrixTicker:Cancel();matrixTicker=nil end
+    end
+    addons:HookScript("OnHide",StopMatrixTicker)
+    RA.ConfigFrame:HookScript("OnHide",StopMatrixTicker)
 
     local tools = panes.MYTOOLS
-    kit.Heading(tools, "Personal tools", "Optional resurrection and consumable reminders. HUD, Quick Bar, and World Markers each have their own sidebar page.")
+    kit.Heading(tools, "Personal tools", "Optional resurrection and consumable reminders. Available Cooldowns, Quick Bar, and World Markers have their own settings.")
     local function Tool(label, description, getter, setter, y)
         local toggle = kit.Toggle(tools, label, description, getter, function(value)
             local ok, reason = setter(value)
@@ -131,124 +346,11 @@ function RA:CreateHubPanes(panes, kit)
     local personalStatus = Text(tools, "", 10, 16, -302, 914)
     personalStatus:SetSpacing(5)
     refreshers.MYTOOLS = function()
-        personalStatus:SetText("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " .. RA.PersonalTools:GetStatusText("consumableReminder"))
+        SetText(personalStatus, "Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: " .. RA.PersonalTools:GetStatusText("consumableReminder"))
     end
-
-    local raid = panes.RAIDTOOLS
-    kit.Heading(raid, "Version check", "Leaders and assistants can request addon reports. Replies are passive; no talent inspection is required.")
-    matrixMeta = Text(raid, "", 10, 0, -60, 720)
-    local query = Button(raid, "CHECK GROUP VERSIONS", 218, 34, function()
-        local ok, reason = RA.Readiness:QueryGroup(); Result(ok, reason)
-        refreshers.RAIDTOOLS()
-    end, true)
-    Point(query, "TOPRIGHT", raid, "TOPRIGHT", 0, -54)
-    local shortNames = {arsenal = "Arsenal", northernsky = "Northern Sky", rclootcouncil = "RCLootCouncil", simulationcraft = "Simulationcraft", wowutils = "WowUtils", autopotion = "AutoPotion", bigwigs = "BigWigs"}
-    Text(raid, "TEAM ADDONS", 8.5, 0, -91, 665, C.muted)
-    Text(raid, "OPTIONAL", 8.5, 683, -91, 260, C.orange)
-    for i, entry in ipairs(RA.AddonCatalog.Entries) do
-        local b = Button(raid, shortNames[entry.id], 131, 32, function()
-            selectedAddon = entry.id; lastTargetID = nil; refreshers.RAIDTOOLS()
-        end)
-        Point(b, "TOPLEFT", raid, "TOPLEFT", (i - 1) * 136.5, -104)
-        selectors[entry.id] = b
-    end
-    Text(raid, "LOCAL TARGET", 9, 0, -156, 115, C.magenta)
-    targetBox = CreateFrame("EditBox", nil, raid, "BackdropTemplate")
-    Size(targetBox, 210, 32); Point(targetBox, "TOPLEFT", raid, "TOPLEFT", 120, -147)
-    kit.Backdrop(targetBox, C.input, C.line, 8, false)
-    RA:ApplyFont(targetBox, 11, "REGULAR", false)
-    targetBox:SetTextInsets(10, 10, 0, 0); targetBox:SetAutoFocus(false); targetBox:SetMaxLetters(64)
-    targetBox:SetScript("OnEscapePressed", function(box) box:ClearFocus(); lastTargetID = nil; refreshers.RAIDTOOLS() end)
-    local function SaveTarget()
-        local ok, reason = RA.Readiness:SetTarget(selectedAddon, targetBox:GetText() or "")
-        targetBox:ClearFocus(); lastTargetID = nil; Result(ok, reason); refreshers.RAIDTOOLS()
-    end
-    targetBox:SetScript("OnEnterPressed", SaveTarget)
-    local save = Button(raid, "SAVE TARGET", 130, 32, SaveTarget)
-    Point(save, "TOPLEFT", raid, "TOPLEFT", 340, -147)
-    local clear = Button(raid, "CLEAR", 88, 32, function()
-        local ok, reason = RA.Readiness:SetTarget(selectedAddon, nil)
-        targetBox:ClearFocus(); lastTargetID = nil; Result(ok, reason); refreshers.RAIDTOOLS()
-    end)
-    Point(clear, "TOPLEFT", raid, "TOPLEFT", 480, -147)
-    local capture = Button(raid, "USE MY ENABLED ADDON VERSIONS", 292, 32, function()
-        local ok, count = RA.Readiness:UseLocalTargets(); lastTargetID = nil
-        Result(ok, ok and (tostring(count) .. " targets updated from this character.") or count)
-        refreshers.RAIDTOOLS()
-    end)
-    Point(capture, "TOPRIGHT", raid, "TOPRIGHT", 0, -147)
-    feedback = Text(raid, "Targets are saved locally in Arsenal. They compare exact installed versions; they do not check the web for newest releases.", 9.5, 0, -191, 950, C.muted)
-    matrixTitle = Text(raid, "", 12, 0, -226, 950, C.text)
-    Text(raid, "PLAYER / RESPONSE", 9, 0, -256, 245, C.muted)
-    Text(raid, "INSTALLED VERSION", 9, 267, -256, 260, C.muted)
-    Text(raid, "STATUS AGAINST TARGET", 9, 550, -256, 260, C.muted)
-    matrixScroll = CreateFrame("ScrollFrame", nil, raid, "UIPanelScrollFrameTemplate")
-    Point(matrixScroll, "TOPLEFT", raid, "TOPLEFT", 0, -277)
-    Point(matrixScroll, "BOTTOMRIGHT", raid, "BOTTOMRIGHT", -26, 2)
-    matrixChild = CreateFrame("Frame", nil, matrixScroll)
-    Width(matrixChild, 920); T.SetHeight(matrixChild, 360); matrixScroll:SetScrollChild(matrixChild)
-    local labels = {current = "Matches target", outdated = "Older than target", ahead = "Newer than target", different = "Different version", no_target = "No target set", unknown = "Unknown", missing = "Missing", disabled = "Disabled", not_loaded = "Enabled, not loaded", offline = "Offline"}
-    local responseLabels = {unknown = "No response", local_report = "Local", ["local"] = "Local", offline = "Offline", responding = "Responding", partial = "Partial response", complete = "Reported"}
-    refreshers.RAIDTOOLS = function()
-        local snapshot = RA.Readiness:GetSnapshot()
-        local settings = RA.Readiness:GetTargets()
-        local target = settings.targets[selectedAddon] or ""
-        if lastTargetID ~= selectedAddon or lastTargetValue ~= target then
-            targetBox:SetText(target); lastTargetID, lastTargetValue = selectedAddon, target
-        end
-        for id, b in pairs(selectors) do b:SetSelected(id == selectedAddon) end
-        local entry = RA.AddonCatalog:GetEntry(selectedAddon)
-        local age = snapshot.queriedAt and math.max(0, math.floor((GetTime() or 0) - snapshot.queriedAt)) or nil
-        matrixTitle:SetText(entry.name .. "  ·  " .. entry.priority .. (age and ("  ·  " .. age .. "s since query" .. (snapshot.stale and " — STALE" or "")) or ""))
-        local eligible, reason = RA.Readiness:GetQueryEligibility()
-        query:SetEnabled(eligible)
-        query:SetAlpha(eligible and 1 or 0.55)
-        matrixMeta:SetText((not eligible and reason or RA.Readiness:GetStatusText()) .. "\nLocal target set " .. tostring(settings.revision or 0) .. "  ·  " .. (settings.origin ~= "" and Literal(settings.origin) or "No targets captured"))
-
-        local rows = snapshot.rows or {}
-        for i, member in ipairs(rows) do
-            local row = matrixRows[i]
-            if not row then
-                row = CreateFrame("Frame", nil, matrixChild, "BackdropTemplate")
-                Size(row, 920, 31); Point(row, "TOPLEFT", matrixChild, "TOPLEFT", 0, -(i - 1) * 34)
-                kit.Backdrop(row, C.surface, C.line, 6, false)
-                row.name = Text(row, "", 10, 10, -4, 240, C.text)
-                row.name:SetWordWrap(false)
-                row.version = Text(row, "", 10, 267, -9, 265)
-                row.state = Text(row, "", 10, 550, -9, 350)
-                matrixRows[i] = row
-            end
-            local addon = member.addons and member.addons[selectedAddon] or {}
-            local response = responseLabels[member.status] or Literal(member.status)
-            row.name:SetText(Literal(member.name) .. "  ·  " .. response)
-            local unknown = member.status == "unknown" or member.status == "offline"
-            row.version:SetText(unknown and "Unknown" or Literal(addon.version))
-            local comparison = labels[addon.versionState] or "Unknown"
-            local loadState = addon.state ~= addon.versionState and labels[addon.state] or nil
-            row.state:SetText(unknown and response or (comparison .. (loadState and (" · " .. loadState) or "")))
-            row.state:SetTextColor(unpack(addon.versionState == "current" and C.text or ((addon.versionState == "outdated" or addon.state == "missing" or addon.state == "disabled") and C.orange or C.textSoft)))
-            row:Show()
-        end
-        for i = #rows + 1, #matrixRows do matrixRows[i]:Hide() end
-        T.SetHeight(matrixChild, math.max(360, #rows * 34))
-    end
-
-    -- Only the visible matrix ages its snapshot and rechecks button eligibility.
-    -- This timer performs no network request or talent inspection.
-    local matrixTicker
-    raid:HookScript("OnShow", function()
-        if not matrixTicker then matrixTicker = C_Timer.NewTicker(1, function()
-            if raid:IsVisible() then refreshers.RAIDTOOLS() end
-        end) end
-    end)
-    local function StopMatrixTicker()
-        if matrixTicker then matrixTicker:Cancel(); matrixTicker = nil end
-    end
-    raid:HookScript("OnHide", StopMatrixTicker)
-    RA.ConfigFrame:HookScript("OnHide", StopMatrixTicker)
 
     local settings = panes.SETTINGS
-    kit.Heading(settings, "Profiles & Recovery", "Import or export portable preferences. Appearance controls are on HUD and Content; tool switches stay on their own pages.")
+    kit.Heading(settings, "Profiles & Recovery", "Import or export portable preferences. Appearance and content controls are in Available Cooldowns; tool switches stay on their own pages.")
     local card = Card(settings, "LOCAL PROFILE", "Import and export appearance, content ordering, and callout templates.")
     Size(card, 950, 230); Point(card, "TOPLEFT", settings, "TOPLEFT", 0, -68)
     local import = Button(card, "IMPORT", 180, 36, function() RA:OpenProfileDialog("IMPORT") end)
@@ -261,10 +363,10 @@ function RA:CreateHubPanes(panes, kit)
     danger:Hide()
     local advancedReset = Button(settings, "ADVANCED: FULL PROFILE RESET", 300, 34, function(self)
         danger:SetShown(not danger:IsShown())
-        self.label:SetText(danger:IsShown() and "HIDE FULL RESET" or "ADVANCED: FULL PROFILE RESET")
+        SetText(self.label, danger:IsShown() and "HIDE FULL RESET" or "ADVANCED: FULL PROFILE RESET")
     end)
     Point(advancedReset, "TOPLEFT", settings, "TOPLEFT", 0, -310)
-    local function HideResetOptions() danger:Hide(); advancedReset.label:SetText("ADVANCED: FULL PROFILE RESET") end
+    local function HideResetOptions() danger:Hide(); SetText(advancedReset.label, "ADVANCED: FULL PROFILE RESET") end
     settings:HookScript("OnHide", HideResetOptions)
     RA.ConfigFrame:HookScript("OnHide", HideResetOptions)
     local reset = Button(danger, "RESET PROFILE", 210, 34, function()
@@ -294,7 +396,7 @@ function RA:CreateHubPanes(panes, kit)
     Point(reset, "TOPLEFT", danger, "TOPLEFT", 20, -78)
     local commandStatus = Text(settings, "", 11, 0, -560, 930)
     refreshers.SETTINGS = function()
-        commandStatus:SetText("Open Morning Brew with /rcp. Unique fallback: /rcparsenal.\n" .. (RA.GetSlashCommandStatus and RA:GetSlashCommandStatus() or ""))
+        SetText(commandStatus, "Open Morning Brew with /rcp. Unique fallback: /rcparsenal.\n" .. (RA.GetSlashCommandStatus and RA:GetSlashCommandStatus() or ""))
     end
     refreshers.NORTHERNSKY = RA:CreateNorthernSkyPane(panes.NORTHERNSKY, kit)
     return function(key)
