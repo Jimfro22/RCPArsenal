@@ -18,7 +18,7 @@ local function advance(seconds)
     end
     clock=stop
 end
-local function placement(width,height,font,size) return {Anchor="CENTER",relativeTo="CENTER",xOffset=10,yOffset=20,Width=width,Height=height,FontSize=font,Size=size,Font="Original",enabled=true} end
+local function placement(width,height,font,size) return {TimerFontSize=22,Anchor="CENTER",relativeTo="CENTER",xOffset=10,yOffset=20,Width=width,Height=height,FontSize=font,Size=size,Font="Original",enabled=true} end
 local function setup(missing)
     combat,encounter,restricted,clock=false,false,false,10
     timers,calls,events,callbacks,init,exports={},{},{},{},{},{}
@@ -28,20 +28,21 @@ local function setup(missing)
     function InCombatLockdown() return combat end
     function IsEncounterInProgress() return encounter end
     function GetTime() return clock end
+    function UnitGUID() return "Player-1" end
     function time() return 1000 end
     C_RestrictedActions={GetAddOnRestrictionState=function() return restricted and 2 or 0 end}
     C_Secrets={ShouldAurasBeSecret=function() return restricted end}
     Enum={AddOnRestrictionType={Combat=0,Encounter=1,Chat=5}}
     C_Timer={NewTimer=function(delay,fn) local t={at=clock+delay,fn=fn}; function t:Cancel() self.cancelled=true end; timers[#timers+1]=t; return t end}
-    C_AddOns={GetAddOnInfo=function() return not missing and "NorthernSkyRaidTools" or nil end, IsAddOnLoaded=function() return not missing, not missing end, GetAddOnMetadata=function(name,key) check(name=="NorthernSkyRaidTools" and key=="Version","metadata signature"); return version end}
+    C_AddOns={GetAddOnInfo=function(folder) return not missing and folder or nil end, GetAddOnEnableState=function(folder,guid) check(guid=="Player-1","enable state must use character GUID"); return 2 end, IsAddOnLoaded=function() return not missing, not missing end, GetAddOnMetadata=function(name,key) check(name=="NorthernSkyRaidTools" and key=="Version","metadata signature"); return version end}
     for _, name in ipairs({"SendAddonMessage","SendChatMessage","NotifyInspect","LoadAddOn","EnableAddOn","DisableAddOn","CreateFrame","SetSpecialization"}) do _G[name]=function() error("adapter touched unrelated engine: "..name) end end
     NSRT={CurrentProfile="Original",MainProfile="Original",ProfileKeys={Player="Original"},Settings={Volume=5,GenericDisplay=placement(100,25,14)},
         ReminderSettings={AutoShare=false,IconSettings=placement(80,80,20),BarSettings=placement(250,20,15),TextSettings=placement(nil,nil,30),CircleSettings=placement(nil,nil,15,80),
             ReminderFrame=placement(500,600,14),PersonalReminderFrame=placement(500,600,14),ExtraReminderFrame=placement(500,600,14)},
         Reminders={Original="EncounterID:42\nlibrary differs from runtime"},PersonalReminders={Personal="My private note"},StoredSharedReminder="Stored differs too",ActiveReminder="Original",
         ActivePersonalReminder={[42]="Personal"},StoredPersonalReminder={Player="Personal"},PersonalNotes={one="personal"},SharedNotes={two="shared"},AutoLoadNote={[42]="Original"},InviteList={Original={"A"}},
-        EncounterAlerts={shared="must not be imported"},NickNames={A="A"}}
-    engine={Reminder="Received runtime note",PersonalReminder="My private note",LoadedPersonalReminder="Personal",ReminderReceivedTime=8}
+        PaceComparison={Display=placement(200,50,20)},EncounterAlerts={shared="must not be imported"},NickNames={A="A"}}
+    engine={LoadedProfile=true,Reminder="Received runtime note",PersonalReminder="My private note",LoadedPersonalReminder="Personal",ReminderReceivedTime=8}
     local ignored={Profiles=true,ProfileKeys=true,CurrentProfile=true,MainProfile=true,EncounterAlerts=true,NickNames=true}
     local function currentProfile() local out={}; for k,v in pairs(NSRT) do if not ignored[k] then out[k]=copy(v) end end; return out end
     NSRT.Profiles={Original=currentProfile()}
@@ -248,4 +249,90 @@ nativeCallback("NSRT_REMINDER_CHANGED",engine.PersonalReminder,engine.Reminder)
 check(notices==countBefore+1,"owner-bound native callback did not publish a changed context")
 A=setup(true)
 check(#timers==0 and A:GetStatus().installed==false and A:GetStatus().loaded==false,"missing addon detection/timer state untruthful")
+
+-- Preserve timer fonts and anchors outside ReminderSettings, including nils.
+A=setup()
+NSRT.Profiles.RaidPreset.ReminderSettings.IconSettings.TimerFontSize=55
+NSRT.Profiles.RaidPreset.ReminderSettings.BarSettings.TimerFontSize=66
+NSRT.Profiles.RaidPreset.PaceComparison.Display.xOffset=800
+ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
+check(A:ApplyProfile("RaidPreset",notes.context),"profile apply failed")
+check(NSRT.ReminderSettings.IconSettings.TimerFontSize==22 and NSRT.ReminderSettings.BarSettings.TimerFontSize==22
+    and NSRT.PaceComparison.Display.xOffset==10,"profile changed timer fonts or an anchored top-level display")
+
+-- Failure after stock import has already activated a copy keeps recovery data.
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
+local doImport=NSAPI.ImportProfileString
+NSAPI.ImportProfileString=function(self,...) doImport(self,...);error("after activation") end
+ok,reason,notes=A:ApplyProfile("RaidPreset",notes.context)
+check(not ok and notes.partial and A:GetStatus().recovery.pending,"partial import discarded recovery status")
+local recoveryOK,recoveryReason,recoveryData=A:GetRecoveryBackup()
+check(recoveryOK and recoveryData.original=="Original" and recoveryData.observedProfile==NSRT.CurrentProfile
+    and recoveryData.originalExport and recoveryData.shared=="Received runtime note" and recoveryData.personal=="My private note"
+    and recoveryData.originalState.ReminderSettings.AutoShare==false,"partial import lost export/original notes/settings backup")
+check(not A:ApplyLocalNote("another edit",context()),"unresolved recovery allowed a new mutation")
+check(A:OpenSettings(),"recovery blocked native settings access")
+
+-- A callback edit after preservation cannot be declared our owned after-state.
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
+local baseFire=engine.FireCallback
+engine.FireCallback=function(self,...)
+    baseFire(self,...)
+    if NSRT.CurrentProfile~="Original" then NSRT.Reminders.External="newer external edit" end
+end
+ok,reason,notes=A:ApplyProfile("RaidPreset",notes.context)
+check(not ok and notes.partial and NSRT.Reminders.External=="newer external edit" and A:GetStatus().recovery.pending,
+    "callback edit was accepted as owned or overwritten by rollback")
+check(A:GetRecoveryBackup(),"callback conflict discarded recovery data")
+
+A=setup();ok,reason,notes=A:GetPlacement("IconSettings");check(ok,reason)
+check(A:SetPlacement("IconSettings",{Width=110,xOffset=123},notes.context),"placement apply failed")
+check(A:GetStatus().canRestorePlacement,"placement undo status unavailable")
+check(A:RestoreLastPlacement(context()) and NSRT.ReminderSettings.IconSettings.Width==80 and NSRT.ReminderSettings.IconSettings.xOffset==10,
+    "placement undo did not restore exact baseline")
+check(not A:RestoreLastPlacement(context()),"placement undo repeated")
+A=setup();ok,reason,notes=A:GetPlacement("IconSettings");check(ok,reason)
+check(A:SetPlacement("IconSettings",{Width=110},notes.context),"placement apply failed")
+NSRT.Settings.Volume=7
+check(not A:RestoreLastPlacement(context()) and NSRT.Settings.Volume==7,"placement undo ignored an intervening context change")
+A=setup();engine.LoadedProfile=false
+check(not A:GetNotes() and #calls==0,"partial NSRT load allowed reads/mutations")
+A=setup();C_AddOns.GetAddOnEnableState=function(folder) return folder=="NorthernSkyRaidTools_UI" and 0 or 2 end
+A:Refresh();check(A:GetStatus().uiEnabled==false and not A:GetStatus().capabilities.openSettings and not A:OpenSettings(),"disabled NSRT UI still had active settings control")
+
+-- Releasing a stale undo is local bookkeeping only and leaves current NSRT
+-- values untouched, including when AutoShare or version no longer permits writes.
+A=setup();check(A:ApplyLocalNote("mine",context()),"note apply failed")
+NSRT.StoredSharedReminder="newer shared state"
+check(not A:RestoreLastNote(context()),"stale restore unexpectedly succeeded")
+local releaseContext=context();local keptState=copy(NSRT);local keptRuntime=engine.Reminder
+local callsBefore,noticesBefore,timersBefore=#calls,notices,#timers
+NSRT.ReminderSettings.AutoShare=true;version="12.1.33"
+check(A:ReleaseUndo("note",releaseContext),"local undo release used a native write/version/AutoShare gate")
+check(#calls==callsBefore and notices==noticesBefore and #timers==timersBefore and engine.Reminder==keptRuntime
+    and NSRT.StoredSharedReminder=="newer shared state" and NSRT.ReminderSettings.AutoShare,"undo release invoked native engine/callback/timer or changed current values")
+check(not A:GetStatus().hasNoteBackup,"released note backup still advertised")
+version="12.1.32";NSRT.ReminderSettings.AutoShare=false
+check(A:ApplyLocalNote("new approved note",context()),"released stale note undo kept the session blocked")
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason);check(A:ApplyProfile("RaidPreset",notes.context),"profile apply failed")
+NSRT.Settings.Volume=7
+check(not A:RestoreLastProfile(context()),"stale profile restore unexpectedly succeeded")
+releaseContext=context();callsBefore=#calls;check(A:ReleaseUndo("profile",releaseContext) and #calls==callsBefore,"profile release called NSRT")
+ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason);check(A:ApplyProfile("RaidPreset",notes.context),"released stale profile undo kept session blocked")
+A=setup();ok,reason,notes=A:GetPlacement("IconSettings");check(ok,reason);check(A:SetPlacement("IconSettings",{Width=100},notes.context),"placement apply failed")
+releaseContext=context();callsBefore=#calls
+check(A:ReleaseUndo("placement",releaseContext) and #calls==callsBefore and NSRT.ReminderSettings.IconSettings.Width==100,"placement release called NSRT or changed placement")
+
+A=setup();ok,reason,notes=A:SelectProfile("RaidPreset");check(ok,reason)
+doImport=NSAPI.ImportProfileString
+NSAPI.ImportProfileString=function(self,...) doImport(self,...);error("after activation") end
+check(not A:ApplyProfile("RaidPreset",notes.context),"partial failure not reproduced")
+local recoveryToken=A:GetStatus().recovery.token
+callsBefore,noticesBefore,timersBefore=#calls,notices,#timers
+local currentKey=NSRT.CurrentProfile
+check(not A:ReleaseUndo("recovery","wrong-token"),"wrong recovery record token released backup")
+NSAPI.GetReminderString=function() error("must not call NSRT while releasing local data") end
+check(A:ReleaseUndo("recovery",recoveryToken) and #calls==callsBefore and notices==noticesBefore and #timers==timersBefore and NSRT.CurrentProfile==currentKey,
+    "recovery release called native APIs/callbacks or changed current profile")
+check(A:GetStatus().recovery==nil,"released recovery still advertised")
 print("nsrt_adapter: "..checks.." checks passed")

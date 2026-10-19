@@ -11,7 +11,8 @@ local state, signature, sequence = nil, nil, 0
 local notifying = false
 local boundAPI, deferredTimer, deferredAttempt
 local applying, noteBackup, profileBackup, placementBackup, previewOwned = false, nil, nil, nil, false
-local previewTimer, stopPending, refreshTimer, selectedProfile
+local previewTimer, stopPending, refreshTimer, selectedProfile, recovery
+local recoverySequence = 0
 local noteKeys = {"Reminders", "PersonalReminders", "SharedNotes", "PersonalNotes", "ActiveReminder", "ActivePersonalReminder", "StoredSharedReminder", "StoredPersonalReminder", "AutoLoadNote", "InviteList"}
 local runtimeKeys = {"Reminder", "PersonalReminder", "LoadedPersonalReminder", "ReminderReceivedTime"}
 local function Secret(value) return type(issecretvalue) == "function" and issecretvalue(value) end
@@ -93,6 +94,7 @@ end
 local function Capture()
     local api, internal, db = _G.NSAPI, _G.NorthernSkyRaidTools, _G.NSRT
     if type(api) ~= "table" or type(internal) ~= "table" or type(db) ~= "table" then return nil, "Load Northern Sky Raid Tools before using this page." end
+    if internal.LoadedProfile ~= true then return nil, "Northern Sky has not finished loading its profile." end
     local ok, personal, shared = Call(api, "GetReminderString")
     if not ok then return nil, "Northern Sky note reads are unavailable." end
     local profileOK, profile = Call(api, "GetCurrentProfileKey")
@@ -129,6 +131,7 @@ local function Guard(expected, capability)
     if not current then return nil, reason end
     if current.version ~= Adapter.SUPPORTED_VERSION then return nil, "This action supports stock Northern Sky " .. Adapter.SUPPORTED_VERSION .. "; open Northern Sky settings for other versions." end
     if applying then return nil, "A Northern Sky change is already in progress." end
+    if recovery and recovery.pending then return nil, "A previous profile operation needs recovery review. Copy its backup and inspect Northern Sky settings before further changes." end
     if type(expected) == "table" then expected = expected.context end
     if expected ~= Context() then return nil, "Northern Sky changed after this view loaded. Refresh before applying." end
     if capability == "note" and (type(internal.ImportReminder) ~= "function" or type(internal.SetReminder) ~= "function" or type(internal.ProcessReminder) ~= "function" or type(internal.UpdateReminderFrame) ~= "function" or type(internal.FireCallback) ~= "function" or type(db.Reminders) ~= "table" or type(db.InviteList) ~= "table") then
@@ -191,6 +194,23 @@ local function ValidPlacement(section, settings)
     end
     return true
 end
+local function AddonState(folder)
+    local result, api = {}, C_AddOns or {}
+    if type(api.GetAddOnInfo) == "function" then
+        local ok, name = pcall(api.GetAddOnInfo, folder)
+        if ok and not Secret(name) then result.installed = type(name) == "string" and name:lower() == folder:lower() end
+    end
+    local character = UnitGUID and UnitGUID("player")
+    if not Secret(character) and type(character) == "string" and type(api.GetAddOnEnableState) == "function" then
+        local ok, enabled = pcall(api.GetAddOnEnableState, folder, character)
+        if ok and not Secret(enabled) and type(enabled) == "number" then result.enabled = enabled > 0 end
+    end
+    if type(api.IsAddOnLoaded) == "function" then
+        local ok, _, loaded = pcall(api.IsAddOnLoaded, folder)
+        if ok and not Secret(loaded) and type(loaded) == "boolean" then result.loaded = loaded end
+    end
+    return result
+end
 function Adapter:Refresh()
     if NativeRestriction() then
         Publish({available = false, reason = NativeRestriction(), capabilities = {}, reasons = {}, canRestoreNote = false, canRestoreProfile = false})
@@ -206,7 +226,8 @@ function Adapter:Refresh()
     state = nextState
     local caps = state.capabilities
     caps.notes, caps.profiles = current ~= nil, current ~= nil and type(api.GetProfileKeys) == "function"
-    caps.openSettings = type(_G.NSAPI) == "table" and type(_G.NSAPI.OpenConfig) == "function"
+    local ui = AddonState("NorthernSkyRaidTools_UI")
+    caps.openSettings = type(_G.NSAPI) == "table" and type(_G.NSAPI.OpenConfig) == "function" and ui.installed ~= false and ui.enabled ~= false
     caps.applyNote = state.compatible and type(internal.ImportReminder) == "function" and type(internal.SetReminder) == "function"
         and type(internal.ProcessReminder) == "function" and type(internal.UpdateReminderFrame) == "function" and type(internal.FireCallback) == "function" and state.autoShare == false
     caps.placement = false
@@ -226,8 +247,15 @@ function Adapter:Refresh()
     state.reasons.applyProfile = not caps.applyProfile and (state.autoShare ~= false and "Turn off Auto Share in Northern Sky settings before applying a local profile copy." or "The reviewed profile clone and refresh APIs are unavailable.") or nil
     state.reasons.setPlacement = not caps.setPlacement and "The reviewed placement and refresh APIs are unavailable." or nil
     state.canRestoreNote = noteBackup ~= nil and caps.applyNote and noteBackup.api == api and noteBackup.internal == internal and noteBackup.db == _G.NSRT and Equal(noteBackup.after, current)
+    state.canRestorePlacement = placementBackup ~= nil and caps.setPlacement and placementBackup.api == api and placementBackup.internal == internal
+        and placementBackup.db == _G.NSRT and Equal(placementBackup.after, current)
     state.canRestoreProfile = profileBackup ~= nil and caps.applyProfile and profileBackup.api == api and profileBackup.internal == internal and profileBackup.db == _G.NSRT and Equal(profileBackup.after, current)
         and Equal(_G.NSRT.Profiles[profileBackup.original], profileBackup.originalProfile) and Equal(_G.NSRT.Profiles[profileBackup.clone], profileBackup.cloneProfile)
+    if recovery and recovery.pending then
+        state.reason = "A previous profile operation needs recovery review."
+        caps.applyNote, caps.applyProfile, caps.setPlacement = false, false, false
+        state.canRestoreNote, state.canRestoreProfile, state.canRestorePlacement = false, false, false
+    end
     state = previousState
     Publish(nextState)
     return current ~= nil, reason, self:GetStatus()
@@ -255,6 +283,16 @@ function Adapter:GetStatus()
             if ok and not Secret(loaded) and type(loaded) == "boolean" then result.loaded = loaded end
         end
     end
+    local ui = AddonState("NorthernSkyRaidTools_UI")
+    result.uiInstalled, result.uiEnabled, result.uiLoaded = ui.installed, ui.enabled, ui.loaded
+    result.hasNoteBackup, result.hasProfileBackup, result.hasPlacementBackup = noteBackup ~= nil, profileBackup ~= nil, placementBackup ~= nil
+    result.canRestoreNote = result.canRestoreNote and noteBackup ~= nil or false
+    result.canRestoreProfile = result.canRestoreProfile and profileBackup ~= nil or false
+    result.canRestorePlacement = result.canRestorePlacement and placementBackup ~= nil or false
+    if recovery then
+        result.recovery = {token = recovery.token, pending = recovery.pending == true, original = recovery.original, source = recovery.source,
+            intendedClone = recovery.intendedClone, clone = recovery.clone, observedProfile = recovery.observedProfile, phase = recovery.phase, reason = recovery.reason}
+    end
     return result
 end
 function Adapter:GetNotes()
@@ -267,6 +305,8 @@ end
 function Adapter:OpenSettings()
     local reason = NativeRestriction()
     if reason then return false, reason end
+    local ui = AddonState("NorthernSkyRaidTools_UI")
+    if ui.installed == false or ui.enabled == false then return false, "Install and enable the Northern Sky UI companion in Blizzard's AddOns list before opening its settings." end
     local ok, opened = Call(_G.NSAPI, "OpenConfig")
     if not ok or opened ~= true then return false, "Northern Sky settings could not be opened yet. Refresh after it finishes loading." end
     return true
@@ -361,7 +401,7 @@ local function CapturePreserved(current)
         if type(value) ~= "table" or depth > 12 then return end
         if value.Anchor ~= nil then
             local fields = {}
-            for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "Size"}) do fields[key] = Clone(value[key]) end
+            for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "TimerFontSize", "Size"}) do fields[key] = Clone(value[key]) end
             result.placements[#result.placements + 1] = {path = Clone(path), fields = fields}
         end
         for key, child in pairs(value) do
@@ -370,8 +410,7 @@ local function CapturePreserved(current)
             end
         end
     end
-    Walk(current.dbValues.ReminderSettings, {"ReminderSettings"}, 0)
-    Walk(current.dbValues.Settings, {"Settings"}, 0)
+    Walk(current.dbValues, {}, 0)
     return result
 end
 local function RestorePreserved(preserved, internal, db)
@@ -386,8 +425,51 @@ local function RestorePreserved(preserved, internal, db)
             if type(target[key]) ~= "table" then target[key] = {} end
             target = target[key]
         end
-        for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "Size"}) do target[key] = Clone(placement.fields[key]) end
+        for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "TimerFontSize", "Size"}) do target[key] = Clone(placement.fields[key]) end
     end
+end
+local function PreservedMatches(preserved, internal, db)
+    for i = 1, #noteKeys do local key = noteKeys[i]; if not Equal(db[key], preserved.notes[key]) then return false end end
+    for i = 1, #runtimeKeys do local key = runtimeKeys[i]; if not Equal(internal[key], preserved.runtime[key]) then return false end end
+    if not db.ReminderSettings or db.ReminderSettings.AutoShare ~= preserved.autoShare then return false end
+    for i = 1, #preserved.placements do
+        local placement, target = preserved.placements[i], db
+        for j = 1, #placement.path do target = type(target) == "table" and target[placement.path[j]] or nil end
+        if type(target) ~= "table" then return false end
+        for _, key in ipairs({"Anchor", "relativeTo", "xOffset", "yOffset", "Width", "Height", "FontSize", "TimerFontSize", "Size"}) do
+            if not Equal(target[key], placement.fields[key]) then return false end
+        end
+    end
+    return true
+end
+local function SameOwners(api, internal, db)
+    return _G.NSAPI == api and _G.NorthernSkyRaidTools == internal and _G.NSRT == db
+end
+function Adapter:GetRecoveryBackup()
+    if not recovery then return false, "There is no profile recovery backup in this session." end
+    return true, nil, {original = recovery.original, source = recovery.source, observedProfile = recovery.observedProfile,
+        intendedClone = recovery.intendedClone, clone = recovery.clone, phase = recovery.phase, reason = recovery.reason,
+        pending = recovery.pending == true, originalExport = recovery.originalExport,
+        shared = recovery.before.shared, personal = recovery.before.personal,
+        originalProfile = Clone(recovery.originalProfile), originalState = Clone(recovery.before.dbValues), runtime = Clone(recovery.before.runtime),
+        preservation = Clone(recovery.preserved)}
+end
+function Adapter:ReleaseUndo(kind, expected)
+    if type(expected) == "table" then expected = expected.context end
+    if Secret(expected) or type(expected) ~= "string" then return false, "Refresh the backup review before releasing it." end
+    if kind == "recovery" then
+        if not recovery then return false, "There is no recovery record to release." end
+        if expected ~= recovery.token then return false, "A different recovery record is now active. Review it before releasing." end
+        if recovery.pending and profileBackup and profileBackup.original == recovery.original and profileBackup.clone == recovery.clone then profileBackup = nil end
+        recovery = nil
+    else
+        if expected ~= Context() or not state or state.context ~= expected then return false, "The current view changed. Review it before releasing undo." end
+        if kind == "note" then if not noteBackup then return false, "There is no note undo to release." end; noteBackup = nil
+        elseif kind == "profile" then if not profileBackup then return false, "There is no profile undo to release." end; profileBackup = nil
+        elseif kind == "placement" then if not placementBackup then return false, "There is no placement undo to release." end; placementBackup = nil
+        else return false, "Choose note, profile, placement, or recovery undo." end
+    end
+    return true, nil, {released = kind, context = Context()}
 end
 function Adapter:SelectProfile(name)
     local ok, reason = self:Refresh()
@@ -412,47 +494,88 @@ function Adapter:ApplyProfile(name, expected)
     local original, cloneName = before.profile, nil
     local base = "RCP Arsenal Copy " .. tostring(time and time() or 0) .. "-" .. tostring(sequence)
     while db.Profiles[base] ~= nil do base = base .. "-2"; if #base > 120 then return false, "Could not reserve an Arsenal profile name." end end
+    if type(db.Profiles[original]) ~= "table" then return false, "The current profile has no complete stored identity." end
+    local originalOK, originalSnapshot = pcall(Clone, db.Profiles[original])
+    if not originalOK then return false, "The current stored profile exceeds safe backup limits." end
+    recoverySequence = recoverySequence + 1
+    recovery = {token = "nsrt-recovery-" .. recoverySequence, pending = true, phase = "prepared", original = original, source = name, intendedClone = base,
+        before = before, preserved = preserved, originalProfile = originalSnapshot, observedProfile = original}
+    local expectedAfterWrite, expectedProfileEntries
     applying = true
     local ok, failure = pcall(function()
         local existingProfiles = {}
         for key in pairs(db.Profiles) do existingProfiles[key] = true end
+        recovery.phase = "exporting-source"
         local sourceExport = api:ExportProfile(name, false)
         if not String(sourceExport, 2097152) then error("Source export was unavailable.") end
         local sourceAfterExport = Clone(db.Profiles[name])
+        recovery.phase = "exporting-original"
         local originalExport = api:ExportProfile(original, false)
+        recovery.originalExport = String(originalExport, 2097152)
         if not String(originalExport, 2097152) then error("Original export was unavailable.") end
         if NativeRestriction() or _G.NSAPI ~= api or _G.NorthernSkyRaidTools ~= internal or _G.NSRT ~= db or db.CurrentProfile ~= original
             or not Equal(sourceAfterExport, db.Profiles[name]) then error("Profile identity changed before import.") end
+        recovery.phase = "importing"
         cloneName = api:ImportProfileString(sourceExport, base, false, true)
+        recovery.clone = cloneName
         if not String(cloneName, 128) or db.CurrentProfile ~= cloneName or type(db.Profiles[cloneName]) ~= "table" or existingProfiles[cloneName] or cloneName:sub(1, #base) ~= base then error("The clone was not activated with a new identity.") end
         if NativeRestriction() or _G.NSAPI ~= api or _G.NorthernSkyRaidTools ~= internal or _G.NSRT ~= db then error("Clone ownership changed.") end
+        recovery.phase = "preserving"
         RestorePreserved(preserved, internal, db)
         if db.CurrentProfile ~= cloneName then error("Clone ownership changed.") end
+        recovery.phase = "saving"
         internal:SaveProfile()
+        expectedAfterWrite = ReadCurrent()
+        if not expectedAfterWrite then error("The resulting profile exceeds backup limits.") end
+        expectedProfileEntries = {original = Clone(db.Profiles[original]), source = Clone(db.Profiles[name]), clone = Clone(db.Profiles[cloneName])}
+        recovery.phase = "refreshing"
         NativeRefresh(internal)
+        local afterRefresh = ReadCurrent()
+        if not SameOwners(api, internal, db) or db.CurrentProfile ~= cloneName or not PreservedMatches(preserved, internal, db)
+            or not Equal(afterRefresh, expectedAfterWrite) or not Equal(expectedProfileEntries.original, db.Profiles[original])
+            or not Equal(expectedProfileEntries.source, db.Profiles[name]) or not Equal(expectedProfileEntries.clone, db.Profiles[cloneName]) then
+            error("Northern Sky changed during profile display refresh.")
+        end
     end)
     applying = false
     if not ok then
+        recovery.observedProfile = String(db.CurrentProfile, 128)
+        recovery.reason = "The profile operation stopped during " .. recovery.phase .. "."
         -- Restore only while still holding the original or the exact owned clone.
-        local owned = not NativeRestriction() and _G.NSAPI == api and _G.NorthernSkyRaidTools == internal and _G.NSRT == db
-            and (db.CurrentProfile == original or (cloneName and db.CurrentProfile == cloneName and cloneName ~= original and cloneName ~= name))
-        local restored = false
-        if owned then
+        local observed = ReadCurrent()
+        local owned = not NativeRestriction() and SameOwners(api, internal, db)
+            and ((db.CurrentProfile == original and Equal(observed, before))
+                or (cloneName and db.CurrentProfile == cloneName and cloneName ~= original and cloneName ~= name
+                    and expectedAfterWrite and expectedProfileEntries and Equal(observed, expectedAfterWrite)
+                    and Equal(expectedProfileEntries.original, db.Profiles[original]) and Equal(expectedProfileEntries.source, db.Profiles[name])
+                    and Equal(expectedProfileEntries.clone, db.Profiles[cloneName])))
+        -- A failure before import can leave all live state untouched. Avoid
+        -- rewriting a stored profile that another callback may have edited.
+        local restored = SameOwners(api, internal, db) and db.CurrentProfile == original and Equal(observed, before)
+        if owned and not restored then
+            recovery.phase = "rollback"
             applying = true
             restored = pcall(function()
                 if db.CurrentProfile ~= original and api:SetProfile(original) ~= true then error("Original profile unavailable.") end
                 if db.CurrentProfile ~= original then error("Original identity unavailable.") end
                 RestorePreserved(preserved, internal, db)
                 internal:SaveProfile()
+                local expectedRestored = ReadCurrent()
                 NativeRefresh(internal)
+                if not SameOwners(api, internal, db) or db.CurrentProfile ~= original or not PreservedMatches(preserved, internal, db)
+                    or not Equal(expectedRestored, ReadCurrent()) then error("Northern Sky changed during rollback.") end
             end)
             applying = false
         end
+        recovery.pending = not restored
+        recovery.phase = restored and "rolled-back" or "recovery-required"
+        recovery.observedProfile = String(db.CurrentProfile, 128)
         self:Refresh()
         return false, restored and "Profile copy failed; the original profile, notes, and placement were restored."
             or "Profile copy failed after Northern Sky changed. Automatic rollback was blocked to preserve intervening changes.", {partial = not restored, clone = cloneName}
     end
     local after = Observe()
+    recovery.pending, recovery.phase, recovery.observedProfile = false, "applied", cloneName
     profileBackup = {before = before, preserved = preserved, after = after, original = original, clone = cloneName,
         originalProfile = Clone(db.Profiles[original]), cloneProfile = Clone(db.Profiles[cloneName]), api = api, internal = internal, db = db}
     selectedProfile = nil
@@ -474,11 +597,19 @@ function Adapter:RestoreLastProfile(expected)
         if api:SetProfile(backup.original) ~= true or db.CurrentProfile ~= backup.original then error("Original profile was not activated.") end
         RestorePreserved(backup.preserved, internal, db)
         internal:SaveProfile()
+        local expectedRestored = ReadCurrent()
         NativeRefresh(internal)
+        if not SameOwners(api, internal, db) or db.CurrentProfile ~= backup.original or not PreservedMatches(backup.preserved, internal, db)
+            or not Equal(expectedRestored, ReadCurrent()) then error("Northern Sky changed during restore.") end
     end)
     applying = false
-    if not ok then self:Refresh(); return false, "Northern Sky could not completely restore the original profile; refresh and inspect its settings.", {partial = true} end
+    if not ok then
+        if recovery then recovery.pending, recovery.phase, recovery.reason, recovery.observedProfile = true, "restore-failed", "Original profile restore did not finish.", String(db.CurrentProfile, 128) end
+        self:Refresh()
+        return false, "Northern Sky could not completely restore the original profile; copy the backup and inspect its settings.", {partial = true}
+    end
     profileBackup = nil
+    recovery = nil
     QueueNativeRefresh(api, internal, db)
     self:Refresh()
     return true, nil, {name = backup.original, retainedCopy = backup.clone, context = state.context}
@@ -532,10 +663,37 @@ function Adapter:SetPlacement(section, values, expected)
         self:Refresh()
         return false, owned and "Placement refresh failed; prior values were restored." or "Placement changed during refresh; rollback was blocked to preserve those changes.", {partial = not owned}
     end
-    Observe()
+    local after = Observe()
+    placementBackup = {before = previous, changed = Clone(changed), section = section, after = after, profile = before.profile,
+        api = api, internal = internal, db = db}
     QueueNativeRefresh(api, internal, db)
     self:Refresh()
     return true, nil, {section = section, context = state.context}
+end
+function Adapter:RestoreLastPlacement(expected)
+    local current, reason, api, internal, db = Guard(expected, "placement")
+    if not current then return false, reason end
+    local backup = placementBackup
+    if not backup then return false, "There is no placement change to restore in this session." end
+    if backup.api ~= api or backup.internal ~= internal or backup.db ~= db or backup.profile ~= current.profile or not Equal(backup.after, current) then
+        return false, "Northern Sky changed after placement was applied. Restore is blocked to preserve those changes."
+    end
+    local target = db.ReminderSettings and db.ReminderSettings[backup.section]
+    if type(target) ~= "table" then return false, "The original placement section is unavailable." end
+    applying = true
+    local ok = pcall(function()
+        for key in pairs(backup.changed) do target[key] = Clone(backup.before[key]) end
+        local expectedRestored = ReadCurrent()
+        NativeRefresh(internal)
+        if not SameOwners(api, internal, db) or db.CurrentProfile ~= backup.profile or not Equal(expectedRestored, ReadCurrent()) then error("Northern Sky changed during placement restore.") end
+    end)
+    applying = false
+    if not ok then self:Refresh(); return false, "Placement restore did not complete. Inspect Northern Sky settings before making further changes.", {partial = true} end
+    placementBackup = nil
+    Observe()
+    QueueNativeRefresh(api, internal, db)
+    self:Refresh()
+    return true, nil, {section = backup.section, context = state.context}
 end
 function Adapter:PreviewPlacement() return false, "Use the Arsenal sample or Northern Sky settings to preview placement." end
 function Adapter:StopPreview() Cancel(previewTimer); previewTimer = nil; previewOwned, stopPending = false, false; return true end
