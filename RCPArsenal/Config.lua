@@ -1,0 +1,1935 @@
+local _, RA = ...
+
+local Theme = RA.Theme
+local TC = Theme.Colors
+
+local frame
+local panes = {}
+local tabButtons = {}
+local controls = {}
+local activeTab = "HUD"
+local selectedCategory = "RAID_DEFENSIVE"
+local abilityRows = {}
+local categoryRows = {}
+local searchText = ""
+local statusText
+local contentScroll
+local contentScrollChild
+local previewHUD
+local previewLanes = {}
+local previewBadge
+local scanStatusValue
+local scanStatusPill
+local scanStatusDetail
+local scanPrimaryButton
+local profileDialog
+local profileDialogBox
+local profileDialogMode
+local profileDialogStatus
+local mainTitle
+local mainSubtitle
+local actionStatusText
+local actionStatusDetail
+
+-- Compatibility aliases for the existing page logic. The visual system itself
+-- lives in Theme.lua so the settings window can use soft, layered surfaces
+-- instead of high-contrast bordered rectangles.
+local COLORS = {
+    backdrop = TC.canvasDeep,
+    panel = TC.surface,
+    card = TC.surfaceRaised,
+    cardHover = TC.surfaceHover,
+    raised = TC.surfacePressed,
+    edge = TC.lineStrong,
+    edgeSoft = TC.line,
+    text = TC.text,
+    muted = TC.textSoft,
+    faint = TC.muted,
+    accent = TC.magenta,
+    accentDark = TC.activeDark,
+    active = TC.orange,
+    amber = TC.orange,
+    danger = TC.danger,
+    white = TC.white,
+}
+
+local TAB_DEFS = {
+    { key = "HUD", label = "HUD", subtitle = "Size & appearance", icon = Theme.Assets.NavHUD,
+      heading = "HUD", description = "Customize how the overlay looks and behaves." },
+    { key = "QUICKBAR", label = "QUICK BAR", subtitle = "Raid leader dock", icon = Theme.Assets.Checkmark or Theme.Assets.NavHUD, child = true,
+      heading = "Quick Bar", description = "Configure the puck, flyout behavior, coverage badge, and HUD growth direction." },
+    { key = "CONTENT", label = "CONTENT", subtitle = "Abilities & categories", icon = Theme.Assets.NavContent,
+      heading = "Content", description = "Choose which raid tools appear and control their order." },
+    { key = "SCANNING", label = "SCANNING", subtitle = "Roster collection", icon = Theme.Assets.NavScanning,
+      heading = "Scanning", description = "Manage incremental inspection, tracked groups, and scan previews." },
+    { key = "ACTIONS", label = "ACTIONS", subtitle = "Click callouts", icon = Theme.Assets.NavActions,
+      heading = "Actions", description = "Choose one left-click callout channel and configure encounter callouts." },
+}
+
+local TIER_COLORS = {
+    CORE = TC.magenta,
+    OPTIONAL = TC.orange,
+    NICHE = TC.textSoft,
+}
+
+local SetPoint = Theme.SetPoint
+local SetSize = Theme.SetSize
+local SetWidth = Theme.SetWidth
+local SetHeight = Theme.SetHeight
+
+local function CopyColor(color, alpha)
+    return {color[1], color[2], color[3], alpha == nil and (color[4] or 1) or alpha}
+end
+
+local function SetSurfaceColor(object, color)
+    object.__raSurfaceColor = color
+    Theme:SetRoundedColor(object, color, "base")
+end
+
+local function SetBorderColor(object, color)
+    object.__raBorderColor = color
+    Theme:SetRoundedColor(object, color, "border")
+end
+
+local function Backdrop(object, background, border, radius, shadow)
+    Theme:ApplyBackdropTemplate(object)
+    radius = radius or 10
+    background = background or COLORS.card
+    border = border or COLORS.edgeSoft
+
+    Theme:ApplyRounded(object, border, radius + 1, "border", "BACKGROUND", -5)
+    Theme:ApplyRounded(object, background, radius, "base", "BACKGROUND", -4, {1, -1, -1, 1})
+    if shadow then
+        Theme:AddShadow(object, radius, 0.34)
+    end
+    object.__raSurfaceColor = background
+    object.__raBorderColor = border
+end
+
+local function ApplyIconMask(texture, owner)
+    if Theme and Theme.ApplyIconMask then
+        return Theme:ApplyIconMask(texture, owner)
+    end
+    return nil
+end
+
+local function ApplyReadableFont(fontString, size, weight, shadow)
+    if RA.ApplyFont then
+        RA:ApplyFont(fontString, size, weight or "REGULAR", shadow == true)
+    else
+        fontString:SetFont("Fonts\\ARIALN.TTF", size, "")
+        if fontString.SetShadowColor then
+            fontString:SetShadowColor(0, 0, 0, 0)
+            fontString:SetShadowOffset(0, 0)
+        end
+    end
+end
+
+local function Font(parent, size, color, style)
+    local fs = parent:CreateFontString(nil, "OVERLAY")
+    local weight = style == "REGULAR" and "REGULAR" or ((style == "BOLD" or size >= 11) and "BOLD" or "REGULAR")
+    ApplyReadableFont(fs, size, weight, false)
+    fs:SetTextColor(unpack(color or COLORS.text))
+    fs:SetJustifyH("LEFT")
+    fs:SetJustifyV("MIDDLE")
+    return fs
+end
+
+local function RegisterControl(control)
+    controls[#controls + 1] = control
+    return control
+end
+
+local function CreateGradientOverlay(parent, asset, alpha, inset)
+    local texture = Theme:AddGradient(parent, asset or Theme.Assets.GradientSunset, alpha or 0, inset or 2, "BACKGROUND", -2)
+    texture:SetBlendMode("BLEND")
+    return texture
+end
+
+local function CreateButton(parent, label, width, height, onClick, emphasis, iconAsset)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    SetSize(button, width, height or 34)
+    Backdrop(button, emphasis and TC.activeDark or TC.surfaceRaised, emphasis and CopyColor(TC.magenta, 0.24) or TC.line, 9, false)
+
+    button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, emphasis and 0.76 or 0, 2)
+    if iconAsset then
+        button.icon = Theme:CreateIcon(button, iconAsset, 18, COLORS.white)
+        SetPoint(button.icon, "LEFT", button, "LEFT", 13, 0)
+    end
+
+    button.label = Font(button, 11.2, emphasis and COLORS.white or COLORS.text, "BOLD")
+    button.label:SetText(label)
+    button.label:SetJustifyH("CENTER")
+    if iconAsset then
+        SetPoint(button.label, "LEFT", button.icon, "RIGHT", 8, 0)
+        SetPoint(button.label, "RIGHT", button, "RIGHT", -12, 0)
+    else
+        SetPoint(button.label, "CENTER", button, "CENTER", 0, 0)
+    end
+
+    button.emphasis = emphasis == true
+    button.selected = false
+
+    function button:SetSelected(selected)
+        self.selected = selected == true
+        if self.selected then
+            SetSurfaceColor(self, TC.activeDark)
+            SetBorderColor(self, CopyColor(TC.magenta, 0.40))
+            self.gradient:SetAlpha(0.78)
+            self.label:SetTextColor(unpack(COLORS.white))
+        else
+            SetSurfaceColor(self, self.emphasis and TC.activeDark or TC.surfaceRaised)
+            SetBorderColor(self, self.emphasis and CopyColor(TC.magenta, 0.24) or TC.line)
+            self.gradient:SetAlpha(self.emphasis and 0.70 or 0)
+            self.label:SetTextColor(unpack(self.emphasis and COLORS.white or COLORS.text))
+        end
+    end
+
+    button:SetScript("OnEnter", function(self)
+        if not self.selected then
+            SetSurfaceColor(self, self.emphasis and TC.activeSoft or TC.surfaceHover)
+            self.gradient:SetAlpha(self.emphasis and 0.90 or 0.12)
+        end
+    end)
+    button:SetScript("OnLeave", function(self)
+        self:SetSelected(self.selected)
+    end)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+local function CreateIconButton(parent, asset, tooltipText, onClick)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    SetSize(button, 30, 30)
+    Backdrop(button, TC.input, TC.line, 9, false)
+    button.icon = Theme:CreateIcon(button, asset, 13, TC.textSoft)
+    SetPoint(button.icon, "CENTER", button, "CENTER", 0, 0)
+    button:SetScript("OnEnter", function(self)
+        SetSurfaceColor(self, TC.surfaceHover)
+        self.icon:SetVertexColor(unpack(TC.white))
+        if tooltipText then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(tooltipText, 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    button:SetScript("OnLeave", function(self)
+        SetSurfaceColor(self, TC.input)
+        self.icon:SetVertexColor(unpack(TC.textSoft))
+        GameTooltip:Hide()
+    end)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+local function CreateCard(parent, titleText, subtitleText, accentAsset)
+    local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    Backdrop(card, TC.surface, TC.line, 14, true)
+    card.topWash = Theme:AddTopWash(card, accentAsset or Theme.Assets.GradientSunsetWash, 0.055, 72, 2)
+
+    card.accent = card:CreateTexture(nil, "ARTWORK")
+    Theme:RegisterAccentTexture(card.accent, (accentAsset == Theme.Assets.GradientBerry or accentAsset == Theme.Assets.GradientDigitalBerry) and "SECONDARY" or "PRIMARY")
+    SetSize(card.accent, 72, 3)
+    SetPoint(card.accent, "TOPLEFT", card, "TOPLEFT", 18, -1)
+    card.accent:SetAlpha(0.80)
+
+    card.divider = card:CreateTexture(nil, "ARTWORK")
+    card.divider:SetColorTexture(unpack(TC.line))
+    SetHeight(card.divider, 1)
+    SetPoint(card.divider, "TOPLEFT", card, "TOPLEFT", 18, -54)
+    SetPoint(card.divider, "TOPRIGHT", card, "TOPRIGHT", -18, -54)
+
+    if titleText then
+        card.title = Font(card, 13.5, TC.text, "BOLD")
+        card.title:SetText(titleText)
+        SetPoint(card.title, "TOPLEFT", card, "TOPLEFT", 18, -13)
+    end
+    if subtitleText then
+        card.subtitle = Font(card, 9.7, TC.textSoft, "REGULAR")
+        card.subtitle:SetText(subtitleText)
+        card.subtitle:SetWordWrap(true)
+        SetPoint(card.subtitle, "TOPLEFT", card, "TOPLEFT", 18, -34)
+        SetPoint(card.subtitle, "TOPRIGHT", card, "TOPRIGHT", -18, -34)
+    end
+    return card
+end
+
+local function ApplyVisualChange()
+    if RA.RefreshHUD then
+        RA:RefreshHUD()
+    end
+    if frame and frame:IsShown() and frame.UpdatePreview then
+        frame:UpdatePreview()
+    end
+end
+
+local function AbilitySetting(ability)
+    local explicit = RA:GetDB().abilities[ability.key]
+    if explicit ~= nil then
+        return explicit
+    end
+    return ability.defaultEnabled ~= false
+end
+
+local function CreateToggle(parent, labelText, description, getter, setter)
+    local row = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    SetHeight(row, 50)
+    Backdrop(row, TC.surfaceRaised, TC.line, 10, false)
+
+    row.title = Font(row, 11.5, TC.text, "BOLD")
+    row.title:SetText(labelText)
+    SetPoint(row.title, "TOPLEFT", row, "TOPLEFT", 14, -9)
+
+    row.description = Font(row, 9.1, TC.textSoft, "REGULAR")
+    row.description:SetText(description or "")
+    row.description:SetWordWrap(false)
+    SetPoint(row.description, "TOPLEFT", row.title, "BOTTOMLEFT", 0, -2)
+    SetPoint(row.description, "RIGHT", row, "RIGHT", -66, 0)
+
+    row.switch = CreateFrame("Frame", nil, row, "BackdropTemplate")
+    SetSize(row.switch, 40, 22)
+    SetPoint(row.switch, "RIGHT", row, "RIGHT", -14, 0)
+    Backdrop(row.switch, TC.input, TC.line, 11, false)
+
+    row.knob = row.switch:CreateTexture(nil, "OVERLAY")
+    Theme:RegisterAssetTexture(row.knob, Theme.Assets.SliderThumb)
+    SetSize(row.knob, 20, 20)
+
+    row:SetScript("OnEnter", function(self)
+        SetSurfaceColor(self, TC.surfaceHover)
+    end)
+    row:SetScript("OnLeave", function(self)
+        SetSurfaceColor(self, TC.surfaceRaised)
+    end)
+    row:SetScript("OnClick", function()
+        setter(not getter())
+        row:Refresh()
+    end)
+
+    function row:Refresh()
+        local enabled = getter() and true or false
+        if enabled then
+            SetSurfaceColor(self.switch, TC.activeDark)
+            SetBorderColor(self.switch, CopyColor(TC.magenta, 0.42))
+            self.knob:SetVertexColor(1, 1, 1, 1)
+            self.knob:ClearAllPoints()
+            SetPoint(self.knob, "RIGHT", self.switch, "RIGHT", -1, 0)
+        else
+            SetSurfaceColor(self.switch, TC.input)
+            SetBorderColor(self.switch, TC.line)
+            self.knob:SetVertexColor(0.56, 0.55, 0.66, 0.85)
+            self.knob:ClearAllPoints()
+            SetPoint(self.knob, "LEFT", self.switch, "LEFT", 1, 0)
+        end
+    end
+
+    return RegisterControl(row)
+end
+
+local function RoundStep(value, step)
+    step = step or 1
+    return math.floor((value / step) + 0.5) * step
+end
+
+local function CreateSlider(parent, labelText, minimum, maximum, step, getter, setter, formatter)
+    local control = CreateFrame("Frame", nil, parent)
+    SetHeight(control, 50)
+
+    control.title = Font(control, 10.8, TC.text, "BOLD")
+    control.title:SetText(labelText)
+    SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
+
+    control.value = Font(control, 10.5, TC.orange, "BOLD")
+    control.value:SetJustifyH("RIGHT")
+    SetPoint(control.value, "TOPRIGHT", control, "TOPRIGHT", 0, -1)
+
+    control.track = CreateFrame("Frame", nil, control, "BackdropTemplate")
+    SetHeight(control.track, 7)
+    SetPoint(control.track, "LEFT", control, "LEFT", 0, -14)
+    SetPoint(control.track, "RIGHT", control, "RIGHT", 0, -14)
+    Backdrop(control.track, TC.input, TC.transparent, 4, false)
+
+    control.fill = control.track:CreateTexture(nil, "ARTWORK")
+    Theme:RegisterAccentTexture(control.fill, "PRIMARY")
+    SetHeight(control.fill, 5)
+    SetPoint(control.fill, "LEFT", control.track, "LEFT", 1, 0)
+
+    control.slider = CreateFrame("Slider", nil, control)
+    SetHeight(control.slider, 24)
+    SetPoint(control.slider, "LEFT", control.track, "LEFT", 0, 0)
+    SetPoint(control.slider, "RIGHT", control.track, "RIGHT", 0, 0)
+    control.slider:SetOrientation("HORIZONTAL")
+    control.slider:SetMinMaxValues(minimum, maximum)
+    control.slider:SetValueStep(step)
+    if control.slider.SetObeyStepOnDrag then
+        control.slider:SetObeyStepOnDrag(true)
+    end
+    control.slider:SetThumbTexture(Theme.Assets.SliderThumb)
+    local thumb = control.slider:GetThumbTexture()
+    if thumb then
+        Theme:RegisterAssetTexture(thumb, Theme.Assets.SliderThumb)
+        SetSize(thumb, 20, 20)
+    end
+
+    control.refreshing = false
+    control.slider:SetScript("OnValueChanged", function(_, rawValue)
+        local value = RoundStep(rawValue, step)
+        local ratio = (value - minimum) / math.max(0.0001, maximum - minimum)
+        SetWidth(control.fill, math.max(2, (control.track:GetWidth() - 2) * ratio))
+        control.value:SetText(formatter and formatter(value) or tostring(value))
+        if not control.refreshing then
+            setter(value)
+        end
+    end)
+
+    function control:Refresh()
+        self.refreshing = true
+        local value = getter()
+        self.slider:SetValue(value)
+        local ratio = (value - minimum) / math.max(0.0001, maximum - minimum)
+        SetWidth(self.fill, math.max(2, (self.track:GetWidth() - 2) * ratio))
+        self.value:SetText(formatter and formatter(value) or tostring(value))
+        self.refreshing = false
+    end
+
+    return RegisterControl(control)
+end
+
+local function CreateSegmented(parent, labelText, options, getter, setter)
+    local control = CreateFrame("Frame", nil, parent)
+    SetHeight(control, 54)
+    control.title = Font(control, 10.8, TC.text, "BOLD")
+    control.title:SetText(labelText)
+    SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
+    control.buttons = {}
+
+    for i = 1, #options do
+        local option = options[i]
+        local button = CreateFrame("Button", nil, control, "BackdropTemplate")
+        Backdrop(button, TC.input, TC.line, 8, false)
+        button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
+        button.text = Font(button, 9.6, TC.textSoft, "BOLD")
+        button.text:SetJustifyH("CENTER")
+        button.text:SetText(option.label)
+        SetPoint(button.text, "CENTER", button, "CENTER", 0, 0)
+        button:SetScript("OnClick", function()
+            setter(option.value)
+            control:Refresh()
+        end)
+        control.buttons[i] = { frame = button, value = option.value }
+    end
+
+    function control:Layout(width)
+        local gap = 5
+        local buttonWidth = (width - gap * (#options - 1)) / #options
+        for i = 1, #self.buttons do
+            local button = self.buttons[i].frame
+            SetSize(button, buttonWidth, 28)
+            button:ClearAllPoints()
+            SetPoint(button, "BOTTOMLEFT", self, "BOTTOMLEFT", (i - 1) * (buttonWidth + gap), 0)
+        end
+    end
+
+    function control:Refresh()
+        local current = getter()
+        for i = 1, #self.buttons do
+            local entry = self.buttons[i]
+            local selected = entry.value == current
+            SetSurfaceColor(entry.frame, selected and TC.activeDark or TC.input)
+            SetBorderColor(entry.frame, selected and CopyColor(TC.magenta, 0.38) or TC.line)
+            entry.frame.gradient:SetAlpha(selected and 0.72 or 0)
+            entry.frame.text:SetTextColor(unpack(selected and TC.white or TC.textSoft))
+        end
+    end
+
+    return RegisterControl(control)
+end
+
+local function CreateEditBox(parent, labelText, description, getter, setter)
+    local control = CreateFrame("Frame", nil, parent)
+    SetHeight(control, 78)
+
+    control.title = Font(control, 10.8, TC.text, "BOLD")
+    control.title:SetText(labelText)
+    SetPoint(control.title, "TOPLEFT", control, "TOPLEFT", 0, -1)
+
+    control.description = Font(control, 9.0, TC.muted, "REGULAR")
+    control.description:SetText(description or "")
+    SetPoint(control.description, "TOPRIGHT", control, "TOPRIGHT", 0, -1)
+    control.description:SetJustifyH("RIGHT")
+
+    control.box = CreateFrame("EditBox", nil, control, "BackdropTemplate")
+    SetHeight(control.box, 34)
+    SetPoint(control.box, "BOTTOMLEFT", control, "BOTTOMLEFT", 0, 0)
+    SetPoint(control.box, "BOTTOMRIGHT", control, "BOTTOMRIGHT", 0, 0)
+    Backdrop(control.box, TC.input, TC.line, 9, false)
+    ApplyReadableFont(control.box, 10.8, "REGULAR")
+    control.box:SetTextColor(unpack(TC.text))
+    control.box:SetAutoFocus(false)
+    control.box:SetMaxLetters(180)
+    control.box:SetTextInsets(12, 12, 0, 0)
+
+    local function Commit()
+        setter(control.box:GetText())
+        ApplyVisualChange()
+    end
+    control.box:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        Commit()
+    end)
+    control.box:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        control:Refresh()
+    end)
+    control.box:SetScript("OnEditFocusLost", Commit)
+
+    function control:Refresh()
+        if not self.box:HasFocus() then
+            self.box:SetText(getter() or "")
+        end
+    end
+
+    return RegisterControl(control)
+end
+
+local function CreateHeading(parent, titleText, subtitleText)
+    local title = Font(parent, 21, TC.text, "BOLD")
+    title:SetText(titleText)
+    SetPoint(title, "TOPLEFT", parent, "TOPLEFT", 2, 0)
+
+    local subtitle = Font(parent, 10.4, TC.textSoft, "REGULAR")
+    subtitle:SetText(subtitleText)
+    SetPoint(subtitle, "TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+    return title, subtitle
+end
+
+local function GetPreviewMetrics()
+    local db = RA:GetDB()
+    if RA.CompactLayout and RA.CompactLayout.GetMetrics then
+        return RA.CompactLayout:GetMetrics(db)
+    end
+    return {}
+end
+
+local PREVIEW_DATA = {
+    {
+        key = "RAID_DEFENSIVE",
+        items = {
+            { ability = "spirit_link", name = "Axe", class = "SHAMAN" },
+            { ability = "aura_mastery", name = "Talia", class = "PALADIN" },
+            { ability = "rallying_cry", name = "Kade", class = "WARRIOR" },
+        },
+    },
+    {
+        key = "RAID_HEALING",
+        items = {
+            { ability = "evangelism", name = "Luma", class = "PRIEST" },
+            { ability = "celestial_conduit", name = "Misty", class = "MONK" },
+            { ability = "rewind", name = "Vinth", class = "EVOKER" },
+        },
+    },
+    {
+        key = "MOVEMENT",
+        items = {
+            { ability = "wind_rush", name = "Axe", class = "SHAMAN" },
+            { ability = "stampeding_roar", name = "Leafy", class = "DRUID" },
+        },
+    },
+}
+
+local function EnsurePreviewLane(index)
+    local lane = previewLanes[index]
+    if lane then
+        return lane
+    end
+
+    lane = CreateFrame("Frame", nil, previewHUD, "BackdropTemplate")
+    Backdrop(lane, TC.surface, TC.line, 10, false)
+    lane.accent = lane:CreateTexture(nil, "ARTWORK")
+    Theme:RegisterAccentTexture(lane.accent, "PRIMARY")
+    SetHeight(lane.accent, 2)
+    SetPoint(lane.accent, "TOPLEFT", lane, "TOPLEFT", 8, -1)
+    SetPoint(lane.accent, "TOPRIGHT", lane, "TOPRIGHT", -8, -1)
+    lane.accent:SetAlpha(0.52)
+    lane.label = Font(lane, 8, TC.textSoft, "BOLD")
+    lane.label:SetJustifyH("CENTER")
+    lane.label:SetJustifyV("MIDDLE")
+    lane.tiles = {}
+    previewLanes[index] = lane
+    return lane
+end
+
+local function EnsurePreviewTile(lane, index)
+    local tile = lane.tiles[index]
+    if tile then
+        return tile
+    end
+
+    tile = CreateFrame("Frame", nil, lane, "BackdropTemplate")
+    Backdrop(tile, TC.transparent, TC.transparent, 8, false)
+    tile.iconFrame = CreateFrame("Frame", nil, tile, "BackdropTemplate")
+    Backdrop(tile.iconFrame, TC.input, TC.lineStrong, 8, false)
+    tile.icon = tile.iconFrame:CreateTexture(nil, "ARTWORK")
+    tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    SetPoint(tile.icon, "TOPLEFT", tile.iconFrame, "TOPLEFT", 1, -1)
+    SetPoint(tile.icon, "BOTTOMRIGHT", tile.iconFrame, "BOTTOMRIGHT", -1, 1)
+    ApplyIconMask(tile.icon, tile.iconFrame)
+    tile.name = Font(tile, 8, TC.text, "BOLD")
+    tile.name:SetJustifyH("CENTER")
+    tile.name:SetWordWrap(false)
+    lane.tiles[index] = tile
+    return tile
+end
+
+local function UpdatePreview()
+    if not previewHUD then return end
+
+    local db = RA:GetDB()
+    local metrics = GetPreviewMetrics()
+    local panel = metrics.backgroundStyle == "PANEL"
+    SetSurfaceColor(previewHUD, panel and TC.canvasDeep or TC.transparent)
+    SetBorderColor(previewHUD, panel and TC.lineStrong or TC.transparent)
+
+    local y = panel and -metrics.panelPadding or 0
+    local maximumWidth = 0
+    for laneIndex = 1, #PREVIEW_DATA do
+        local data = PREVIEW_DATA[laneIndex]
+        local lane = EnsurePreviewLane(laneIndex)
+        local category = RA.CategoryByKey[data.key]
+        local geometry = RA.CompactLayout and RA.CompactLayout:GetLaneGeometry(#data.items, metrics)
+        local width = geometry and geometry.laneWidth or 1
+        local height = geometry and geometry.laneHeight or 1
+        local hasLabel = geometry and geometry.hasLabel or metrics.labelWidth > 0
+
+        lane:ClearAllPoints()
+        SetPoint(lane, "TOPLEFT", previewHUD, "TOPLEFT", panel and metrics.panelPadding or 0, y)
+        SetSize(lane, width, height)
+        local ribbon = metrics.backgroundStyle == "RIBBONS"
+        SetSurfaceColor(lane, ribbon and TC.surface or TC.transparent)
+        SetBorderColor(lane, ribbon and CopyColor(TC.lineStrong, 0.35) or TC.transparent)
+        lane.accent:SetShown(ribbon)
+
+        lane.label:ClearAllPoints()
+        SetSize(lane.label, math.max(1, metrics.labelWidth), height)
+        SetPoint(lane.label, "LEFT", lane, "LEFT", metrics.lanePadding, 0)
+        lane.label:SetShown(hasLabel)
+        lane.label:SetText(db.compact.categoryLabels == "FULL" and string.upper(category.name) or category.compactLabel)
+        ApplyReadableFont(lane.label, metrics.categoryFont, "BOLD")
+
+        for itemIndex = 1, #data.items do
+            local item = data.items[itemIndex]
+            local ability = RA.CatalogByKey[item.ability]
+            local tile = EnsurePreviewTile(lane, itemIndex)
+            SetSize(tile, metrics.tileWidth, metrics.tileHeight)
+            tile:ClearAllPoints()
+            local x, tileY = RA.CompactLayout:GetTilePosition(itemIndex, metrics, geometry)
+            SetPoint(tile, "TOPLEFT", lane, "TOPLEFT", x, tileY)
+            SetSize(tile.iconFrame, metrics.iconSize, metrics.iconSize)
+            tile.iconFrame:ClearAllPoints()
+            SetPoint(tile.iconFrame, "TOP", tile, "TOP", 0, 0)
+            tile.icon:SetTexture(RA:GetAbilityTexture(ability))
+
+            local tileBackground = metrics.backgroundStyle == "TILES"
+            SetSurfaceColor(tile, tileBackground and TC.surfaceRaised or TC.transparent)
+            SetBorderColor(tile, tileBackground and TC.lineStrong or TC.transparent)
+            local naked = metrics.backgroundStyle == "NONE"
+            SetSurfaceColor(tile.iconFrame, naked and TC.transparent or TC.canvasDeep)
+            SetBorderColor(tile.iconFrame, naked and TC.transparent or CopyColor(TC.textSoft, 0.22))
+
+            tile.name:ClearAllPoints()
+            ApplyReadableFont(tile.name, metrics.nameFont, "BOLD")
+            SetPoint(tile.name, "TOPLEFT", tile.iconFrame, "BOTTOMLEFT", -3, -1)
+            SetPoint(tile.name, "TOPRIGHT", tile.iconFrame, "BOTTOMRIGHT", 3, -1)
+            tile.name:SetText(string.sub(item.name, 1, metrics.nameLength))
+            tile.name:SetShown(metrics.nameLength > 0)
+            local r, g, b = RA:GetClassColor(item.class)
+            tile.name:SetTextColor(r, g, b, 1)
+            tile:Show()
+        end
+        for itemIndex = #data.items + 1, #lane.tiles do lane.tiles[itemIndex]:Hide() end
+
+        lane:Show()
+        y = y - height - metrics.categoryGap
+        maximumWidth = math.max(maximumWidth, width)
+    end
+
+    local rawWidth = maximumWidth + (panel and metrics.panelPadding * 2 or 0)
+    local rawHeight = -y + (panel and metrics.panelPadding or 0) - metrics.categoryGap
+    local availableWidth, availableHeight = 450, 140
+    local previewScale = math.min(1, availableWidth / math.max(1, rawWidth), availableHeight / math.max(1, rawHeight))
+    previewHUD:SetScale(previewScale)
+    SetSize(previewHUD, rawWidth, rawHeight)
+    previewBadge:SetText(string.format("HUD %d%%  |  ICON %d", math.floor((db.scale or 1) * 100 + 0.5), metrics.iconSize or 28))
+end
+
+local function CreateHUDPane(parent)
+    CreateHeading(parent, "HUD", "Customize how the overlay looks and behaves.")
+
+    local settingsCard = CreateCard(parent, "LAYOUT", "Scale the complete HUD or tune its physical tile density independently.")
+    SetSize(settingsCard, 438, 598)
+    SetPoint(settingsCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+
+    local rightCard = CreateCard(parent, "LIVE PREVIEW", "The actual HUD updates at the same time.", Theme.Assets.GradientBerry)
+    SetSize(rightCard, 500, 248)
+    SetPoint(rightCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+
+    previewHUD = CreateFrame("Frame", nil, rightCard, "BackdropTemplate")
+    Backdrop(previewHUD, TC.transparent, TC.transparent, 10, false)
+    SetPoint(previewHUD, "CENTER", rightCard, "CENTER", 0, -8)
+
+    previewBadge = Font(rightCard, 9.6, TC.violet, "BOLD")
+    previewBadge:SetJustifyH("RIGHT")
+    SetPoint(previewBadge, "TOPRIGHT", rightCard, "TOPRIGHT", -18, -14)
+
+    local previewOpacity = CreateSlider(rightCard, "HUD OPACITY", 0.40, 1.00, 0.05,
+        function() return RA:GetDB().opacity end,
+        function(value) RA:GetDB().opacity = value; ApplyVisualChange() end,
+        function(value) return string.format("%d%%", math.floor(value * 100 + 0.5)) end)
+    SetPoint(previewOpacity, "BOTTOMLEFT", rightCard, "BOTTOMLEFT", 18, 8)
+    SetWidth(previewOpacity, 464)
+
+    local styleCard = CreateCard(parent, "PRESENTATION", "Control visual structure, category text, and behavior at the tile cap.")
+    SetSize(styleCard, 500, 334)
+    SetPoint(styleCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -326)
+
+    local y = -64
+    local mode = CreateSegmented(settingsCard, "HUD MODE", {
+        {label = "COMPACT", value = "COMPACT"},
+        {label = "DETAILED", value = "DETAILED"},
+    }, function() return RA:GetDB().mode end, function(value)
+        RA:SetMode(value)
+        UpdatePreview()
+    end)
+    SetPoint(mode, "TOPLEFT", settingsCard, "TOPLEFT", 18, y)
+    SetSize(mode, 402, 54)
+    mode:Layout(402)
+    y = y - 61
+
+    local function SliderAt(label, min, max, step, getter, setter, formatter)
+        local slider = CreateSlider(settingsCard, label, min, max, step, getter, function(value)
+            setter(value)
+            ApplyVisualChange()
+        end, formatter)
+        SetPoint(slider, "TOPLEFT", settingsCard, "TOPLEFT", 18, y)
+        SetWidth(slider, 402)
+        y = y - 53
+        return slider
+    end
+
+    SliderAt("OVERALL SCALE", 0.75, 2.00, 0.05,
+        function() return RA:GetDB().scale end,
+        function(v) RA:GetDB().scale = v end,
+        function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end)
+    SliderAt("ICON SIZE", 20, 42, 1,
+        function() return RA:GetDB().compact.iconSize end,
+        function(v) RA:GetDB().compact.iconSize = v end,
+        function(v) return string.format("%d px", v) end)
+    SliderAt("PLAYER NAME CHARACTERS", 0, 8, 1,
+        function() return RA:GetDB().compact.nameLength end,
+        function(v) RA:GetDB().compact.nameLength = v end,
+        function(v) return v == 0 and "HIDDEN" or tostring(v) end)
+    SliderAt("PLAYER NAME SIZE", 6, 13, 0.5,
+        function() return RA:GetDB().compact.nameFontSize end,
+        function(v) RA:GetDB().compact.nameFontSize = v end,
+        function(v) return string.format("%.1f", v) end)
+    SliderAt("TILE SPACING", 0, 10, 1,
+        function() return RA:GetDB().compact.tileGap end,
+        function(v) RA:GetDB().compact.tileGap = v end)
+    SliderAt("WRAPPED ROW SPACING", 0, 10, 1,
+        function() return RA:GetDB().compact.rowGap end,
+        function(v) RA:GetDB().compact.rowGap = v end)
+    SliderAt("CATEGORY SPACING", 0, 16, 1,
+        function() return RA:GetDB().compact.categoryGap end,
+        function(v) RA:GetDB().compact.categoryGap = v end)
+    SliderAt("TILE CAP / WRAP POINT", 3, 14, 1,
+        function() return RA:GetDB().compact.wrapAfter end,
+        function(v) RA:GetDB().compact.wrapAfter = v end,
+        function(v) return tostring(v) .. " TILES" end)
+
+    local background = CreateSegmented(styleCard, "BACKGROUND STYLE", {
+        {label = "NONE", value = "NONE"},
+        {label = "ICONS", value = "ICONS"},
+        {label = "TILES", value = "TILES"},
+        {label = "RIBBONS", value = "RIBBONS"},
+        {label = "PANEL", value = "PANEL"},
+    }, function() return RA:GetDB().compact.backgroundStyle end, function(value)
+        RA:GetDB().compact.backgroundStyle = value
+        ApplyVisualChange()
+    end)
+    SetPoint(background, "TOPLEFT", styleCard, "TOPLEFT", 18, -62)
+    SetSize(background, 464, 54)
+    background:Layout(464)
+
+    local labels = CreateSegmented(styleCard, "CATEGORY LABELS", {
+        {label = "HIDDEN", value = "HIDDEN"},
+        {label = "SHORT", value = "SHORT"},
+        {label = "FULL", value = "FULL"},
+    }, function() return RA:GetDB().compact.categoryLabels end, function(value)
+        RA:GetDB().compact.categoryLabels = value
+        ApplyVisualChange()
+    end)
+    SetPoint(labels, "TOPLEFT", styleCard, "TOPLEFT", 18, -120)
+    SetSize(labels, 464, 54)
+    labels:Layout(464)
+
+    local accent = CreateSegmented(styleCard, "ACCENT GRADIENT", {
+        {label = "SUNSET", value = "SUNSET"},
+        {label = "CRIMSON", value = "CRIMSON"},
+        {label = "BERRY", value = "BERRY"},
+    }, function() return RA:GetDB().accentPreset or "SUNSET" end, function(value)
+        RA:GetDB().accentPreset = value
+        Theme:SetAccentPreset(value)
+        ApplyVisualChange()
+    end)
+    SetPoint(accent, "TOPLEFT", styleCard, "TOPLEFT", 18, -174)
+    SetSize(accent, 464, 54)
+    accent:Layout(464)
+
+    local overflow = CreateSegmented(styleCard, "AT THE TILE CAP", {
+        {label = "WRAP TO NEXT ROW", value = "WRAP"},
+        {label = "HIDE EXTRA TILES", value = "LIMIT"},
+    }, function() return RA:GetDB().compact.overflowMode end, function(value)
+        RA:GetDB().compact.overflowMode = value
+        ApplyVisualChange()
+    end)
+    SetPoint(overflow, "TOPLEFT", styleCard, "TOPLEFT", 18, -230)
+    SetSize(overflow, 464, 54)
+    overflow:Layout(464)
+
+    local empty = CreateToggle(styleCard, "Show empty-state tile", "Show a small placeholder only when no tools or scan strip are visible.",
+        function() return RA:GetDB().compact.showEmptyState == true end,
+        function(value) RA:GetDB().compact.showEmptyState = value; ApplyVisualChange() end)
+    SetPoint(empty, "TOPLEFT", styleCard, "TOPLEFT", 18, -284)
+    SetWidth(empty, 464)
+end
+
+local function RefreshCategoryRows()
+    local db = RA:GetDB()
+    for i = 1, #categoryRows do
+        local entry = categoryRows[i]
+        local selected = entry.category.key == selectedCategory
+        local enabled = db.categories[entry.category.key] ~= false
+
+        -- Reapply the actual text on every refresh. This also repairs category
+        -- labels after font/media changes and prevents an empty cached string.
+        entry.label:SetText(entry.category.shortName or entry.category.name or entry.category.key)
+        entry.label:SetTextColor(unpack(selected and TC.white or TC.textSoft))
+        SetSurfaceColor(entry.frame, selected and TC.activeDark or TC.surfaceRaised)
+        SetBorderColor(entry.frame, selected and CopyColor(TC.magenta, 0.36) or TC.line)
+        entry.gradient:SetAlpha(selected and 0.58 or 0)
+        entry.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
+        entry.check:SetColorTexture(unpack(enabled and TC.magenta or CopyColor(TC.muted, 0.35)))
+    end
+end
+
+local function RefreshAbilityList(resetScroll)
+    if not contentScrollChild then
+        return
+    end
+
+    for i = 1, #abilityRows do
+        abilityRows[i]:Hide()
+    end
+
+    local normalizedSearch = string.lower(searchText or "")
+    local ordered = RA.GetOrderedAbilities and RA:GetOrderedAbilities(selectedCategory) or RA.Catalog
+    local visible = {}
+    for i = 1, #ordered do
+        local ability = ordered[i]
+        if ability.category == selectedCategory then
+            local name = string.lower(RA:GetAbilityName(ability) or ability.name)
+            if normalizedSearch == "" or string.find(name, normalizedSearch, 1, true) then
+                visible[#visible + 1] = ability
+            end
+        end
+    end
+
+    for index = 1, #visible do
+        local ability = visible[index]
+        local row = abilityRows[index]
+        if not row then
+            row = CreateFrame("Button", nil, contentScrollChild, "BackdropTemplate")
+            SetSize(row, 642, 54)
+            Backdrop(row, TC.surfaceRaised, TC.line, 10, false)
+
+            row.checkBack = CreateFrame("Frame", nil, row, "BackdropTemplate")
+            SetSize(row.checkBack, 20, 20)
+            SetPoint(row.checkBack, "LEFT", row, "LEFT", 11, 0)
+            Backdrop(row.checkBack, TC.input, TC.line, 6, false)
+            row.check = row.checkBack:CreateTexture(nil, "ARTWORK")
+            SetSize(row.check, 11, 11)
+            SetPoint(row.check, "CENTER", row.checkBack, "CENTER", 0, 0)
+
+            row.iconFrame = CreateFrame("Frame", nil, row, "BackdropTemplate")
+            SetSize(row.iconFrame, 34, 34)
+            SetPoint(row.iconFrame, "LEFT", row.checkBack, "RIGHT", 10, 0)
+            Backdrop(row.iconFrame, TC.canvasDeep, CopyColor(TC.textSoft, 0.20), 8, false)
+            row.icon = row.iconFrame:CreateTexture(nil, "ARTWORK")
+            row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            SetPoint(row.icon, "TOPLEFT", row.iconFrame, "TOPLEFT", 2, -2)
+            SetPoint(row.icon, "BOTTOMRIGHT", row.iconFrame, "BOTTOMRIGHT", -2, 2)
+            ApplyIconMask(row.icon, row.iconFrame)
+            row.iconFrame:EnableMouse(true)
+            row.iconFrame:SetScript("OnEnter", function(self)
+                local ability = self:GetParent().ability
+                if not ability or not (RA:GetDB().content and RA:GetDB().content.showTooltips ~= false) then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                if GameTooltip.SetSpellByID then GameTooltip:SetSpellByID(ability.spellID) else GameTooltip:SetText(RA:GetAbilityName(ability), 1, 1, 1) end
+                GameTooltip:Show()
+            end)
+            row.iconFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            row.name = Font(row, 11.8, TC.text, "BOLD")
+            SetPoint(row.name, "TOPLEFT", row.iconFrame, "TOPRIGHT", 11, -2)
+            row.name:SetWordWrap(false)
+
+            row.meta = Font(row, 9.0, TC.textSoft, "REGULAR")
+            SetPoint(row.meta, "BOTTOMLEFT", row.iconFrame, "BOTTOMRIGHT", 11, 2)
+            row.meta:SetWordWrap(false)
+
+            row.down = CreateIconButton(row, Theme.Assets.ChevronDown, "Move down", function(self)
+                if self:GetParent().ability and RA.MoveAbility then
+                    RA:MoveAbility(selectedCategory, self:GetParent().ability.key, 1)
+                    RefreshAbilityList(false)
+                end
+            end)
+            SetPoint(row.down, "RIGHT", row, "RIGHT", -9, 0)
+
+            row.up = CreateIconButton(row, Theme.Assets.ChevronUp, "Move up", function(self)
+                if self:GetParent().ability and RA.MoveAbility then
+                    RA:MoveAbility(selectedCategory, self:GetParent().ability.key, -1)
+                    RefreshAbilityList(false)
+                end
+            end)
+            SetPoint(row.up, "RIGHT", row.down, "LEFT", -6, 0)
+
+            row.tierBack = CreateFrame("Frame", nil, row, "BackdropTemplate")
+            SetSize(row.tierBack, 72, 23)
+            SetPoint(row.tierBack, "RIGHT", row.up, "LEFT", -9, 0)
+            Backdrop(row.tierBack, TC.input, TC.line, 7, false)
+            row.tier = Font(row.tierBack, 8.3, TC.textSoft, "BOLD")
+            row.tier:SetJustifyH("CENTER")
+            SetPoint(row.tier, "CENTER", row.tierBack, "CENTER", 0, 0)
+
+            SetPoint(row.name, "RIGHT", row.tierBack, "LEFT", -11, 0)
+            SetPoint(row.meta, "RIGHT", row.tierBack, "LEFT", -11, 0)
+
+            row:SetScript("OnEnter", function(self)
+                SetSurfaceColor(self, TC.surfaceHover)
+            end)
+            row:SetScript("OnLeave", function(self)
+                SetSurfaceColor(self, TC.surfaceRaised)
+            end)
+            row:SetScript("OnClick", function(self, button)
+                if button ~= "LeftButton" then return end
+                local current = AbilitySetting(self.ability)
+                RA:GetDB().abilities[self.ability.key] = not current
+                RefreshAbilityList(false)
+                RA:OnCapabilityFiltersChanged()
+            end)
+            row:RegisterForClicks("LeftButtonUp")
+            abilityRows[index] = row
+        end
+
+        row.ability = ability
+        row:ClearAllPoints()
+        SetPoint(row, "TOPLEFT", contentScrollChild, "TOPLEFT", 0, -((index - 1) * 59))
+        row.icon:SetTexture(RA:GetAbilityTexture(ability))
+        row.name:SetText(RA:GetAbilityName(ability))
+        local classLabel = ability.class and string.gsub(ability.class, "_", " ") or "MULTIPLE CLASSES"
+        local cooldown = RA.GetCooldownLabel and RA:GetCooldownLabel(ability) or ""
+        row.meta:SetText(cooldown ~= "" and (classLabel .. "  ·  " .. cooldown .. " cooldown") or classLabel)
+        local enabled = AbilitySetting(ability)
+        SetSurfaceColor(row.checkBack, enabled and TC.activeDark or TC.input)
+        SetBorderColor(row.checkBack, enabled and CopyColor(TC.magenta, 0.40) or TC.line)
+        row.check:SetColorTexture(unpack(enabled and TC.magenta or CopyColor(TC.muted, 0.35)))
+        if row.icon.SetDesaturated then row.icon:SetDesaturated(not enabled) end
+        row.icon:SetAlpha(enabled and 1 or 0.45)
+        row.name:SetTextColor(unpack(enabled and TC.text or TC.muted))
+        row.meta:SetTextColor(unpack(enabled and TC.textSoft or TC.faint))
+
+        row.tier:SetText(ability.tier or "OPTIONAL")
+        local tierColor = TIER_COLORS[ability.tier] or TC.textSoft
+        row.tier:SetTextColor(unpack(tierColor))
+        SetBorderColor(row.tierBack, CopyColor(tierColor, 0.35))
+        local canMoveUp = index > 1
+        local canMoveDown = index < #visible
+        row.up:SetAlpha(canMoveUp and 1 or 0.30)
+        row.down:SetAlpha(canMoveDown and 1 or 0.30)
+        row.up:EnableMouse(canMoveUp)
+        row.down:EnableMouse(canMoveDown)
+        row:Show()
+    end
+
+    SetHeight(contentScrollChild, math.max(468, #visible * 59))
+    if resetScroll and contentScroll then
+        contentScroll:SetVerticalScroll(0)
+    end
+    RefreshCategoryRows()
+end
+
+local function CreateContentPane(parent)
+    CreateHeading(parent, "Content", "Choose what appears, then arrange each category in the exact callout order you prefer.")
+
+    local categoryCard = CreateCard(parent, "CATEGORIES", "Left-click opens a category. Right-click toggles it on or off.")
+    SetSize(categoryCard, 228, 598)
+    SetPoint(categoryCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+
+    for i = 1, #RA.Categories do
+        local category = RA.Categories[i]
+        local row = CreateFrame("Button", nil, categoryCard, "BackdropTemplate")
+        SetSize(row, 192, 54)
+        SetPoint(row, "TOPLEFT", categoryCard, "TOPLEFT", 18, -64 - ((i - 1) * 62))
+        Backdrop(row, TC.surfaceRaised, TC.line, 10, false)
+        row.gradient = CreateGradientOverlay(row, Theme.Assets.GradientSunset, 0, 2)
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+        local iconAsset = Theme.Assets.NavContent
+        local icon = Theme:CreateIcon(row, iconAsset, 18, TC.muted)
+        SetPoint(icon, "LEFT", row, "LEFT", 12, 0)
+
+        local checkBack = CreateFrame("Frame", nil, row, "BackdropTemplate")
+        SetSize(checkBack, 18, 18)
+        SetPoint(checkBack, "RIGHT", row, "RIGHT", -11, 0)
+        Backdrop(checkBack, TC.input, TC.line, 5, false)
+        local check = checkBack:CreateTexture(nil, "ARTWORK")
+        SetSize(check, 10, 10)
+        SetPoint(check, "CENTER", checkBack, "CENTER", 0, 0)
+
+        local label = Font(row, 11.2, TC.textSoft, "BOLD")
+        label:SetText(category.shortName or category.name or category.key)
+        label:SetWordWrap(false)
+        label:SetJustifyH("LEFT")
+        SetPoint(label, "LEFT", icon, "RIGHT", 10, 0)
+        SetPoint(label, "RIGHT", checkBack, "LEFT", -9, 0)
+        SetHeight(label, 22)
+
+        row:SetScript("OnEnter", function(self)
+            if selectedCategory ~= category.key then
+                SetSurfaceColor(self, TC.surfaceHover)
+            end
+        end)
+        row:SetScript("OnLeave", function(self)
+            RefreshCategoryRows()
+        end)
+        row:SetScript("OnClick", function(_, button)
+            if button == "RightButton" then
+                RA:GetDB().categories[category.key] = not (RA:GetDB().categories[category.key] ~= false)
+                RA:OnCapabilityFiltersChanged()
+            else
+                selectedCategory = category.key
+                RefreshAbilityList(true)
+            end
+            RefreshCategoryRows()
+        end)
+        categoryRows[i] = {frame = row, category = category, check = check, label = label, gradient = row.gradient, icon = icon}
+    end
+
+    local tooltipToggle = CreateToggle(categoryCard, "Spell icon tooltips", "Show the native spell tooltip when an ability icon is hovered.",
+        function() return not RA:GetDB().content or RA:GetDB().content.showTooltips ~= false end,
+        function(value)
+            RA:GetDB().content = RA:GetDB().content or {}
+            RA:GetDB().content.showTooltips = value
+        end)
+    SetPoint(tooltipToggle, "BOTTOMLEFT", categoryCard, "BOTTOMLEFT", 18, 16)
+    SetWidth(tooltipToggle, 192)
+
+    local listCard = CreateCard(parent, "ABILITIES", "Core abilities lead by default; within each tier, longer cooldowns appear first.", Theme.Assets.GradientBerry)
+    SetSize(listCard, 708, 598)
+    SetPoint(listCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+
+    local search = CreateFrame("EditBox", nil, listCard, "BackdropTemplate")
+    SetSize(search, 246, 34)
+    SetPoint(search, "TOPLEFT", listCard, "TOPLEFT", 18, -62)
+    Backdrop(search, TC.input, TC.line, 9, false)
+    ApplyReadableFont(search, 10.8, "REGULAR")
+    search:SetTextColor(unpack(TC.text))
+    search:SetAutoFocus(false)
+    search:SetTextInsets(12, 12, 0, 0)
+    search.instructions = Font(search, 9.4, TC.muted, "REGULAR")
+    search.instructions:SetText("Search abilities")
+    SetPoint(search.instructions, "LEFT", search, "LEFT", 12, 0)
+    search:SetScript("OnTextChanged", function(self)
+        searchText = self:GetText() or ""
+        self.instructions:SetShown(searchText == "" and not self:HasFocus())
+        RefreshAbilityList(true)
+    end)
+    search:SetScript("OnEditFocusGained", function(self) self.instructions:Hide() end)
+    search:SetScript("OnEditFocusLost", function(self) self.instructions:SetShown((self:GetText() or "") == "") end)
+    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local recommended = CreateButton(listCard, "RECOMMENDED", 112, 34, function()
+        RA:ResetAbilityVisibilityToRecommended(selectedCategory)
+        RefreshAbilityList(false)
+    end, true)
+    SetPoint(recommended, "LEFT", search, "RIGHT", 8, 0)
+
+    local allOn = CreateButton(listCard, "ALL ON", 72, 34, function()
+        for i = 1, #RA.Catalog do
+            local ability = RA.Catalog[i]
+            if ability.category == selectedCategory then RA:GetDB().abilities[ability.key] = true end
+        end
+        RefreshAbilityList(false)
+        RA:OnCapabilityFiltersChanged()
+    end)
+    SetPoint(allOn, "LEFT", recommended, "RIGHT", 8, 0)
+
+    local allOff = CreateButton(listCard, "ALL OFF", 72, 34, function()
+        for i = 1, #RA.Catalog do
+            local ability = RA.Catalog[i]
+            if ability.category == selectedCategory then RA:GetDB().abilities[ability.key] = false end
+        end
+        RefreshAbilityList(false)
+        RA:OnCapabilityFiltersChanged()
+    end)
+    SetPoint(allOff, "LEFT", allOn, "RIGHT", 8, 0)
+
+    local defaultOrder = CreateButton(listCard, "DEFAULT ORDER", 124, 34, function()
+        if RA.ResetAbilityOrder then RA:ResetAbilityOrder(selectedCategory) end
+        RefreshAbilityList(true)
+    end)
+    SetPoint(defaultOrder, "LEFT", allOff, "RIGHT", 8, 0)
+
+    contentScroll = CreateFrame("ScrollFrame", nil, listCard, "UIPanelScrollFrameTemplate")
+    SetPoint(contentScroll, "TOPLEFT", listCard, "TOPLEFT", 18, -108)
+    SetPoint(contentScroll, "BOTTOMRIGHT", listCard, "BOTTOMRIGHT", -36, 18)
+    contentScrollChild = CreateFrame("Frame", nil, contentScroll)
+    SetWidth(contentScrollChild, 646)
+    SetHeight(contentScrollChild, 468)
+    contentScroll:SetScrollChild(contentScrollChild)
+end
+
+local function ScanStatusText()
+    local inspected, total, isDemo = RA:GetVerificationStatus()
+    local processed, scanTotal, _, running, currentName, paused = RA:GetInspectionProgress()
+    local summary = RA:GetScanSummary()
+    local db = RA:GetDB()
+    if isDemo then
+        if db.scan and db.scan.demoPreview then
+            return "13 / 20 SCANNING", "Simulated pending-player strip and progress animation are active on the demo HUD."
+        end
+        return "DEMO READY", "Enable the scan preview below to test the 13/20 pending-player experience."
+    end
+    if paused then
+        return string.format("%d / %d READY", inspected, total), "Paused after the current inspection."
+    elseif running then
+        return string.format("%d / %d SCANNING", processed, scanTotal), currentName and ("Inspecting " .. RA:GetShortName(currentName)) or "Inspecting the next nearby player."
+    end
+    local details = {}
+    if summary.inspected > 0 then details[#details + 1] = summary.inspected .. " inspected" end
+    if summary.filtered > 0 then details[#details + 1] = summary.filtered .. " class-skipped" end
+    if summary.ignored > 0 then details[#details + 1] = summary.ignored .. " ignored" end
+    if summary.outOfRange > 0 then details[#details + 1] = summary.outOfRange .. " out of range" end
+    if summary.offline > 0 then details[#details + 1] = summary.offline .. " offline" end
+    if summary.failed > 0 then details[#details + 1] = summary.failed .. " failed" end
+    return string.format("%d / %d READY", inspected, total), (#details > 0 and table.concat(details, "  ·  ") or "Tracked roster complete.")
+end
+
+local function RefreshScanPane()
+    if not scanStatusValue then
+        return
+    end
+    local primary, secondary = ScanStatusText()
+    scanStatusValue:SetText(primary)
+    if scanStatusDetail then
+        scanStatusDetail:SetText(secondary or "")
+    end
+    if scanStatusPill then
+        scanStatusPill.tooltipText = secondary
+    end
+
+    local inspected, total, isDemo = RA:GetVerificationStatus()
+    local _, _, _, running, _, paused = RA:GetInspectionProgress()
+    if isDemo then
+        scanPrimaryButton.label:SetText("SCAN MISSING")
+    elseif paused then
+        scanPrimaryButton.label:SetText("RESUME SCAN")
+    elseif running then
+        scanPrimaryButton.label:SetText("PAUSE SCAN")
+    elseif inspected < total then
+        scanPrimaryButton.label:SetText("RETRY MISSING")
+    else
+        scanPrimaryButton.label:SetText("SCAN MISSING")
+    end
+end
+
+local function CreateScanningPane(parent)
+    CreateHeading(parent, "Scanning", "Fast incremental inspection with persistent results between bosses.")
+
+    scanStatusPill = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    SetSize(scanStatusPill, 220, 36)
+    SetPoint(scanStatusPill, "TOPRIGHT", parent, "TOPRIGHT", 0, -4)
+    Backdrop(scanStatusPill, TC.activeDark, CopyColor(TC.magenta, 0.30), 11, false)
+    scanStatusPill.gradient = CreateGradientOverlay(scanStatusPill, Theme.Assets.GradientSunset, 0.42, 2)
+    scanStatusValue = Font(scanStatusPill, 10.4, TC.white, "BOLD")
+    scanStatusValue:SetJustifyH("CENTER")
+    SetPoint(scanStatusValue, "CENTER", scanStatusPill, "CENTER", 0, 0)
+    scanStatusPill:EnableMouse(true)
+    scanStatusPill:SetScript("OnEnter", function(self)
+        if self.tooltipText and self.tooltipText ~= "" then
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(self.tooltipText, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    scanStatusPill:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    scanStatusDetail = Font(parent, 9.0, TC.textSoft, "REGULAR")
+    scanStatusDetail:SetText("Only new, moved-in, or unresolved players enter the queue.")
+    SetPoint(scanStatusDetail, "TOPRIGHT", scanStatusPill, "BOTTOMRIGHT", 0, -6)
+    scanStatusDetail:SetJustifyH("RIGHT")
+
+    local displayCard = CreateCard(parent, "SCAN OVERLAY", "The pending-player strip disappears automatically when everyone is resolved.")
+    SetSize(displayCard, 456, 430)
+    SetPoint(displayCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+
+    local showStrip = CreateToggle(displayCard, "Show pending-player strip", "Shows class, role, range state, and the current scan target.",
+        function() return RA:GetDB().scan.showStrip ~= false end,
+        function(value) RA:GetDB().scan.showStrip = value; ApplyVisualChange() end)
+    SetPoint(showStrip, "TOPLEFT", displayCard, "TOPLEFT", 18, -62)
+    SetWidth(showStrip, 420)
+
+    local demoScan = CreateToggle(displayCard, "Demo the scanning state", "While Demo is on, show a simulated 13/20 progress bar and animated target.",
+        function() return RA:GetDB().scan.demoPreview == true end,
+        function(value)
+            RA:GetDB().scan.demoPreview = value
+            ApplyVisualChange()
+            RefreshScanPane()
+        end)
+    SetPoint(demoScan, "TOPLEFT", displayCard, "TOPLEFT", 18, -118)
+    SetWidth(demoScan, 420)
+
+    local scanScale = CreateSlider(displayCard, "SCAN STRIP SCALE", 0.75, 2.00, 0.05,
+        function() return RA:GetDB().scan.scale end,
+        function(value) RA:GetDB().scan.scale = value; ApplyVisualChange() end,
+        function(value) return string.format("%d%%", math.floor(value * 100 + 0.5)) end)
+    SetPoint(scanScale, "TOPLEFT", displayCard, "TOPLEFT", 18, -190)
+    SetWidth(scanScale, 420)
+
+    local scanWrap = CreateSlider(displayCard, "PENDING PLAYERS PER ROW", 4, 14, 1,
+        function() return RA:GetDB().scan.wrapAfter end,
+        function(value) RA:GetDB().scan.wrapAfter = value; ApplyVisualChange() end)
+    SetPoint(scanWrap, "TOPLEFT", displayCard, "TOPLEFT", 18, -260)
+    SetWidth(scanWrap, 420)
+
+    local groupsCard = CreateCard(parent, "TRACKED RAID GROUPS", "Gradient groups are tracked. Groups 7 and 8 default to bench and are ignored.")
+    SetSize(groupsCard, 476, 430)
+    SetPoint(groupsCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+    groupsCard.groupButtons = {}
+
+    for group = 1, 8 do
+        local button = CreateFrame("Button", nil, groupsCard, "BackdropTemplate")
+        SetSize(button, 101, 78)
+        local column = (group - 1) % 4
+        local row = math.floor((group - 1) / 4)
+        SetPoint(button, "TOPLEFT", groupsCard, "TOPLEFT", 18 + column * 111, -78 - row * 96)
+        Backdrop(button, TC.surfaceRaised, TC.line, 12, false)
+        button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
+
+        button.number = Font(button, 18, TC.text, "BOLD")
+        button.number:SetText(tostring(group))
+        button.number:SetJustifyH("CENTER")
+        SetPoint(button.number, "TOP", button, "TOP", 0, -12)
+        button.state = Font(button, 8.0, TC.textSoft, "BOLD")
+        button.state:SetJustifyH("CENTER")
+        SetPoint(button.state, "BOTTOM", button, "BOTTOM", 0, 10)
+        button:SetScript("OnClick", function()
+            local db = RA:GetDB()
+            db.ignoredRaidGroups[group] = not db.ignoredRaidGroups[group]
+            RA:OnIgnoredRaidGroupsChanged()
+            RefreshScanPane()
+            for g = 1, #groupsCard.groupButtons do groupsCard.groupButtons[g]:Refresh() end
+        end)
+        function button:Refresh()
+            local ignored = RA:GetDB().ignoredRaidGroups[group] == true
+            SetSurfaceColor(self, ignored and TC.input or TC.activeDark)
+            SetBorderColor(self, ignored and TC.line or CopyColor(TC.magenta, 0.36))
+            self.gradient:SetAlpha(ignored and 0 or 0.64)
+            self.number:SetTextColor(unpack(ignored and TC.muted or TC.white))
+            self.state:SetText(ignored and "IGNORED" or "TRACKED")
+            self.state:SetTextColor(unpack(ignored and TC.faint or TC.orange))
+        end
+        groupsCard.groupButtons[group] = button
+        RegisterControl(button)
+    end
+
+    local actionsCard = CreateCard(parent, "SCAN CONTROLS", "A full rescan is only needed after someone changes talents without changing roster position.")
+    SetSize(actionsCard, 950, 142)
+    SetPoint(actionsCard, "BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+
+    scanPrimaryButton = CreateButton(actionsCard, "SCAN MISSING", 170, 38, function()
+        local _, _, _, running, _, paused = RA:GetInspectionProgress()
+        if paused then
+            RA:SetInspectionPaused(false)
+        elseif running then
+            RA:SetInspectionPaused(true)
+        else
+            RA:SetInspectionPaused(false)
+            RA:RequestInspectionScan("settings scan missing", false)
+        end
+        C_Timer.After(0.1, RefreshScanPane)
+    end, true)
+    SetPoint(scanPrimaryButton, "BOTTOMLEFT", actionsCard, "BOTTOMLEFT", 18, 20)
+
+    local full = CreateButton(actionsCard, "FULL RESCAN", 150, 38, function()
+        RA:SetInspectionPaused(false)
+        RA:RequestInspectionScan("settings full rescan", true)
+        C_Timer.After(0.1, RefreshScanPane)
+    end)
+    SetPoint(full, "LEFT", scanPrimaryButton, "RIGHT", 10, 0)
+
+    local clear = CreateButton(actionsCard, "CLEAR CACHE", 150, 38, function()
+        RA:ClearInspectionCache()
+        C_Timer.After(0.1, RefreshScanPane)
+    end)
+    SetPoint(clear, "LEFT", full, "RIGHT", 10, 0)
+end
+
+local function CreateSecureTestButton(parent, label, macroText, width)
+    local button = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate,BackdropTemplate")
+    SetSize(button, width or 190, 38)
+    Backdrop(button, TC.activeDark, CopyColor(TC.magenta, 0.28), 9, false)
+    button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0.64, 2)
+    button.label = Font(button, 10.4, TC.white, "BOLD")
+    button.label:SetText(label)
+    button.label:SetJustifyH("CENTER")
+    SetPoint(button.label, "CENTER", button, "CENTER", 0, 0)
+    button:RegisterForClicks("AnyDown", "AnyUp")
+    button:SetAttribute("type", "macro")
+    button:SetAttribute("macrotext", macroText)
+    button:SetAttribute("useOnKeyDown", GetCVarBool and GetCVarBool("ActionButtonUseKeyDown") or false)
+    return button
+end
+
+local function CreateQuickBarPane(parent)
+    CreateHeading(parent, "Quick Bar", "Raid setup controls stay tucked away until you hover the checkmark puck.")
+
+    local leftCard = CreateCard(parent, "QUICK BAR", "Everything about the launcher and its flyout lives here.")
+    SetSize(leftCard, 456, 598)
+    SetPoint(leftCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+
+    local rightTop = CreateCard(parent, "BEHAVIOR", "Fast when you want it; unobtrusive when you do not.", Theme.Assets.GradientBerry)
+    SetSize(rightTop, 476, 278)
+    SetPoint(rightTop, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+
+    local rightBottom = CreateCard(parent, "HUD GROWTH", "Choose which direction the main ability HUD grows from its saved anchor.")
+    SetSize(rightBottom, 476, 302)
+    SetPoint(rightBottom, "BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
+
+    local toolboxToggle = CreateToggle(leftCard, "Enable Quick Bar", "Enable the checkmark puck. Raid-leader actions remain locked unless you are raid lead/assist. Demo Mode also shows it outside a raid.",
+        function() return RA:GetDB().leaderToolbox.enabled ~= false end,
+        function(value)
+            RA:GetDB().leaderToolbox.enabled = value
+            if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
+        end)
+    SetPoint(toolboxToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -64)
+    SetWidth(toolboxToggle, 420)
+
+    local nonLeaderToggle = CreateToggle(leftCard, "Show when not Leader/Assist", "When enabled, the Quick Bar stays visible to normal raid members. Turn this off to automatically hide it unless you are raid lead or assist.",
+        function() return RA:GetDB().leaderToolbox.showForNonLeaders ~= false end,
+        function(value)
+            RA:GetDB().leaderToolbox.showForNonLeaders = value
+            if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
+        end)
+    SetPoint(nonLeaderToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -112)
+    SetWidth(nonLeaderToggle, 420)
+
+    local missingToggle = CreateToggle(leftCard, "Missing raid coverage", "Show the missing-buff count badge and the Missing flyout.",
+        function() return RA:GetDB().leaderToolbox.showMissing ~= false end,
+        function(value)
+            RA:GetDB().leaderToolbox.showMissing = value
+            if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
+        end)
+    SetPoint(missingToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -160)
+    SetWidth(missingToggle, 420)
+
+    local direction = CreateSegmented(leftCard, "FLYOUT DIRECTION", {
+        {label = "AUTO", value = "AUTO"},
+        {label = "RIGHT", value = "RIGHT"},
+        {label = "LEFT", value = "LEFT"},
+        {label = "DOWN", value = "DOWN"},
+        {label = "UP", value = "UP"},
+    }, function() return RA:GetDB().leaderToolbox.flyoutDirection or "AUTO" end, function(value)
+        RA:GetDB().leaderToolbox.flyoutDirection = value
+        if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.RefreshGeometry then RA.RaidLeaderToolbox:RefreshGeometry() end
+    end)
+    SetPoint(direction, "TOPLEFT", leftCard, "TOPLEFT", 18, -216)
+    SetSize(direction, 420, 54)
+    direction:Layout(420)
+
+    local puckSize = CreateSlider(leftCard, "PUCK SIZE", 24, 44, 1,
+        function() return RA:GetDB().leaderToolbox.puckSize or 30 end,
+        function(value)
+            RA:GetDB().leaderToolbox.puckSize = value
+            if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.RefreshGeometry then RA.RaidLeaderToolbox:RefreshGeometry() end
+        end,
+        function(value) return string.format("%d px", value) end)
+    SetPoint(puckSize, "TOPLEFT", leftCard, "TOPLEFT", 18, -282)
+    SetWidth(puckSize, 420)
+
+    local tooltipDelay = CreateSlider(leftCard, "TOOLTIP DELAY", 0.20, 2.50, 0.10,
+        function() return RA:GetDB().leaderToolbox.tooltipDelay or 0.75 end,
+        function(value) RA:GetDB().leaderToolbox.tooltipDelay = value end,
+        function(value) return string.format("%.1f s", value) end)
+    SetPoint(tooltipDelay, "TOPLEFT", leftCard, "TOPLEFT", 18, -338)
+    SetWidth(tooltipDelay, 420)
+
+    local closeDelay = CreateSlider(leftCard, "MOUSE-OUT CLOSE DELAY", 0.15, 3.00, 0.05,
+        function() return RA:GetDB().leaderToolbox.closeDelay or 1.0 end,
+        function(value) RA:GetDB().leaderToolbox.closeDelay = value end,
+        function(value) return string.format("%.1f s", value) end)
+    SetPoint(closeDelay, "TOPLEFT", leftCard, "TOPLEFT", 18, -394)
+    SetWidth(closeDelay, 420)
+
+    local countdownSeconds = CreateSlider(leftCard, "PUCK COUNTDOWN", 1, 60, 1,
+        function() return RA:GetDB().leaderToolbox.countdownSeconds or 15 end,
+        function(value) RA:GetDB().leaderToolbox.countdownSeconds = math.floor(value + 0.5) end,
+        function(value) return string.format("%d s", value) end)
+    SetPoint(countdownSeconds, "TOPLEFT", leftCard, "TOPLEFT", 18, -450)
+    SetWidth(countdownSeconds, 420)
+
+    local resetDock = CreateButton(leftCard, "RESET QUICK BAR POSITION", 220, 34, function()
+        if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.ResetPosition then RA.RaidLeaderToolbox:ResetPosition() end
+    end)
+    SetPoint(resetDock, "BOTTOMLEFT", leftCard, "BOTTOMLEFT", 18, 22)
+
+    local behaviorText = Font(rightTop, 10.0, TC.textSoft, "REGULAR")
+    behaviorText:SetWordWrap(true)
+    behaviorText:SetSpacing(5)
+    behaviorText:SetText("• Hover: opens immediately\\n• Left click puck: start configured countdown; click again to cancel\\n• Mouse leaves: uses the close delay\\n• Click elsewhere: closes immediately\\n• Middle click puck: pin / unpin\\n• Right click puck: start a ready check\\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
+    SetPoint(behaviorText, "TOPLEFT", rightTop, "TOPLEFT", 20, -66)
+    SetWidth(behaviorText, 430)
+
+    local hudDirection = CreateSegmented(rightBottom, "MAIN HUD DIRECTION", {
+        {label = "AUTO", value = "AUTO"},
+        {label = "RIGHT", value = "RIGHT"},
+        {label = "LEFT", value = "LEFT"},
+        {label = "DOWN", value = "DOWN"},
+        {label = "UP", value = "UP"},
+    }, function() return RA:GetDB().hudDirection or "AUTO" end, function(value)
+        RA:GetDB().hudDirection = value
+        ApplyVisualChange()
+    end)
+    SetPoint(hudDirection, "TOPLEFT", rightBottom, "TOPLEFT", 18, -72)
+    SetSize(hudDirection, 440, 54)
+    hudDirection:Layout(440)
+
+    local directionHelp = Font(rightBottom, 9.3, TC.textSoft, "REGULAR")
+    directionHelp:SetWordWrap(true)
+    directionHelp:SetText("RIGHT / LEFT anchor the HUD to that side. DOWN centers the HUD below its anchor; UP centers it above. AUTO chooses the side with the most available screen space.")
+    SetPoint(directionHelp, "TOPLEFT", rightBottom, "TOPLEFT", 20, -148)
+    SetWidth(directionHelp, 430)
+
+    local recenter = CreateButton(rightBottom, "RECENTER HUD", 150, 34, function()
+        if RA.RecoverHUD then RA:RecoverHUD() end
+        RefreshConfig()
+    end)
+    SetPoint(recenter, "BOTTOMLEFT", rightBottom, "BOTTOMLEFT", 20, 24)
+end
+
+local function CreateActionsPane(parent)
+    CreateHeading(parent, "Actions", "Configure tile callouts and the emergency encounter Panic action.")
+
+    local leftCard = CreateCard(parent, "LEFT CLICK", "Choose one callout channel. Say and Whisper are mutually exclusive.")
+    SetSize(leftCard, 456, 370)
+    SetPoint(leftCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
+
+    local rightCard = CreateCard(parent, "RIGHT CLICK & PANIC", "Raid Warning stays on right-click; Panic is attached to the first ability category.", Theme.Assets.GradientBerry)
+    SetSize(rightCard, 476, 370)
+    SetPoint(rightCard, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
+
+    local leftMode = CreateSegmented(leftCard, "LEFT-CLICK CHANNEL", {
+        { label = "WHISPER", value = "WHISPER" },
+        { label = "SAY", value = "SAY" },
+        { label = "OFF", value = "OFF" },
+    },
+        function() return RA:GetDB().actions.leftClickMode or "WHISPER" end,
+        function(value)
+            local actions = RA:GetDB().actions
+            actions.leftClickMode = value
+            actions.whisperEnabled = value == "WHISPER"
+            actions.sayEnabled = value == "SAY"
+            ApplyVisualChange()
+        end)
+    SetPoint(leftMode, "TOPLEFT", leftCard, "TOPLEFT", 18, -64)
+    SetWidth(leftMode, 420)
+    leftMode:Layout(420)
+
+    local whisperEdit = CreateEditBox(leftCard, "WHISPER MESSAGE", "Used only when WHISPER is selected above.",
+        function() return RA:GetDB().actions.whisperTemplate end,
+        function(value) RA:GetDB().actions.whisperTemplate = value; ApplyVisualChange() end)
+    SetPoint(whisperEdit, "TOPLEFT", leftCard, "TOPLEFT", 18, -134)
+    SetWidth(whisperEdit, 420)
+
+    local sayEdit = CreateEditBox(leftCard, "SAY MESSAGE", "Used only when SAY is selected above.",
+        function() return RA:GetDB().actions.sayTemplate end,
+        function(value) RA:GetDB().actions.sayTemplate = value; ApplyVisualChange() end)
+    SetPoint(sayEdit, "TOPLEFT", leftCard, "TOPLEFT", 18, -232)
+    SetWidth(sayEdit, 420)
+
+    local raidToggle = CreateToggle(rightCard, "Raid Warning", "Secure right-click action; requires raid lead or assist.",
+        function() return RA:GetDB().actions.raidWarningEnabled ~= false end,
+        function(value) RA:GetDB().actions.raidWarningEnabled = value; ApplyVisualChange() end)
+    SetPoint(raidToggle, "TOPLEFT", rightCard, "TOPLEFT", 18, -64)
+    SetWidth(raidToggle, 440)
+
+    local raidEdit = CreateEditBox(rightCard, "RAID WARNING MESSAGE", "{spell}  {name}  {full}",
+        function() return RA:GetDB().actions.raidWarningTemplate end,
+        function(value) RA:GetDB().actions.raidWarningTemplate = value; ApplyVisualChange() end)
+    SetPoint(raidEdit, "TOPLEFT", rightCard, "TOPLEFT", 18, -126)
+    SetWidth(raidEdit, 440)
+
+    local panicToggle = CreateToggle(rightCard, "Panic button", "Attach an emergency ! button beside the first visible ability category. One click sends one Raid Warning.",
+        function() return RA:GetDB().leaderToolbox.panicEnabled ~= false end,
+        function(value)
+            RA:GetDB().leaderToolbox.panicEnabled = value
+            if RA.RefreshPanicButton then RA:RefreshPanicButton() else ApplyVisualChange() end
+        end)
+    SetPoint(panicToggle, "TOPLEFT", rightCard, "TOPLEFT", 18, -220)
+    SetWidth(panicToggle, 440)
+
+    local panicEdit = CreateEditBox(rightCard, "PANIC RAID WARNING", "One message only; no mass whispering.",
+        function() return RA:GetDB().leaderToolbox.panicMessage end,
+        function(value)
+            RA:GetDB().leaderToolbox.panicMessage = value
+            if RA.RefreshPanicButton then RA:RefreshPanicButton() end
+        end)
+    SetPoint(panicEdit, "TOPLEFT", rightCard, "TOPLEFT", 18, -274)
+    SetWidth(panicEdit, 440)
+
+    local statusCard = CreateCard(parent, "SECURE CALLOUT STATUS", "Verify the hardware-click callouts before a pull.")
+    SetSize(statusCard, 950, 250)
+    SetPoint(statusCard, "BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+
+    actionStatusText = Font(statusCard, 14, TC.text, "BOLD")
+    SetPoint(actionStatusText, "TOPLEFT", statusCard, "TOPLEFT", 24, -62)
+    actionStatusDetail = Font(statusCard, 9.2, TC.textSoft, "REGULAR")
+    actionStatusDetail:SetWordWrap(true)
+    SetPoint(actionStatusDetail, "TOPLEFT", actionStatusText, "BOTTOMLEFT", 0, -5)
+    SetWidth(actionStatusDetail, 600)
+
+    local warning = Font(statusCard, 8.7, TC.orange, "REGULAR")
+    warning:SetText("Raid Warning can be blocked during encounters when a raid member is outside the instance.")
+    warning:SetWordWrap(true)
+    SetPoint(warning, "BOTTOMLEFT", statusCard, "BOTTOMLEFT", 24, 101)
+    SetWidth(warning, 600)
+
+    local playerName = RA:GetFullUnitName("player") or UnitName("player") or "player"
+    local testWhisper = CreateSecureTestButton(statusCard, "TEST WHISPER", "/w " .. playerName .. " RCP Arsenal secure whisper test", 155)
+    SetPoint(testWhisper, "BOTTOMLEFT", statusCard, "BOTTOMLEFT", 24, 20)
+    local testSay = CreateSecureTestButton(statusCard, "TEST SAY", "/s RCP Arsenal secure say test", 115)
+    SetPoint(testSay, "LEFT", testWhisper, "RIGHT", 8, 0)
+    local testRaid = CreateSecureTestButton(statusCard, "TEST RAID", "/rw RCP Arsenal secure Raid Warning test", 145)
+    SetPoint(testRaid, "LEFT", testSay, "RIGHT", 8, 0)
+
+    local testPanic = CreateSecureTestButton(statusCard, "TEST PANIC", "/rw PANIC: USE DEFENSIVES + HEALTH POTIONS NOW!", 120)
+    SetPoint(testPanic, "BOTTOMLEFT", statusCard, "BOTTOMLEFT", 24, 60)
+    local rearm = CreateButton(statusCard, "REARM", 100, 34, function()
+        if RA.RearmSecureActions then RA:RearmSecureActions() end
+        RefreshConfig()
+    end)
+    SetPoint(rearm, "LEFT", testPanic, "RIGHT", 8, 0)
+end
+
+local function SetTab(tabKey)
+    activeTab = tabKey
+    for key, pane in pairs(panes) do
+        pane:SetShown(key == tabKey)
+    end
+    for key, button in pairs(tabButtons) do
+        local selected = key == tabKey
+        SetSurfaceColor(button, selected and TC.activeDark or TC.transparent)
+        SetBorderColor(button, selected and CopyColor(TC.magenta, 0.34) or TC.transparent)
+        button.gradient:SetAlpha(selected and 0.66 or 0)
+        button.title:SetTextColor(unpack(selected and TC.white or TC.textSoft))
+        button.subtitle:SetTextColor(unpack(selected and TC.textSoft or TC.muted))
+        button.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
+        button.bar:SetShown(selected)
+    end
+    if tabKey == "CONTENT" then
+        RefreshAbilityList(false)
+        RefreshCategoryRows()
+    elseif tabKey == "SCANNING" then
+        RefreshScanPane()
+    end
+end
+
+local function RefreshConfig()
+    if not frame then
+        return
+    end
+    for i = 1, #controls do
+        if controls[i].Refresh then
+            controls[i]:Refresh()
+        end
+    end
+    RefreshCategoryRows()
+    RefreshAbilityList(false)
+    RefreshScanPane()
+    UpdatePreview()
+
+    if actionStatusText and RA.GetSecureActionStatus then
+        local armed, visible, clickMode = RA:GetSecureActionStatus()
+        actionStatusText:SetText(string.format("%d / %d VISIBLE TILES ARMED", armed, visible))
+        actionStatusDetail:SetText("Secure macros execute on " .. clickMode .. ". Left-click uses exactly one selected channel (Whisper, Say, or Off); right-click requests Raid Warning. Reopen or rearm after changing action templates.")
+    end
+
+    local primary = ScanStatusText()
+    local reason = RA.GetHUDVisibilityReason and RA:GetHUDVisibilityReason() or nil
+    local hudState = reason and ("HUD HIDDEN: " .. reason) or "HUD VISIBLE"
+    local fontName = RA.GetFontStatus and select(1, RA:GetFontStatus()) or "Blizzard font"
+    statusText:SetText(primary .. "  •  " .. hudState .. "  •  " .. fontName)
+end
+
+local function CreateProfileDialog()
+    if profileDialog then
+        return profileDialog
+    end
+
+    profileDialog = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    profileDialog:SetAllPoints(frame)
+    profileDialog:SetFrameLevel(frame:GetFrameLevel() + 30)
+
+    profileDialog.dimmer = profileDialog:CreateTexture(nil, "BACKGROUND")
+    profileDialog.dimmer:SetColorTexture(0.010, 0.008, 0.020, 0.78)
+    profileDialog.dimmer:SetAllPoints(profileDialog)
+
+    profileDialog.card = CreateFrame("Frame", nil, profileDialog, "BackdropTemplate")
+    SetSize(profileDialog.card, 820, 430)
+    SetPoint(profileDialog.card, "CENTER", profileDialog, "CENTER", 0, 0)
+    Backdrop(profileDialog.card, TC.surface, CopyColor(TC.magenta, 0.22), 18, true)
+    Theme:AddTopWash(profileDialog.card, Theme.Assets.GradientSunsetWash, 0.12, 90, 2)
+
+    profileDialog.title = Font(profileDialog.card, 19, TC.text, "BOLD")
+    SetPoint(profileDialog.title, "TOPLEFT", profileDialog.card, "TOPLEFT", 24, -22)
+    profileDialog.subtitle = Font(profileDialog.card, 10.2, TC.textSoft, "REGULAR")
+    SetPoint(profileDialog.subtitle, "TOPLEFT", profileDialog.title, "BOTTOMLEFT", 0, -5)
+
+    local close = CreateButton(profileDialog.card, "X", 38, 38, function() profileDialog:Hide() end)
+    SetPoint(close, "TOPRIGHT", profileDialog.card, "TOPRIGHT", -18, -18)
+
+    local editBack = CreateFrame("Frame", nil, profileDialog.card, "BackdropTemplate")
+    SetPoint(editBack, "TOPLEFT", profileDialog.card, "TOPLEFT", 24, -90)
+    SetPoint(editBack, "BOTTOMRIGHT", profileDialog.card, "BOTTOMRIGHT", -24, 82)
+    Backdrop(editBack, TC.input, TC.line, 12, false)
+
+    profileDialogBox = CreateFrame("EditBox", nil, editBack)
+    SetPoint(profileDialogBox, "TOPLEFT", editBack, "TOPLEFT", 14, -12)
+    SetPoint(profileDialogBox, "BOTTOMRIGHT", editBack, "BOTTOMRIGHT", -14, 12)
+    ApplyReadableFont(profileDialogBox, 10.3, "REGULAR")
+    profileDialogBox:SetTextColor(unpack(TC.text))
+    profileDialogBox:SetMultiLine(true)
+    profileDialogBox:SetAutoFocus(false)
+    profileDialogBox:SetMaxLetters(32767)
+    profileDialogBox:SetTextInsets(0, 0, 0, 0)
+    profileDialogBox:SetScript("OnEscapePressed", function(self) self:ClearFocus(); profileDialog:Hide() end)
+
+    profileDialogStatus = Font(profileDialog.card, 9.6, TC.textSoft, "REGULAR")
+    SetPoint(profileDialogStatus, "BOTTOMLEFT", profileDialog.card, "BOTTOMLEFT", 24, 28)
+    SetPoint(profileDialogStatus, "RIGHT", profileDialog.card, "RIGHT", -230, 0)
+
+    profileDialog.primary = CreateButton(profileDialog.card, "COPY", 176, 40, function()
+        if profileDialogMode == "EXPORT" then
+            profileDialogBox:SetFocus()
+            profileDialogBox:HighlightText()
+            profileDialogStatus:SetText("Press Ctrl+C to copy the highlighted profile string.")
+            profileDialogStatus:SetTextColor(unpack(TC.textSoft))
+        else
+            local ok, message = RA:ImportProfileString(profileDialogBox:GetText())
+            profileDialogStatus:SetText(message or (ok and "Profile imported." or "Import failed."))
+            profileDialogStatus:SetTextColor(unpack(ok and TC.success or TC.danger))
+            if ok then
+                RefreshConfig()
+            end
+        end
+    end, true)
+    SetPoint(profileDialog.primary, "BOTTOMRIGHT", profileDialog.card, "BOTTOMRIGHT", -24, 20)
+
+    profileDialog:Hide()
+    return profileDialog
+end
+
+local function OpenProfileDialog(mode)
+    if InCombatLockdown() then
+        RA:Print("Profile import/export is unavailable during combat.")
+        return
+    end
+    if not frame then
+        return
+    end
+    CreateProfileDialog()
+    profileDialogMode = mode == "IMPORT" and "IMPORT" or "EXPORT"
+    profileDialogStatus:SetText("")
+    if profileDialogMode == "EXPORT" then
+        local text, err = RA:ExportProfileString()
+        profileDialog.title:SetText("EXPORT SETTINGS")
+        profileDialog.subtitle:SetText("Copy this profile string to share your HUD, content, scanning, and action settings.")
+        profileDialog.primary.label:SetText("SELECT ALL")
+        profileDialogBox:SetText(text or "")
+        profileDialogStatus:SetText(err or "Screen position and inspection cache are intentionally excluded.")
+        profileDialogBox:SetFocus()
+        profileDialogBox:HighlightText()
+    else
+        profileDialog.title:SetText("IMPORT SETTINGS")
+        profileDialog.subtitle:SetText("Paste a RCP Arsenal profile string below. Your local HUD position will be preserved.")
+        profileDialog.primary.label:SetText("IMPORT PROFILE")
+        profileDialogBox:SetText("")
+        profileDialogStatus:SetText("Unknown abilities from a different catalog version are safely ignored.")
+        profileDialogBox:SetFocus()
+    end
+    profileDialog:Show()
+end
+
+local function CreateConfig()
+    local FRAME_WIDTH, FRAME_HEIGHT = 1280, 820
+
+    frame = CreateFrame("Frame", "RCPArsenalConfig", UIParent, "BackdropTemplate")
+    RA.ConfigFrame = frame
+    SetSize(frame, FRAME_WIDTH, FRAME_HEIGHT)
+    SetPoint(frame, "CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    Backdrop(frame, TC.canvasDeep, CopyColor(TC.violet, 0.16), 20, true)
+    Theme:AddAtmosphere(frame, 0.42)
+    frame:SetScript("OnDragStart", function(self)
+        if not InCombatLockdown() then self:StartMoving() end
+    end)
+    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    frame:Hide()
+
+    local sidebar = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    SetSize(sidebar, 238, 728)
+    SetPoint(sidebar, "TOPLEFT", frame, "TOPLEFT", 16, -16)
+    Backdrop(sidebar, TC.sidebar, CopyColor(TC.violet, 0.10), 17, false)
+    Theme:AddTopWash(sidebar, Theme.Assets.GradientSunsetWash, 0.10, 132, 2)
+
+    local main = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    SetSize(main, 996, 728)
+    SetPoint(main, "TOPRIGHT", frame, "TOPRIGHT", -16, -16)
+    Backdrop(main, TC.canvas, TC.line, 17, false)
+    Theme:AddTopWash(main, Theme.Assets.GradientBerry, 0.028, 110, 2)
+
+    local footer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    SetSize(footer, 1248, 62)
+    SetPoint(footer, "BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 14)
+    Backdrop(footer, TC.footer, CopyColor(TC.magenta, 0.16), 15, false)
+
+    local logo = Theme:CreateIcon(sidebar, Theme.Assets.Logo, 52, TC.white)
+    SetPoint(logo, "TOPLEFT", sidebar, "TOPLEFT", 18, -18)
+
+    local title = Font(sidebar, 20.5, TC.text, "BOLD")
+    title:SetText("RCP ARSENAL")
+    SetPoint(title, "TOPLEFT", logo, "TOPRIGHT", 10, -4)
+    local version = Font(sidebar, 9.4, TC.magenta, "BOLD")
+    version:SetText("v" .. RA.VERSION)
+    SetPoint(version, "TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+
+    local subtitle = Font(sidebar, 10.0, TC.textSoft, "REGULAR")
+    subtitle:SetText("A polished, leader-installed inventory\nof the tools your raid actually brought.")
+    subtitle:SetSpacing(2)
+    SetPoint(subtitle, "TOPLEFT", sidebar, "TOPLEFT", 18, -84)
+
+    local navTop = -142
+    for i = 1, #TAB_DEFS do
+        local definition = TAB_DEFS[i]
+        local button = CreateFrame("Button", nil, sidebar, "BackdropTemplate")
+        local navX = definition.child and 34 or 16
+        local navWidth = definition.child and 188 or 206
+        SetSize(button, navWidth, definition.child and 60 or 70)
+        SetPoint(button, "TOPLEFT", sidebar, "TOPLEFT", navX, navTop - ((i - 1) * 74))
+        Backdrop(button, TC.transparent, TC.transparent, 11, false)
+        button.gradient = CreateGradientOverlay(button, Theme.Assets.GradientSunset, 0, 2)
+
+        button.bar = button:CreateTexture(nil, "ARTWORK")
+        Theme:RegisterAssetTexture(button.bar, Theme.Assets.GradientSunset)
+        SetWidth(button.bar, 4)
+        SetPoint(button.bar, "TOPLEFT", button, "TOPLEFT", 0, -9)
+        SetPoint(button.bar, "BOTTOMLEFT", button, "BOTTOMLEFT", 0, 9)
+        button.bar:Hide()
+
+        button.icon = Theme:CreateIcon(button, definition.icon, definition.child and 20 or 24, TC.muted)
+        SetPoint(button.icon, "LEFT", button, "LEFT", definition.child and 13 or 17, 0)
+
+        button.title = Font(button, 11.8, TC.textSoft, "BOLD")
+        button.title:SetText(definition.label)
+        SetPoint(button.title, "TOPLEFT", button.icon, "TOPRIGHT", 12, -3)
+        button.subtitle = Font(button, 9.0, TC.muted, "REGULAR")
+        button.subtitle:SetText(definition.subtitle)
+        SetPoint(button.subtitle, "TOPLEFT", button.title, "BOTTOMLEFT", 0, -4)
+
+        button:SetScript("OnEnter", function(self)
+            if activeTab ~= definition.key then
+                SetSurfaceColor(self, TC.surfaceHover)
+                self.gradient:SetAlpha(0.10)
+            end
+        end)
+        button:SetScript("OnLeave", function(self)
+            SetTab(activeTab)
+        end)
+        button:SetScript("OnClick", function() SetTab(definition.key) end)
+        tabButtons[definition.key] = button
+    end
+
+    local profileLabel = Font(sidebar, 8.6, TC.muted, "BOLD")
+    profileLabel:SetText("PROFILE")
+    SetPoint(profileLabel, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 170)
+
+    local profileBox = CreateFrame("Frame", nil, sidebar, "BackdropTemplate")
+    SetSize(profileBox, 202, 40)
+    SetPoint(profileBox, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 120)
+    Backdrop(profileBox, TC.input, TC.line, 10, false)
+    local profileName = Font(profileBox, 11.3, TC.text, "BOLD")
+    profileName:SetText("Default")
+    SetPoint(profileName, "LEFT", profileBox, "LEFT", 14, 0)
+    local profileHint = Font(profileBox, 9.0, TC.muted, "BOLD")
+    profileHint:SetText("LOCAL")
+    profileHint:SetJustifyH("RIGHT")
+    SetPoint(profileHint, "RIGHT", profileBox, "RIGHT", -14, 0)
+
+    local importButton = CreateButton(sidebar, "IMPORT", 96, 32, function() OpenProfileDialog("IMPORT") end)
+    SetPoint(importButton, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 76)
+    local exportButton = CreateButton(sidebar, "EXPORT", 96, 32, function() OpenProfileDialog("EXPORT") end, true)
+    SetPoint(exportButton, "BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -18, 76)
+
+    local reset = CreateButton(sidebar, "RESET PROFILE", 202, 32, function()
+        RA:ResetProfile()
+        RefreshConfig()
+    end)
+    SetPoint(reset, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 28)
+
+    local close = CreateButton(main, "X", 38, 38, function() frame:Hide() end)
+    SetPoint(close, "TOPRIGHT", main, "TOPRIGHT", -16, -16)
+
+    local content = CreateFrame("Frame", nil, main)
+    SetSize(content, 950, 660)
+    SetPoint(content, "TOPLEFT", main, "TOPLEFT", 24, -26)
+
+    for i = 1, #TAB_DEFS do
+        local pane = CreateFrame("Frame", nil, content)
+        pane:SetAllPoints(content)
+        pane:Hide()
+        panes[TAB_DEFS[i].key] = pane
+    end
+
+    CreateHUDPane(panes.HUD)
+    CreateQuickBarPane(panes.QUICKBAR)
+    CreateContentPane(panes.CONTENT)
+    CreateScanningPane(panes.SCANNING)
+    CreateActionsPane(panes.ACTIONS)
+
+    local hudToggle = CreateButton(footer, "HIDE HUD", 166, 42, function(self)
+        if RA:GetDB().shown then RA:HideHUD() else RA:ShowHUD() end
+        self:Refresh()
+        RefreshConfig()
+    end, true, Theme.Assets.IconEye)
+    SetPoint(hudToggle, "LEFT", footer, "LEFT", 12, 0)
+    hudToggle.Refresh = function(self)
+        self.label:SetText(RA:GetDB().shown and "HIDE HUD" or "SHOW HUD")
+    end
+    RegisterControl(hudToggle)
+
+    local recover = CreateButton(footer, "RECENTER", 144, 42, function()
+        if RA.RecoverHUD then RA:RecoverHUD() end
+        RefreshConfig()
+    end, false, Theme.Assets.IconTarget)
+    SetPoint(recover, "LEFT", hudToggle, "RIGHT", 10, 0)
+
+    local lock = CreateButton(footer, "LOCK HUD", 144, 42, function(self)
+        RA:SetLocked(not RA:GetDB().locked)
+        self:Refresh()
+    end, false, Theme.Assets.IconLock)
+    SetPoint(lock, "LEFT", recover, "RIGHT", 10, 0)
+    lock.Refresh = function(self)
+        self.label:SetText(RA:GetDB().locked and "UNLOCK HUD" or "LOCK HUD")
+        self:SetSelected(RA:GetDB().locked)
+    end
+    RegisterControl(lock)
+
+    local demo = CreateButton(footer, "DEMO", 144, 42, function(self)
+        RA:SetDemoMode(not RA:GetDB().demoMode)
+        self:Refresh()
+        RefreshConfig()
+    end, false, Theme.Assets.IconPlay)
+    SetPoint(demo, "LEFT", lock, "RIGHT", 10, 0)
+    demo.Refresh = function(self)
+        self.label:SetText(RA:GetDB().demoMode and "DEMO ON" or "DEMO OFF")
+        self:SetSelected(RA:GetDB().demoMode)
+    end
+    RegisterControl(demo)
+
+    statusText = Font(footer, 9.3, TC.textSoft, "REGULAR")
+    statusText:SetJustifyH("RIGHT")
+    SetPoint(statusText, "LEFT", demo, "RIGHT", 16, 0)
+    SetPoint(statusText, "RIGHT", footer, "RIGHT", -18, 0)
+
+    local function FitToScreen()
+        local availableWidth = math.max(800, UIParent:GetWidth() - 24)
+        local availableHeight = math.max(600, UIParent:GetHeight() - 24)
+        local scale = math.min(1, availableWidth / FRAME_WIDTH, availableHeight / FRAME_HEIGHT)
+        frame:SetScale(math.max(0.72, scale))
+    end
+
+    frame.UpdatePreview = UpdatePreview
+    frame:SetScript("OnShow", function()
+        FitToScreen()
+        SetTab(activeTab)
+        RefreshConfig()
+    end)
+end
+
+function RA:OpenConfig(tabKey)
+    if InCombatLockdown() then
+        self:Print("Configuration is locked during combat.")
+        return
+    end
+    if tabKey and panes[tabKey] then
+        activeTab = tabKey
+    elseif tabKey and not frame then
+        activeTab = tabKey
+    end
+    if not frame then
+        CreateConfig()
+    end
+    if tabKey and panes[tabKey] then activeTab = tabKey end
+    frame:Show()
+    SetTab(activeTab)
+    RefreshConfig()
+end
+
+function RA:OpenProfileDialog(mode)
+    if not frame then
+        self:OpenConfig()
+    end
+    OpenProfileDialog(mode)
+end
+
+function RA:CloseConfig()
+    if frame then frame:Hide() end
+end
+
+RA:RegisterInitializer(function()
+    -- Lazy by design: no settings frames are allocated until requested.
+end)
+
+RA:RegisterCallback("REPORTS_UPDATED", function()
+    if frame and frame:IsShown() then RefreshConfig() end
+end)
+RA:RegisterCallback("ACCENT_THEME_CHANGED", function()
+    if frame and frame:IsShown() then RefreshConfig() end
+end)
+
+RA:RegisterCallback("INSPECTION_STATE_CHANGED", function()
+    -- Scan target/progress changes should not rebuild every settings control.
+    -- Only the scanning pane needs to react while an inspect pass is running.
+    if frame and frame:IsShown() then RefreshScanPane() end
+end)
+RA:RegisterCallback("PROFILE_RESET", function()
+    if frame and frame:IsShown() then RefreshConfig() end
+end)
+
+RA:RegisterCallback("ABILITY_ORDER_CHANGED", function()
+    if frame and frame:IsShown() then RefreshAbilityList(false) end
+end)
