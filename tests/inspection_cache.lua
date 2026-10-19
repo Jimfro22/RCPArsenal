@@ -42,6 +42,7 @@ local function Lifecycle(saved,options)
         world.frames=world.frames+1
         local frame={scripts={}}
         function frame:RegisterEvent() end
+        function frame:UnregisterEvent() end
         function frame:SetScript(name,fn) self.scripts[name]=fn end
         world.eventFrame=frame
         return frame

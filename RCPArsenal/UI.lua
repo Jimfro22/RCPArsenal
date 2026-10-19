@@ -28,6 +28,7 @@ local function SetAbilityIcon(texture, ability)
 end
 
 local HUD
+local CreateHUD
 local hudAnchor
 local shadow
 local topAccent
@@ -1669,7 +1670,9 @@ end
 
 function RA:RefreshHUD()
     if not HUD then
-        return
+        if not self:IsHUDEnabled() then return end
+        if InCombatLockdown() or self.InEncounter then refreshAfterCombat = true; return end
+        CreateHUD()
     end
     if InCombatLockdown() or self.InEncounter then
         refreshAfterCombat = true
@@ -1965,7 +1968,8 @@ local function CreateScanButton(parent)
     return button
 end
 
-local function CreateHUD()
+CreateHUD = function()
+    if HUD then return end
     -- Stable, unscaled screen anchor. The secure HUD is attached to this
     -- point and is never itself used as the movable frame.
     hudAnchor = CreateFrame("Frame", "RCPArsenalHUDAnchor", UIParent)
@@ -2149,10 +2153,7 @@ local function CreateHUD()
     ApplyLockState()
 end
 
-RA:RegisterInitializer(function()
-    CreateHUD()
-    RA:RefreshHUD()
-end)
+RA:RegisterInitializer(function() RA:RefreshHUD() end)
 
 RA:RegisterCallback("REPORTS_UPDATED", QueueHUDRefresh)
 RA:RegisterCallback("REPORTS_FROZEN", QueueHUDRefresh)
@@ -2184,7 +2185,7 @@ RA:RegisterCallback("ENCOUNTER_STATE_CHANGED", function(inEncounter)
         RA:GetDB().shown = true
         -- Secure tiles must already be visible/configured before combat. Do not
         -- rebuild or show protected frames at the encounter boundary.
-        if not HUD:IsShown() then
+        if not HUD or not HUD:IsShown() then
             refreshAfterCombat = true
         end
         return
@@ -2198,6 +2199,7 @@ RA:RegisterEvent("PLAYER_REGEN_DISABLED", function()
 end)
 
 RA:RegisterEvent("PLAYER_REGEN_ENABLED", function()
+    if not HUD and RA:IsHUDEnabled() and not RA.InEncounter then RA:RefreshHUD() end
     ApplyLockState()
     if refreshAfterCombat and not RA.InEncounter then
         QueueHUDRefresh()

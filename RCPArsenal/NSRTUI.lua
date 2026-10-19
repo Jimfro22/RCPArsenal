@@ -524,11 +524,14 @@ function RA:CreateNorthernSkyPane(parent, kit)
         end
         refreshing = false
     end
+    parent:HookScript("OnShow", function() if A.SetObserving then A:SetObserving(true) end end)
     parent:HookScript("OnHide", function()
+        if A.SetObserving then A:SetObserving(false) end
         StopPreview(); if confirmation then confirmation:Hide() end
         if recoveryOverlay then recoveryOverlay:Hide() end
     end)
     RA.ConfigFrame:HookScript("OnHide", function()
+        if A.SetObserving then A:SetObserving(false) end
         StopPreview(); if confirmation then confirmation:Hide() end
         if recoveryOverlay then recoveryOverlay:Hide() end
     end)

@@ -277,9 +277,13 @@ check(C:RefreshLocal().byID.bigwigs.status == "unknown", "secret API count inspe
 R = Setup()
 check(R:QueryGroup(), "query failed")
 nonce = Nonce()
+local nativeFullName=UnitFullName;local malformedIdentityReads=0
+UnitFullName=function(...) malformedIdentityReads=malformedIdentityReads+1;return nativeFullName(...) end
 for i = 1, 25 do Deliver("bad") end
+check(malformedIdentityReads==0,'Malformed packet caused roster identity walks')
 Deliver(Response(nonce, "autopotion", "000"))
 check(Mage().receivedCount == 0, "per-sender receive rate bound missing")
+UnitFullName=nativeFullName
 
 R = Setup()
 units.party1.online = false

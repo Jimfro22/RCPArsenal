@@ -9,6 +9,9 @@ local function check(value, message)
 end
 local function noop() end
 local methods = {}
+function methods:RegisterEvent(name) self.registered=self.registered or {};self.registered[name]=true end
+function methods:RegisterUnitEvent(name,unit) self:RegisterEvent(name);self.unitFilters=self.unitFilters or {};self.unitFilters[name]=unit end
+function methods:UnregisterEvent(name) if self.registered then self.registered[name]=nil end end
 function methods:GetFrameLevel() return self.level or 0 end
 function methods:GetThumbTexture() return self.thumb end
 function methods:SetThumbTexture(value) self.thumb = self:CreateTexture(); self.thumb:SetTexture(value) end
@@ -244,7 +247,10 @@ check(not db.autoShowEncounter and not db.scan.showStrip and not db.leaderToolbo
 check(db.actions.leftClickMode == 'OFF' and not db.actions.raidWarningEnabled, 'Inherited announcements stayed active')
 check(db.worldMarkers.enabled and table.concat(db.worldMarkers.order,',') == '8,4,2', 'Schema-18 marker intent was reset')
 check(db.categories.MANA and db.abilities.spirit_link == false and db.position.x == 200, 'Quiet migration lost content or position')
-check(not named.RCPArsenalHUD:IsShown() and not named.RCPArsenalRaidLeaderPuck:IsShown(), 'Disabled overlays are shown')
+check(not named.RCPArsenalHUD and not named.RCPArsenalRaidLeaderPuck, 'Disabled startup eagerly allocated optional overlays')
+for _,obj in ipairs(objects) do check(obj.kind~='Texture' and obj.kind~='FontString','Disabled startup allocated optional visual resources') end
+check(not eventFrame.registered.UNIT_HEALTH and not eventFrame.registered.BAG_UPDATE_DELAYED
+    and not eventFrame.registered.TRAIT_CONFIG_UPDATED and eventFrame.registered.CHAT_MSG_ADDON,'Off events registered or passive reporting was disabled')
 check(named.RCPArsenalConsumableReminder == nil, 'Off reminder allocated a frame')
 check(talentReads == 0 and inspectCalls == 0, 'Off initialization read talents or inspected')
 local offEvents = {'PLAYER_LOGIN','PLAYER_ENTERING_WORLD','GROUP_ROSTER_UPDATE','READY_CHECK','SPELLS_CHANGED','TRAIT_CONFIG_UPDATED','PLAYER_SPECIALIZATION_CHANGED','INSPECT_READY','PLAYER_REGEN_DISABLED','PLAYER_REGEN_ENABLED'}
@@ -265,8 +271,12 @@ local other = function() end
 hash_SlashCmdList = {['/RCP'] = other}
 check(RA:GetSlashCommandStatus():find('another addon') and hash_SlashCmdList['/RCP'] == other, 'Collision status overwrote another handler')
 hash_SlashCmdList = nil
+local personalGetState=RA.PersonalTools.GetState
+local hiddenPersonalReads=0
+RA.PersonalTools.GetState=function(...)hiddenPersonalReads=hiddenPersonalReads+1;return personalGetState(...)end
 SlashCmdList.RCPARSENAL('')
 check(RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='ADDONS', 'First open must default to Addons')
+check(hiddenPersonalReads==0,'Addons open refreshed hidden personal controls')
 RA:CloseConfig()
 SlashCmdList.RCPARSENAL('settings')
 check(RA.ConfigFrame:IsShown(), 'Real config did not open')
@@ -292,7 +302,12 @@ check(hasVisibleText('Addons & versions'), 'Version check pane missing')
 check(hasVisibleText('Arsenal') and hasVisibleText('BigWigs'), 'Combined addon headers are missing')
 SlashCmdList.RCPARSENAL('scan'); SlashCmdList.RCPARSENAL('rescan'); SlashCmdList.RCPARSENAL('resume'); SlashCmdList.RCPARSENAL('clearcache'); SlashCmdList.RCPARSENAL('demoscan')
 check(not db.hudEnabled and not db.demoMode and talentReads == 0, 'Legacy slash actions silently enabled inspection')
+local personalSettings=RA:GetDB().personalTools
+local originalStoneText,originalPotionText=personalSettings.reminderStoneText,personalSettings.reminderPotionText
+personalSettings.reminderStoneText,personalSettings.reminderPotionText='SAVED_STONE_SENTINEL','SAVED_POTION_SENTINEL'
 RA:OpenConfig('MYTOOLS'); cleanErrors()
+check(hiddenPersonalReads>0,'Showing Personal Tools did not refresh its controls')
+RA.PersonalTools.GetState=personalGetState
 check(hasVisibleText('Personal tools'), 'Personal tools did not open')
 local function clickVisible(label)
     for _, obj in ipairs(objects) do
@@ -300,6 +315,19 @@ local function clickVisible(label)
     end
     return false
 end
+check(clickVisible('REMINDER TEXT & SOUND +'),'Cold personal pane disclosure missing')
+local function visibleField(label)
+    for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text==label and obj:IsVisible() then return obj.box:GetText() end end
+end
+check(visibleField('HEALTHSTONE TEXT')=='SAVED_STONE_SENTINEL' and visibleField('HEALING POTION TEXT')=='SAVED_POTION_SENTINEL',
+    'First disclosure expansion did not refresh saved reminder text')
+check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Reminder disclosure did not collapse')
+personalSettings.reminderStoneText='CHANGED_WHILE_COLLAPSED'
+RA:FireCallback('PERSONAL_TOOLS_CHANGED')
+check(clickVisible('REMINDER TEXT & SOUND +') and visibleField('HEALTHSTONE TEXT')=='CHANGED_WHILE_COLLAPSED',
+    'Re-expanding disclosure did not catch up to a changed hidden preference')
+personalSettings.reminderStoneText,personalSettings.reminderPotionText=originalStoneText,originalPotionText
+check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Reminder disclosure did not return to compact layout')
 
 -- Exercise real entry buttons and Back routes; these are navigation assertions,
 -- not a claim that the rendered window is usable in the game client.
@@ -472,7 +500,7 @@ link:Fire('OnClick'); check(count == #objects, 'Repeated link click stacked dial
 RA:CloseConfig(); RA:OpenConfig('ADDONS')
 check(not hasVisibleText('Northern Sky Raid Tools — copy link to your browser'), 'Host close resurfaced a modal')
 RA:OpenConfig('HUD')
-check(not named.RCPArsenalHUD:IsShown() and not db.hudEnabled, 'Opening appearance enabled the HUD')
+check((not named.RCPArsenalHUD or not named.RCPArsenalHUD:IsShown()) and not db.hudEnabled, 'Opening appearance enabled/created the HUD')
 RA:RecoverHUD(); check(not db.hudEnabled and not db.shown, 'Reset position enabled the HUD')
 
 -- Imports preserve every local switch and version target while applying content.
@@ -515,12 +543,14 @@ IsInRaid = function() return false end
 IsInGroup = function() return false end
 GetNumGroupMembers = function() return 0 end
 check(RA:SetHUDEnabled(true) and scheduled == 1 and RA:IsInspectionEnabled(), 'Explicit HUD enable did not schedule inspection')
+check(eventFrame.registered.TRAIT_CONFIG_UPDATED and eventFrame.registered.INSPECT_READY,'Explicit HUD enable did not subscribe inspection events')
 RA:NormalizeProfile(RA:GetDB())
 check(RA:IsHUDEnabled() and RA:GetDB().shown and RA:GetDB().leaderToolbox.enabled, 'Schema-19 explicit choices did not survive normalization')
 local oldDonor = RA:CreateDefaultProfile(); oldDonor.schemaVersion = 17
 check(RA:ApplyImportedProfile(oldDonor), 'Old donor import failed')
 check(RA:IsHUDEnabled() and RA:GetDB().shown and RA:GetDB().leaderToolbox.enabled and RA:GetDB().worldMarkers.enabled, 'Old donor migration reset local opt-in')
 check(RA:SetHUDEnabled(false) and not RA:IsInspectionEnabled(), 'HUD disable failed')
+check(not eventFrame.registered.TRAIT_CONFIG_UPDATED and not eventFrame.registered.INSPECT_READY,'HUD disable retained optional inspection events')
 RA.ScheduleInspectionScan = schedule
 RA:ResetProfile(); cleanErrors()
 check(RaidArsenalDB.navigation==navigation, 'Profile reset discarded local navigation')

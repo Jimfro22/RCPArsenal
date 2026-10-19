@@ -29,6 +29,7 @@ local DOCK_HEIGHT = 48
 local PUCK_SIZE = 30
 
 local puck
+local CreateToolbox
 local puckAnchor
 local puckDragState
 local puckPositionNormalized = false
@@ -617,7 +618,9 @@ local function BuildTrackedClassSet()
     return classes
 end
 
-local function RefreshMissingData()
+local function RefreshMissingData(force)
+    local db = GetToolboxDB()
+    if not force and (not db or db.enabled ~= true or db.showMissing == false) then return end
     local classes = BuildTrackedClassSet()
     missingData = { buffs = {}, debuffs = {}, total = 0 }
     for _, section in ipairs({"buffs", "debuffs"}) do
@@ -733,7 +736,7 @@ end
 local function OpenMissingPanel()
     local db = GetToolboxDB()
     if not db or db.showMissing == false then return end
-    RefreshMissingData()
+    RefreshMissingData(true)
     LayoutMissingPanel()
     OpenDock()
     AnchorFlyouts()
@@ -1764,8 +1767,11 @@ local function RefreshDockStaticIcons()
 end
 
 local function UpdateVisibility()
-    if not puck then return end
     local db = GetToolboxDB()
+    if not puck then
+        if db and db.enabled == true and not InCombatLockdown() then CreateToolbox() end
+        return
+    end
     local profile = RA:GetDB()
     local demoVisible = profile and profile.demoMode == true
     -- The dock itself is safe to display in combat. Only subgroup mutations
@@ -1824,7 +1830,8 @@ local function CreateDockButton(parent, width, key)
     return button
 end
 
-local function CreateToolbox()
+CreateToolbox = function()
+    if puck or InCombatLockdown() then return end
     local toolboxDB = GetToolboxDB()
 
     puckAnchor = CreateFrame("Frame", "RCPArsenalRaidLeaderPuckAnchor", UIParent)
@@ -2198,17 +2205,12 @@ function Toolbox:IsSorting() return sortState.active end
 function Toolbox:SortByRole() TryStartMode("ROLE_SORT", true, sortButton) end
 function Toolbox:SplitOddEven() TryStartMode("SPLIT_ODD_EVEN", true, splitButton) end
 function Toolbox:SplitAdjacent() TryStartMode("SPLIT_ADJACENT", true, splitButton) end
-function Toolbox:RefreshMissing() RefreshMissingData(); if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end end
+function Toolbox:RefreshMissing() RefreshMissingData(true); if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end end
 function Toolbox:GetMissingCoverage()
-    RefreshMissingData()
+    RefreshMissingData(true)
     return missingData.total, missingData.buffs, missingData.debuffs
 end
-function Toolbox:Refresh()
-    RefreshDockGeometry()
-    UpdateVisibility()
-    Toolbox:RefreshMissing()
-    RefreshPanicButton()
-end
+function Toolbox:Refresh() UpdateVisibility() end
 function Toolbox:RefreshGeometry() RefreshDockGeometry() end
 function Toolbox:ResetPosition()
     if InCombatLockdown() then return false end
@@ -2225,7 +2227,10 @@ function Toolbox:ResetPosition()
     if puck and puck:IsShown() then NormalizePuckPositionIfNeeded() end
     return true
 end
-function Toolbox:ShowMissingPanel() OpenMissingPanel() end
+function Toolbox:ShowMissingPanel()
+    if not puck and not InCombatLockdown() then CreateToolbox() end
+    if missingPanel then OpenMissingPanel() end
+end
 function Toolbox:RefreshPanic() RefreshPanicButton() end
 function Toolbox:IsPinned() return dockPinned end
 function Toolbox:SetPinned(value)
@@ -2235,11 +2240,10 @@ function Toolbox:SetPinned(value)
 end
 function Toolbox:Close(force) CloseDock(force == true) end
 
-RA:RegisterInitializer(CreateToolbox)
+RA:RegisterInitializer(UpdateVisibility)
 
 RA:RegisterEvent("GROUP_ROSTER_UPDATE", function()
     UpdateVisibility()
-    RefreshMissingData()
     if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end
     if sortOptionsPanel and sortOptionsPanel:IsShown() then RefreshSortOptions() end
 
@@ -2307,11 +2311,11 @@ end)
 
 RA:RegisterCallback("DEMO_MODE_CHANGED", function()
     UpdateVisibility()
-    RefreshMissingData()
     if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end
 end)
 
 RA:RegisterCallback("PROFILE_RESET", function()
+    if not puck and GetToolboxDB().enabled ~= true then puckPositionNormalized = false; return end
     C_Timer.After(0, function()
         puckPositionNormalized = false
         RestorePuckPosition()
@@ -2322,6 +2326,7 @@ RA:RegisterCallback("PROFILE_RESET", function()
 end)
 
 RA:RegisterCallback("PROFILE_IMPORTED", function()
+    if not puck and GetToolboxDB().enabled ~= true then return end
     C_Timer.After(0, function()
         -- Portable imports preserve local position. Apply appearance/timing
         -- prefs without touching the already-stable anchor.

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -67,6 +68,14 @@ class PackagingTests(unittest.TestCase):
                            check=True, capture_output=True)
         self.assertEqual(next(a.glob("*.zip")).read_bytes(),
                          next(b.glob("*.zip")).read_bytes())
+        with zipfile.ZipFile(next(a.glob("*.zip"))) as archive:
+            entries = archive.infolist()
+            self.assertTrue(all(i.compress_type == zipfile.ZIP_DEFLATED for i in entries))
+            self.assertLess(sum(i.compress_size for i in entries), sum(i.file_size for i in entries) / 2)
+            for entry in entries:
+                self.assertEqual(archive.read(entry.filename), (ROOT / entry.filename).read_bytes())
+                self.assertEqual(entry.date_time, (2026, 10, 18, 0, 0, 0))
+                self.assertEqual(entry.external_attr, 0o100644 << 16)
 
     def test_incorrect_release_tag_is_rejected(self):
         for tag in ("v999.0.0-alpha", "baseline.1"):

@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.6"
+RA.VERSION = "0.15.3-alpha.7"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -576,13 +576,45 @@ function RA:RegisterInitializer(func)
     initializers[#initializers + 1] = func
 end
 
-function RA:RegisterEvent(event, func)
-    if not eventHandlers[event] then
-        eventHandlers[event] = {}
-        eventFrame:RegisterEvent(event)
+local function RefreshEventRegistration(event)
+    local handlers = eventHandlers[event]
+    local active, unit, general = false, nil, false
+    for i = 1, #handlers do
+        local entry = handlers[i]
+        if entry.enabled then
+            active = true
+            if not entry.unit or (unit and unit ~= entry.unit) then general = true end
+            unit = entry.unit or unit
+        end
     end
-    eventHandlers[event][#eventHandlers[event] + 1] = func
+    if general or type(eventFrame.RegisterUnitEvent) ~= "function" then unit = nil end
+    if active == handlers.registered and unit == handlers.unit then return end
+    if handlers.registered then eventFrame:UnregisterEvent(event) end
+    handlers.registered, handlers.unit = active, unit
+    if active then
+        if unit then eventFrame:RegisterUnitEvent(event, unit) else eventFrame:RegisterEvent(event) end
+    end
 end
+local Subscription = {}
+function Subscription:SetEnabled(enabled)
+    enabled = not (type(issecretvalue) == "function" and issecretvalue(enabled)) and enabled == true
+    if self.enabled == enabled then return end
+    self.enabled = enabled
+    RefreshEventRegistration(self.event)
+end
+local subscriptionMeta = {__index = Subscription}
+local function AddEventHandler(event, func, enabled, unit)
+    if not eventHandlers[event] then eventHandlers[event] = {registered = false} end
+    local entry = setmetatable({event = event, callback = func, enabled = enabled, unit = unit}, subscriptionMeta)
+    local handlers = eventHandlers[event]
+    handlers[#handlers + 1] = entry
+    RefreshEventRegistration(event)
+    return entry
+end
+function RA:RegisterEvent(event, func) return AddEventHandler(event, func, true) end
+-- Optional callbacks remain in a stable dispatch list; disabled subscribers
+-- are skipped before pcall, and unshared native events are unsubscribed.
+function RA:RegisterOptionalEvent(event, func, unit) return AddEventHandler(event, func, false, unit) end
 
 function RA:RegisterCallback(name, func)
     if not callbacks[name] then
@@ -612,9 +644,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     end
 
     for i = 1, #handlers do
-        local ok, err = pcall(handlers[i], event, ...)
-        if not ok then
-            RA:Print(event .. " error: " .. tostring(err))
+        local entry = handlers[i]
+        if entry.enabled then
+            local ok, err = pcall(entry.callback, event, ...)
+            if not ok then RA:Print(event .. " error: " .. tostring(err)) end
         end
     end
 end)

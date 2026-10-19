@@ -215,7 +215,15 @@ local function loadTools(settings)
         GetDB = function() return profile end,
         RegisterInitializer = function(_, fn) initializers[#initializers + 1] = fn end,
         RegisterCallback = function(_, name, fn) callbacks[name] = fn end,
-        RegisterEvent = function(_, name, fn) events[name] = fn end,
+        RegisterEvent = function(_, name, fn)
+            local previous=events[name]
+            events[name]=function(...) if previous then previous(...) end;return fn(...) end
+        end,
+        RegisterOptionalEvent = function(_, name, fn)
+            local entry = {enabled=false, SetEnabled=function(self,value) self.enabled=value==true end}
+            events[name]=function(...) if entry.enabled then return fn(...) end end
+            return entry
+        end,
         FireCallback = function(_, name) check(name == "PERSONAL_TOOLS_CHANGED", "Wrong callback"); notices = notices + 1 end,
     }
     assert(loadfile("RCPArsenal/ReminderSounds.lua"))("RCPArsenal", RA)

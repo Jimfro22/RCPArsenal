@@ -162,6 +162,13 @@ local function RegisterControl(control)
     controls[#controls + 1] = control
     return control
 end
+local function RefreshVisibleControls()
+    for i = 1, #controls do
+        local control = controls[i]
+        local owner = control.owner or control
+        if control.Refresh and (not owner.IsVisible or owner:IsVisible()) then control:Refresh() end
+    end
+end
 
 local function CreateGradientOverlay(parent, asset, alpha, inset)
     local texture = Theme:AddGradient(parent, asset or Theme.Assets.GradientSunset, alpha or 0, inset or 2, "BACKGROUND", -2)
@@ -1378,7 +1385,7 @@ local function CreateScanningPane(parent)
         C_Timer.After(0.1, RefreshScanPane)
     end)
     SetPoint(full, "LEFT", scanPrimaryButton, "RIGHT", 10, 0)
-    RegisterControl({Refresh = function()
+    RegisterControl({owner = parent, Refresh = function()
         full:SetEnabled(RA:IsInspectionEnabled())
         full:SetAlpha(RA:IsInspectionEnabled() and 1 or 0.45)
     end})
@@ -1850,7 +1857,7 @@ local function CreateWorldMarkersPane(parent)
         end
         RA:SetVisualText(permission, markers:GetPermissionText())
     end
-    RegisterControl({Refresh = function() RefreshWorldMarkers() end})
+    RegisterControl({owner = parent, Refresh = function() RefreshWorldMarkers() end})
 end
 
 local function CreateActionsPane(parent)
@@ -2010,33 +2017,21 @@ local function SetTab(tabKey)
         advancedBack:SetShown(tabKey == "NORTHERNSKY")
         RA:SetVisualText(advancedBack.label, "BACK TO ADDONS")
     end
-    if RefreshHub then RefreshHub(tabKey) end
-    if tabKey == "WORLDMARKERS" and RefreshWorldMarkers then RefreshWorldMarkers() end
-    if tabKey == "CONTENT" then
-        RefreshAbilityList(false)
-        RefreshCategoryRows()
-    elseif tabKey == "SCANNING" then
-        RefreshScanPane()
-    end
+    if RefreshConfig then RefreshConfig() end
 end
 
 RefreshConfig = function()
     if not frame then
         return
     end
-    for i = 1, #controls do
-        if controls[i].Refresh then
-            controls[i]:Refresh()
-        end
-    end
-    RefreshCategoryRows()
-    RefreshAbilityList(false)
-    RefreshScanPane()
-    UpdatePreview()
-    if panicStatus then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
+    RefreshVisibleControls()
+    if panes.CONTENT and panes.CONTENT:IsVisible() then RefreshCategoryRows(); RefreshAbilityList(false) end
+    if panes.SCANNING and panes.SCANNING:IsVisible() then RefreshScanPane() end
+    if panes.HUD and panes.HUD:IsVisible() then UpdatePreview() end
+    if panicStatus and panes.ACTIONS:IsVisible() then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
     if RefreshHub then RefreshHub(activeTab) end
 
-    if actionStatusText and RA.GetSecureActionStatus then
+    if actionStatusText and panes.ACTIONS:IsVisible() and RA.GetSecureActionStatus then
         local armed, visible, clickMode = RA:GetSecureActionStatus()
         RA:SetVisualText(actionStatusText, string.format("%d / %d VISIBLE TILES ARMED", armed, visible))
         RA:SetVisualText(actionStatusDetail, "Secure macros execute on " .. clickMode .. ". Left-click uses exactly one selected channel (Whisper, Say, or Off); right-click requests Raid Warning. Reopen or rearm after changing action templates.")
@@ -2373,7 +2368,6 @@ local function CreateConfig()
     frame:SetScript("OnShow", function()
         FitToScreen()
         SetTab(activeTab)
-        RefreshConfig()
     end)
 end
 
@@ -2387,9 +2381,9 @@ function RA:OpenConfig(tabKey)
     if not frame then
         CreateConfig()
     end
+    local alreadyShown = frame:IsShown()
     frame:Show()
-    SetTab(activeTab)
-    RefreshConfig()
+    if alreadyShown then SetTab(activeTab) end
 end
 
 function RA:OpenProfileDialog(mode)
@@ -2428,8 +2422,8 @@ RA:RegisterCallback("INSPECTION_STATE_CHANGED", function()
     -- Scan target/progress changes should not rebuild every settings control.
     -- Only the scanning pane needs to react while an inspect pass is running.
     if frame and frame:IsShown() then
-        RefreshScanPane()
-        if panicStatus then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
+        if panes.SCANNING:IsVisible() then RefreshScanPane() end
+        if panicStatus and panes.ACTIONS:IsVisible() then RA:SetVisualText(panicStatus, "Panic: " .. RA:GetPanicVisibilityText()) end
     end
 end)
 RA:RegisterCallback("PROFILE_RESET", function()
@@ -2437,7 +2431,7 @@ RA:RegisterCallback("PROFILE_RESET", function()
 end)
 
 RA:RegisterCallback("ABILITY_ORDER_CHANGED", function()
-    if frame and frame:IsShown() then RefreshAbilityList(false) end
+    if frame and frame:IsShown() and panes.CONTENT:IsVisible() then RefreshAbilityList(false) end
 end)
 
 RA:RegisterCallback("WORLD_MARKERS_CHANGED", function()

@@ -10,6 +10,7 @@ Adapter.MAX_NOTE_BYTES = 65536
 local state, signature, sequence = nil, nil, 0
 local notifying = false
 local boundAPI, deferredTimer, deferredAttempt
+local observing, Defer = false, nil
 local applying, noteBackup, profileBackup, placementBackup, previewOwned = false, nil, nil, nil, false
 local previewTimer, stopPending, refreshTimer, selectedProfile, recovery
 local recoverySequence = 0
@@ -187,7 +188,7 @@ local function Bind(api)
     if boundAPI == api or type(api.RegisterCallback) ~= "function" then return end
     if boundAPI and type(boundAPI.UnregisterCallback) == "function" then pcall(boundAPI.UnregisterCallback, Adapter, "NSRT_REMINDER_CHANGED") end
     local ok = pcall(api.RegisterCallback, Adapter, "NSRT_REMINDER_CHANGED", function(owner)
-        if owner == Adapter and not applying then Adapter:Refresh() end
+        if observing and boundAPI == api and owner == Adapter and not applying then Adapter:Refresh() end
     end, Adapter)
     if ok then boundAPI = api end
 end
@@ -253,7 +254,7 @@ function Adapter:Refresh()
         return false, state.reason, self:GetStatus()
     end
     local current, reason, api, internal = Observe()
-    if current then Bind(api) end
+    if current and observing then Bind(api) end
     local nextState = {available = current ~= nil, reason = reason, version = current and current.version or Version(), supportedVersion = self.SUPPORTED_VERSION,
         compatible = current and current.version == self.SUPPORTED_VERSION or false, generation = sequence, context = current and Context() or nil,
         profile = current and current.profile or nil, autoShare = current and current.autoShare,
@@ -889,7 +890,8 @@ end
 function Adapter:PreviewPlacement() return false, "Use the Arsenal sample or Northern Sky settings to preview placement." end
 function Adapter:StopPreview() Cancel(previewTimer); previewTimer = nil; previewOwned, stopPending = false, false; return true end
 
-local function Defer()
+Defer = function()
+    if not observing then return end
     Cancel(deferredTimer)
     deferredTimer = nil
     deferredAttempt = 0
@@ -904,9 +906,28 @@ local function Defer()
     end
     Try()
 end
-RA:RegisterInitializer(Defer)
+-- Observation belongs to the visible adapter pane, not every raider login.
+-- Readiness/version replies use AddonCatalog independently of this adapter.
+function Adapter:SetObserving(value)
+    value = value == true
+    if observing == value then return true end
+    observing = value
+    if value then Defer()
+    else
+        Cancel(deferredTimer); Cancel(refreshTimer)
+        deferredTimer, refreshTimer = nil, nil
+        if boundAPI and type(boundAPI.UnregisterCallback) == "function" then
+            local ok, result = pcall(boundAPI.UnregisterCallback, Adapter, "NSRT_REMINDER_CHANGED")
+            if ok and not Secret(result) and result ~= false then boundAPI = nil end
+        end
+        -- Retain an indeterminate registration for reuse, rather than append
+        -- callbacks on every reopen. Its wrapper stays inert while inactive
+        -- and rejects a replaced API owner.
+    end
+    return true
+end
 RA:RegisterEvent("ADDON_LOADED", function(_, name) if name == "NorthernSkyRaidTools" or name == "NorthernSkyRaidTools_UI" then Defer() end end)
 RA:RegisterEvent("PLAYER_ENTERING_WORLD", Defer)
 RA:RegisterEvent("PLAYER_REGEN_ENABLED", Defer)
-RA:RegisterEvent("PLAYER_REGEN_DISABLED", function() Cancel(deferredTimer); Cancel(refreshTimer); deferredTimer = nil; refreshTimer = nil; Adapter:StopPreview(); Notify() end)
-RA:RegisterEvent("ENCOUNTER_START", function() Cancel(deferredTimer); Cancel(refreshTimer); deferredTimer = nil; refreshTimer = nil; Adapter:StopPreview(); Notify() end)
+RA:RegisterEvent("PLAYER_REGEN_DISABLED", function() if not observing then return end; Cancel(deferredTimer); Cancel(refreshTimer); deferredTimer = nil; refreshTimer = nil; Adapter:StopPreview(); Notify() end)
+RA:RegisterEvent("ENCOUNTER_START", function() if not observing then return end; Cancel(deferredTimer); Cancel(refreshTimer); deferredTimer = nil; refreshTimer = nil; Adapter:StopPreview(); Notify() end)
