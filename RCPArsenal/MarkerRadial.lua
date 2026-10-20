@@ -72,7 +72,7 @@ local CLICK = [[
     end
     self:RunAttribute("rcp-radial-reset")
     if not marker then return false end
-    self:SetAttribute("macrotext", "/wm [@cursor] " .. marker)
+    self:SetAttribute("macrotext", "/wm " .. marker)
 ]]
 
 local CANCEL = [[
@@ -140,7 +140,7 @@ local function UpdateVisual(_, elapsed)
         slot.highlight:SetAlpha(selected == i and 1 or 0)
     end
     Text(visual.choice, selected and RA.WorldMarkers.Definitions[selected].name or "CHOOSE A MARKER")
-    Text(visual.hint, selected and "Release to place" or "Center release places nothing")
+    Text(visual.hint, selected and "Release to aim" or "Center release places nothing")
 end
 
 local function CreateVisual()
@@ -172,7 +172,7 @@ local function CreateVisual()
     visual.choice:SetPoint("CENTER", visual, "CENTER", 0, 8)
     visual.hint:SetPoint("CENTER", visual, "CENTER", 0, -10)
     visual.help:SetPoint("BOTTOM", visual, "BOTTOM", 0, 8)
-    Text(visual.help, "Escape / right-click cancels")
+    Text(visual.help, "Then left-click ground · Right-click / Escape cancels")
     visual:Hide()
 end
 
@@ -188,7 +188,7 @@ local function BeginVisual(_, x, y)
     visualHeld, visualAge, originX, originY = true, 0, x, y
     visual:ClearAllPoints()
     visual:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
-    Text(visual.help, "Escape / right-click cancels")
+    Text(visual.help, "Then left-click ground · Right-click / Escape cancels")
     local token = generation
     timer = C_Timer.NewTimer(DISPLAY_DELAY, function()
         timer = nil
