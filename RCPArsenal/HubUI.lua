@@ -551,34 +551,133 @@ function RA:CreateHubPanes(panes, kit)
     end)
     supplyView = Button(tools, "VIEW RESULTS", 146, 34, ShowSupply)
     Point(supplyView, "LEFT", supplyAction, "RIGHT", 8, 0)
-    local function PersonalLayout()
-        local expanded = details:IsShown()
+    local glowDetails = CreateFrame("Frame", nil, tools)
+    Size(glowDetails,918,184); Point(glowDetails,"TOPLEFT",tools,"TOPLEFT",16,-377); glowDetails:Hide()
+    local PersonalLayout, disclosure, glowDisclosure, styleOverlay, pickerSession
+    local function CloseGlowPicker()
+        local session=pickerSession; pickerSession=nil
+        if session and ColorPickerFrame and ColorPickerFrame.swatchFunc==session.swatch then ColorPickerFrame:Hide() end
+    end
+    local styleLabels = {STEADY="Steady border",PIXEL="Pixel Glow",BUTTON="Action Button Glow",AUTOCAST="Autocast Shine"}
+    local function GlowState() return RA:NormalizeReminderGlow(RA:GetDB().personalTools.reminderGlow) end
+    local function GlowEdit(key,value)
+        RA.PersonalTools:SetGlowOption(key,value)
+        kit.Refresh()
+        if PersonalLayout then PersonalLayout() end
+    end
+    Text(glowDetails,"STYLE",10,0,0,440,C.text)
+    local styleChoice
+    styleChoice = Button(glowDetails,"Steady border  v",440,30,function()
+        if not styleOverlay then
+            styleOverlay=CreateFrame("Button",nil,RA.ConfigFrame)
+            styleOverlay:SetAllPoints(RA.ConfigFrame); styleOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel()+150)
+            styleOverlay:EnableMouse(true); styleOverlay:SetScript("OnClick",function() styleOverlay:Hide() end)
+            local menu=CreateFrame("Frame",nil,styleOverlay,"BackdropTemplate")
+            Size(menu,440,148); Point(menu,"TOPLEFT",styleChoice,"BOTTOMLEFT",0,-4)
+            menu:EnableMouse(true); kit.Backdrop(menu,C.surface,C.lineStrong,10,true)
+            for index,value in ipairs({"STEADY","PIXEL","BUTTON","AUTOCAST"}) do
+                local key=value
+                local row=Button(menu,styleLabels[key],428,30,function() styleOverlay:Hide(); GlowEdit("style",key) end)
+                Point(row,"TOPLEFT",menu,"TOPLEFT",6,-6-(index-1)*34)
+            end
+        end
+        styleOverlay:Show()
+    end)
+    Point(styleChoice,"TOPLEFT",glowDetails,"TOPLEFT",0,-17)
+    Text(glowDetails,"COLOR",10,478,0,206,C.text)
+    local colorChoice=Button(glowDetails,"Color",206,30,function()
+        local picker=ColorPickerFrame
+        if not picker or not picker.SetupColorPickerAndShow then RA:Print("Color picker unavailable."); return end
+        CloseGlowPicker()
+        local db=RA:GetDB(); local personal=db.personalTools
+        local original=GlowState().color
+        local session={}; pickerSession=session
+        local swatch
+        local function Current() return pickerSession==session and RA:GetDB()==db and db.personalTools==personal and picker.swatchFunc==swatch end
+        swatch=function()
+            if Current() then local r,g,b=picker:GetColorRGB(); GlowEdit("color",{r,g,b}) end
+        end
+        session.swatch=swatch
+        picker:SetupColorPickerAndShow({r=original[1],g=original[2],b=original[3],hasOpacity=false,swatchFunc=swatch,
+            cancelFunc=function() if Current() then GlowEdit("color",original); pickerSession=nil end end})
+    end)
+    Point(colorChoice,"TOPLEFT",glowDetails,"TOPLEFT",478,-17)
+    local swatch=colorChoice:CreateTexture(nil,"OVERLAY"); Size(swatch,18,18); Point(swatch,"LEFT",colorChoice,"LEFT",9,0)
+    local resetGlow=Button(glowDetails,"RESET GLOW SETTINGS",222,30,function()
+        CloseGlowPicker(); RA.PersonalTools:ResetGlowSettings(); kit.Refresh(); PersonalLayout()
+    end)
+    Point(resetGlow,"TOPLEFT",glowDetails,"TOPLEFT",696,-17)
+    local glowControls={}
+    local function GlowSlider(key,label,minimum,maximum,step,x,y,formatter)
+        local control=kit.Slider(glowDetails,label,minimum,maximum,step,function() return GlowState()[key] end,
+            function(v) GlowEdit(key,v) end,formatter)
+        Width(control,440); Point(control,"TOPLEFT",glowDetails,"TOPLEFT",x,y)
+        glowControls[key]=control
+    end
+    local function Speed(value) return string.format("%.1f×",value) end
+    local function Units(value) return tostring(value).." UI units" end
+    GlowSlider("pixelLines","LINES",1,12,1,0,-64)
+    GlowSlider("pixelSpeed","SPEED",0.5,2,0.1,478,-64,Speed)
+    GlowSlider("pixelLength","LINE LENGTH",4,16,1,0,-128,Units)
+    GlowSlider("pixelThickness","THICKNESS",1,4,1,478,-128,Units)
+    GlowSlider("buttonSpeed","SPEED",0.5,2,0.1,0,-64,Speed)
+    GlowSlider("autocastGroups","PARTICLE GROUPS · 4 SPARKS EACH",1,8,1,0,-64)
+    GlowSlider("autocastSpeed","SPEED",0.5,2,0.1,478,-64,Speed)
+    GlowSlider("autocastSize","SIZE",50,150,5,0,-128,function(v) return tostring(v).."%" end)
+    local sparkHelp=Text(glowDetails,"Four spark sizes circulate at different rates.",9,478,-139,440)
+    local function RefreshGlow()
+        local state=GlowState()
+        SetText(styleChoice.label,styleLabels[state.style].."  v")
+        swatch:SetColorTexture(state.color[1],state.color[2],state.color[3],1)
+        for key,control in pairs(glowControls) do
+            local prefix=key:match("^(%l+)%u")
+            control:SetShown((prefix=="pixel" and state.style=="PIXEL") or (prefix=="button" and state.style=="BUTTON") or (prefix=="autocast" and state.style=="AUTOCAST"))
+        end
+        sparkHelp:SetShown(state.style=="AUTOCAST")
+        glowDetails:SetHeight(state.style=="STEADY" and 58 or state.style=="BUTTON" and 120 or 184)
+    end
+    PersonalLayout = function()
+        if glowDetails:IsShown() then RefreshGlow() end
+        local expanded = details:IsShown() or glowDetails:IsShown()
         supplyLabel:SetShown(not expanded)
         personalStatus:SetWordWrap(not expanded)
         if personalStatus.SetTextHeight then personalStatus:SetTextHeight(expanded and 9 or 10) end
-        local y = expanded and -591 or -389
+        local y = details:IsShown() and -591 or glowDetails:IsShown() and -(377+glowDetails:GetHeight()+5) or -389
         preview:ClearAllPoints(); Point(preview, "TOPLEFT", tools, "TOPLEFT", 16, y)
         supplyAction:ClearAllPoints(); Point(supplyAction, "TOPLEFT", tools, "TOPLEFT", 600, y)
         supplyLabel:ClearAllPoints(); Point(supplyLabel, "TOPLEFT", tools, "TOPLEFT", 600, y + 20)
         helper:ClearAllPoints(); Point(helper, "TOPLEFT", tools, "TOPLEFT", 16, y - (expanded and 41 or 44))
         personalStatus:ClearAllPoints(); Point(personalStatus, "TOPLEFT", tools, "TOPLEFT", 16, y - (expanded and 56 or 79))
     end
-    local disclosure = Button(tools, "REMINDER TEXT & SOUND +", 200, 30, function(self)
+    disclosure = Button(tools, "REMINDER TEXT & SOUND +", 200, 30, function(self)
         details:SetShown(not details:IsShown())
+        CloseGlowPicker(); glowDetails:Hide(); SetText(glowDisclosure.label,"GLOW SETTINGS +")
         SetText(self.label, details:IsShown() and "HIDE REMINDER TEXT & SOUND" or "REMINDER TEXT & SOUND +")
         PersonalLayout()
         kit.Refresh()
     end)
     Point(disclosure, "TOPLEFT", tools, "TOPLEFT", 16, -333)
+    glowDisclosure=Button(tools,"GLOW SETTINGS +",164,30,function(self)
+        if glowDetails:IsShown() then CloseGlowPicker() end
+        glowDetails:SetShown(not glowDetails:IsShown())
+        details:Hide(); SetText(disclosure.label,"REMINDER TEXT & SOUND +")
+        SetText(self.label,glowDetails:IsShown() and "HIDE GLOW SETTINGS" or "GLOW SETTINGS +")
+        PersonalLayout(); kit.Refresh()
+    end)
+    Point(glowDisclosure,"TOPLEFT",tools,"TOPLEFT",232,-333)
     local iconGlow = kit.Toggle(tools, "Icon glow at ≤35%", "Healthstone or potion, while the reminder is visible.",
         function() return RA.PersonalTools:GetState().reminderStoneGlow end,
         function(value) RA.PersonalTools:SetOption("reminderStoneGlow", value) end)
-    Width(iconGlow, 702); iconGlow:SetHeight(38); Point(iconGlow, "TOPLEFT", tools, "TOPLEFT", 232, -329)
+    Width(iconGlow, 522); iconGlow:SetHeight(38); Point(iconGlow, "TOPLEFT", tools, "TOPLEFT", 412, -329)
     PersonalLayout()
     RA:RegisterCallback("SUPPLIES_UPDATED", RenderSupply)
-    tools:HookScript("OnHide", function() if supplyOverlay then supplyOverlay:Hide() end; if soundOverlay then soundOverlay:Hide() end end)
+    RA:RegisterCallback("PROFILE_RESET",CloseGlowPicker)
+    RA:RegisterCallback("PROFILE_IMPORTED",CloseGlowPicker)
+    RA:RegisterCallback("PERSONAL_TOOLS_CHANGED",function(option) if option=="reminderGlowReset" then CloseGlowPicker() end end)
+    tools:HookScript("OnHide", function() CloseGlowPicker(); if styleOverlay then styleOverlay:Hide() end; if supplyOverlay then supplyOverlay:Hide() end; if soundOverlay then soundOverlay:Hide() end end)
     refreshers.MYTOOLS = function()
         local state = RA.PersonalTools:GetState()
+        PersonalLayout()
         SetText(soundStatus, RA.NativeWarningAudio and RA.NativeWarningAudio:GetStatusText() or "Native warning unavailable.")
         RefreshSoundChoice()
         mutedPermission:SetEnabled(state.reminderSoundChannel == "Master")
@@ -586,7 +685,7 @@ function RA:CreateHubPanes(panes, kit)
         mutedPermission:SetSelected(state.reminderSoundWhenEffectsMuted)
         mutedCheck:SetShown(state.reminderSoundWhenEffectsMuted)
         local combatLabel = ({BOTH="Both",IN_COMBAT="In combat",OUT_OF_COMBAT="Out of combat"})[state.reminderCombat] or "In combat"
-        SetText(personalStatus, (details:IsShown() and ("Normal res: " .. (state.autoRes and "On" or "Off") .. " ; Reminder: ")
+        SetText(personalStatus, ((details:IsShown() or glowDetails:IsShown()) and ("Normal res: " .. (state.autoRes and "On" or "Off") .. " ; Reminder: ")
             or ("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: ")) ..
             (state.consumableReminder and ("Enabled · At/below " .. state.healthThreshold .. "% · " .. combatLabel .. " · ") or "") .. RA.PersonalTools:GetStatusText("consumableReminder"))
     end

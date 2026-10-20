@@ -428,6 +428,60 @@ check(clickVisible('REMINDER TEXT & SOUND +') and visibleField('HEALTHSTONE TEXT
 personalSettings.reminderStoneText,personalSettings.reminderPotionText=originalStoneText,originalPotionText
 check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Reminder disclosure did not return to compact layout')
 
+-- The compact glow disclosure shares the existing expanded region and never
+-- starts a sample or applies a Setup draft. Native picker callbacks own one
+-- profile/session and cannot write after another picker/profile takes over.
+do
+    local glowDetails
+    for _,obj in ipairs(objects) do if obj.label and obj.label.text=='RESET GLOW SETTINGS' then glowDetails=obj.parent end end
+    check(glowDetails and not glowDetails:IsShown(),'Glow settings did not start collapsed')
+    local mode=RA.PersonalTools:GetState().previewMode
+    check(clickVisible('GLOW SETTINGS +') and glowDetails:IsShown(),'Glow disclosure did not open')
+    check(not visibleField('HEALTHSTONE TEXT') and hasVisibleText('COLOR'),'Glow disclosure overlapped Text & Sound or lost shared Color')
+    check(clickVisible('Steady border  v') and clickVisible('Pixel Glow'),'Style chooser missing requested Pixel style')
+    check(hasVisibleText('LINES') and hasVisibleText('LINE LENGTH') and hasVisibleText('THICKNESS') and not hasVisibleText('PARTICLE GROUPS · 4 SPARKS EACH'),'Pixel active-only controls wrong')
+    local lines
+    for _,obj in ipairs(objects) do if obj.title and obj.title.text=='LINES' and obj:IsVisible() then lines=obj end end
+    lines.slider:SetValue(11)
+    check(clickVisible('Pixel Glow  v') and clickVisible('Autocast Shine') and hasVisibleText('PARTICLE GROUPS · 4 SPARKS EACH') and not hasVisibleText('LINES'),'Autocast wording/active controls wrong')
+    check(clickVisible('Autocast Shine  v') and clickVisible('Action Button Glow') and not hasVisibleText('SIZE') and not hasVisibleText('THICKNESS'),'Action Button exposed unsupported controls')
+    check(clickVisible('Action Button Glow  v') and clickVisible('Pixel Glow') and RA.PersonalTools:GetState().reminderGlow.pixelLines==11,'Style switch lost inactive values')
+    local p=RA:GetDB().personalTools
+    local master,glow,threshold,sound,position=p.consumableReminder,p.reminderStoneGlow,p.healthThreshold,p.reminderSound,p.reminderPosition
+    ColorPickerFrame={hides=0}
+    function ColorPickerFrame:Hide() self.hides=self.hides+1 end
+    function ColorPickerFrame:SetupColorPickerAndShow(info) self.swatchFunc=info.swatchFunc;self.cancelFunc=info.cancelFunc;self.rgb={info.r,info.g,info.b} end
+    function ColorPickerFrame:GetColorRGB() return unpack(self.rgb) end
+    check(clickVisible('Color'),'Labeled native color swatch missing')
+    ColorPickerFrame.rgb={0.2,0.4,0.6};ColorPickerFrame.swatchFunc()
+    check(math.abs(p.reminderGlow.color[2]-0.4)<0.0001,'Native color picker did not save live appearance')
+    ColorPickerFrame.cancelFunc()
+    check(p.reminderGlow.color[1]==1 and p.reminderGlow.color[2]==0.72,'Picker Cancel did not restore original color')
+    clickVisible('Color');local staleSwatch,staleCancel=ColorPickerFrame.swatchFunc,ColorPickerFrame.cancelFunc
+    ColorPickerFrame.swatchFunc=function()end;ColorPickerFrame.rgb={0,0,0};staleSwatch();staleCancel()
+    check(p.reminderGlow.color[1]==1,'Stale picker wrote after another owner')
+    clickVisible('Color');staleSwatch,staleCancel=ColorPickerFrame.swatchFunc,ColorPickerFrame.cancelFunc
+    RA:FireCallback('PROFILE_IMPORTED');ColorPickerFrame.rgb={0,0,0};staleSwatch();staleCancel()
+    check(p.reminderGlow.color[1]==1,'Stale picker wrote after profile callback')
+    clickVisible('Color');ColorPickerFrame.rgb={0.7,0.2,0.3};ColorPickerFrame.swatchFunc()
+    clickVisible('Color');staleCancel=ColorPickerFrame.cancelFunc
+    check(clickVisible('RESET GLOW SETTINGS') and p.reminderGlow.style=='STEADY' and p.reminderGlow.pixelLines==8,'Glow appearance reset incomplete')
+    local resetHides=ColorPickerFrame.hides;staleCancel()
+    check(p.reminderGlow.color[1]==1 and p.reminderGlow.color[2]==0.72 and resetHides>=1,'Picker Cancel overwrote reset or owned picker stayed open')
+    clickVisible('Color');local ownHides=ColorPickerFrame.hides
+    clickVisible('HIDE GLOW SETTINGS')
+    check(ColorPickerFrame.hides==ownHides+1,'Disclosure close left owned picker open')
+    clickVisible('GLOW SETTINGS +');clickVisible('Color');ownHides=ColorPickerFrame.hides
+    ColorPickerFrame.swatchFunc=function()end;clickVisible('HIDE GLOW SETTINGS')
+    check(ColorPickerFrame.hides==ownHides,'Disclosure close hid another picker owner')
+    clickVisible('GLOW SETTINGS +')
+
+    check(p.consumableReminder==master and p.reminderStoneGlow==glow and p.healthThreshold==threshold and p.reminderSound==sound and p.reminderPosition==position
+        and RA.PersonalTools:GetState().previewMode==mode,'Glow UI/reset changed opt-ins, threshold, sound, position or sample')
+    check(clickVisible('REMINDER TEXT & SOUND +') and not glowDetails:IsShown(),'Text & Sound did not close Glow settings')
+    check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Disclosure did not return compact')
+end
+
 -- Exercise real entry buttons and Back routes; these are navigation assertions,
 -- not a claim that the rendered window is usable in the game client.
 local function selectedNav(label)

@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.12"
+RA.VERSION = "0.15.3-alpha.13"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -12,6 +12,30 @@ RA.PROFILE_SCHEMA = 19
 RA.InEncounter = false
 RA.Initialized = false
 RA.DebugEnabled = false
+
+-- Saved appearance data only. Never accepts live health or native alpha.
+function RA:NormalizeReminderGlow(value)
+    local function public(v) return not (type(issecretvalue) == "function" and issecretvalue(v)) end
+    local source = public(value) and type(value) == "table" and value or {}
+    local function number(key, default, minimum, maximum, step)
+        local v = source[key]
+        if not public(v) or type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then v = default end
+        return math.floor(math.max(minimum, math.min(maximum, v)) / step + 0.5) * step
+    end
+    local style = source.style
+    if not public(style) or type(style) ~= "string" or not ({STEADY=true, PIXEL=true, BUTTON=true, AUTOCAST=true})[style] then style = "STEADY" end
+    local color = public(source.color) and type(source.color) == "table" and source.color or {}
+    local rgb = {}
+    for i, default in ipairs({1, 0.72, 0.18}) do
+        local v = color[i]
+        if not public(v) or type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then v = default end
+        rgb[i] = math.max(0, math.min(1, v))
+    end
+    return {style=style, color=rgb, pixelLines=number("pixelLines",8,1,12,1), pixelSpeed=number("pixelSpeed",1,0.5,2,0.1),
+        pixelLength=number("pixelLength",10,4,16,1), pixelThickness=number("pixelThickness",2,1,4,1),
+        buttonSpeed=number("buttonSpeed",1,0.5,2,0.1), autocastGroups=number("autocastGroups",4,1,8,1),
+        autocastSpeed=number("autocastSpeed",1,0.5,2,0.1), autocastSize=number("autocastSize",100,50,150,5)}
+end
 
 -- A report is only current when its class-specific catalog revision matches.
 -- This lets future updates invalidate one class instead of rescanning the raid.
@@ -446,6 +470,7 @@ local function MigrateProfile(profile)
     personal.reminderShowOnCooldown = personal.reminderShowOnCooldown == true
     personal.reminderSoundWhenEffectsMuted = personal.reminderSoundWhenEffectsMuted == true
     personal.reminderStoneGlow = personal.reminderStoneGlow ~= false
+    personal.reminderGlow = RA:NormalizeReminderGlow(personal.reminderGlow)
     if personal.reminderSound == nil then personal.reminderSound = true else personal.reminderSound = personal.reminderSound == true end
     if personal.reminderCombat ~= "BOTH" and personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "IN_COMBAT" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}

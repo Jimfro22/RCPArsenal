@@ -64,7 +64,7 @@ check(not RA.Setup:HasDraft() and not RA.Setup:IsFirstRunPending() and h.env.Rai
 RA:OpenConfig();check(h:visible('Addons & versions'),'Dismissed setup reopened on every neutral call')
 check(not RA:GetDB().personalTools.consumableReminder and RA:GetDB().personalTools.reminderStoneGlow,'Dismissal changed child preferences')
 
-h=Lifecycle({profile={schemaVersion=19,personalTools={reminderSound=false,reminderSoundChoice='sound_2',reminderSoundChannel='SFX',reminderSoundWhenEffectsMuted=true,reminderStoneGlow=false},actions={leftClickMode='SAY'},leaderToolbox={enabled=false,showMissing=false}},navigation={lastTab='HUD'}});RA=h.RA
+h=Lifecycle({profile={schemaVersion=19,personalTools={reminderSound=false,reminderSoundChoice='sound_2',reminderSoundChannel='SFX',reminderSoundWhenEffectsMuted=true,reminderStoneGlow=false,reminderGlow={style='AUTOCAST',pixelLines=9,autocastGroups=6}},actions={leftClickMode='SAY'},leaderToolbox={enabled=false,showMissing=false}},navigation={lastTab='HUD'}});RA=h.RA
 RA:OpenConfig();check(h:visible('Display & Position'),'Existing OFF installation lost saved-tab behavior')
 RA:OpenSetup();check(RA.Setup:Get('sound')==false and RA.Setup:Get('glow')==false and RA.Setup:Get('leftClick')=='SAY','Setup replay lost valid saved children')
 RA.Setup:Set('role','LEADER');RA.Setup:Set('reminder',true);RA.Setup:Set('quickBar',true);RA.Setup:Set('threshold',61)
@@ -74,6 +74,7 @@ local ok,destination=RA.Setup:Save()
 check(ok and destination=='HUD' and RA:GetDB().personalTools.consumableReminder and RA:GetDB().leaderToolbox.enabled,'Reviewed choices failed to save/return')
 check(not RA:GetDB().leaderToolbox.showMissing and not RA:IsHUDEnabled(),'Quick Bar enable default overrode reviewed child or enabled inspection')
 check(RA:GetDB().personalTools.reminderSoundChoice=='sound_2' and RA:GetDB().personalTools.reminderSoundChannel=='SFX' and RA:GetDB().personalTools.reminderSoundWhenEffectsMuted,'Setup changed unrelated saved sound selection/routing')
+check(RA:GetDB().personalTools.reminderGlow.style=='AUTOCAST' and RA:GetDB().personalTools.reminderGlow.pixelLines==9 and RA:GetDB().personalTools.reminderGlow.autocastGroups==6,'Setup overwrote saved appearance values')
 check(h.metrics().inspects==0 and h.metrics().sent==0,'Quick Bar-only setup inspected or communicated')
 RA:OpenConfig('ADDONS');RA:OpenSetup();RA.Setup:Set('hud',true)
 local scans=0;RA.ScheduleInspectionScan=function()scans=scans+1 end
@@ -92,9 +93,20 @@ local liveReminder=h.env.CreateFrame('Frame','RCPArsenalConsumableReminder',h.en
 liveReminder:SetSize(56,56);liveReminder:SetPoint('TOPLEFT',h.env.UIParent,'TOPLEFT',900,-380)
 local before=h.metrics()
 check(RA.Placement:Start('MOVE'),'Move session failed')
-check(h:click('POTION') and h.named.RCPArsenalPlacementREMINDER.glow:IsShown(),'Potion placement sample omitted saved icon glow')
-check(h:click('EMPTY') and not h.named.RCPArsenalPlacementREMINDER.glow:IsShown(),'Empty placement sample retained icon glow')
-check(h:click('STONE') and h.named.RCPArsenalPlacementREMINDER.glow:IsShown(),'Stone placement sample lost icon glow')
+check(h:click('POTION') and h.named.RCPArsenalPlacementREMINDER.glow.frame:IsShown(),'Potion placement sample omitted saved icon glow')
+check(h:click('EMPTY') and not h.named.RCPArsenalPlacementREMINDER.glow.frame:IsShown(),'Empty placement sample retained icon glow')
+check(h:click('STONE') and h.named.RCPArsenalPlacementREMINDER.glow.frame:IsShown(),'Stone placement sample lost icon glow')
+local sampleGlow=h.named.RCPArsenalPlacementREMINDER.glow
+local staged=RA.Placement:GetState().positions.REMINDER.x
+RA.PersonalTools:SetGlowOption('style','PIXEL')
+check(sampleGlow.style=='PIXEL' and sampleGlow.active and RA.Placement:IsActive() and RA.Placement:GetState().positions.REMINDER.x==staged,'Saved style did not update active placement without changing session/anchor')
+RA.PersonalTools:SetGlowOption('style','BUTTON')
+check(sampleGlow.style=='BUTTON' and h.named.RCPArsenalPlacementREMINDER.glow==sampleGlow,'Global item sample failed style reuse')
+RA.PersonalTools:SetOption('reminderStoneGlow',false)
+check(not sampleGlow.active and RA.Placement:IsActive(),'Saved OFF retained global sample glow or ended placement')
+RA.PersonalTools:SetOption('reminderStoneGlow',true)
+check(sampleGlow.active,'Saved ON did not refresh active global item sample')
+
 local state=RA.Placement:GetState()
 check(state.positions.HUD.x==124 and state.positions.HUD.y==-87 and state.positions.QUICKBAR.x==69 and state.positions.QUICKBAR.y==-211,'Unallocated OFF surface inherited the live reminder anchor')
 check(state.positions.REMINDER.x==900 and state.positions.REMINDER.y==-380,'Reminder sample lost its own live anchor')
@@ -109,7 +121,7 @@ RA.Placement:SetPosition('QUICKBAR',1800,-400)
 check(h.named.RCPArsenalPlacementQUICKBAR.dock.points[1][1]=='RIGHT','AUTO dock did not turn left after dragging to the right edge')
 check(RA.Placement:RestoreStarting() and RA.Placement:GetState().positions.HUD.x==222,'Restore starting positions failed')
 check(h.named.RCPArsenalPlacementQUICKBAR.dock.points[1][1]=='LEFT','Restore starting positions retained the dragged AUTO dock direction')
-RA.Placement:Cancel();check(RA:GetDB().position.x==222,'Cancel saved a staged position')
+RA.Placement:Cancel();check(RA:GetDB().position.x==222 and not sampleGlow.active,'Cancel saved a staged position or retained glow animation')
 RA.Placement:Start('MOVE');RA.Placement:SetPosition('HUD',822,-333);RA:GetDB().position.x=901
 check(not RA.Placement:Save() and not RA.Placement:IsActive() and RA:GetDB().position.x==901,'Stale layout overwrote an external position change')
 RA.Placement:Start('MOVE');RA.Placement:SetPosition('HUD',444,-123)

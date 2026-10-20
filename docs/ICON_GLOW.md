@@ -1,5 +1,7 @@
 # Healthstone and potion icon glow — 0.15.3-alpha.11
 
+Alpha.13 adds optional styles and color while retaining these visibility and sound gates. See [adjustable glow](ADJUSTABLE_GLOW.md) for current controls and native animation behavior.
+
 Both a visible Healthstone icon and a visible healing-potion icon can use the existing steady gold edge and restrained outer halo at or below 35% health. Above 35%, the glow clears. The main reminder's saved visual threshold, master, combat policy and life-state gates still apply to the entire icon and glow. A main threshold below 35% therefore keeps the whole prompt hidden until that lower threshold. OUT OF POTIONS! has no icon or glow.
 
 Personal Tools exposes **Icon glow at ≤35%** beside the text/sound disclosure, visible in compact and expanded layouts. Welcome uses **Icon edge glow** and an icon-glow summary. The existing local `reminderStoneGlow` preference is retained: valid saved OFF stays OFF; unset defaults ON for compatibility. The reminder master remains optional and OFF by default, and schema stays 19. Editing glow while the master is OFF creates no live reminder or health work. Editing the switch while enabled changes only the owned visual, preserving the cached supply readiness and its expiry timer.
