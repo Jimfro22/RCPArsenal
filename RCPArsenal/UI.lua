@@ -851,6 +851,7 @@ local function SavePosition()
     if RA.CaptureFrameTopLeft and RA:CaptureFrameTopLeft(hudAnchor, db.position) then
         db.positionAnchorVersion = 3
         positionNormalized = true
+        RA:FireCallback("OVERLAY_POSITION_CHANGED")
     end
 end
 
@@ -877,6 +878,12 @@ local function RestorePosition()
     HUD:ClearAllPoints()
     SetPoint(HUD, pos.point or "CENTER", UIParent, pos.relativePoint or "CENTER", pos.x or 0, pos.y or 0)
     positionNormalized = false
+end
+
+function RA:RefreshHUDPosition()
+    if InCombatLockdown() or self.InEncounter then return false end
+    RestorePosition()
+    return true
 end
 
 local function NormalizePositionIfNeeded()
@@ -951,7 +958,7 @@ local function StartHUDDrag()
 end
 
 local function ApplyLockState()
-    if not HUD then return end
+    if not HUD or InCombatLockdown() then return end
 
     local locked = RA:GetDB().locked
     -- Moving is isolated to the dedicated mover tab. The HUD body never
@@ -1732,7 +1739,7 @@ function RA:UpdateHUDVisibility()
         return
     end
 
-    local reason = self:GetHUDVisibilityReason()
+    local reason = self.LayoutPreviewActive and "Layout preview" or self:GetHUDVisibilityReason()
     lastVisibilityReason = reason
     if not reason then
         HUD:Show()
@@ -1746,6 +1753,17 @@ function RA:UpdateHUDVisibility()
     end
 end
 
+function RA:GetHUDLayoutSurfaces()
+    return {{frame=HUD},{frame=shadow},{frame=panicHUDButton},{frame=moveHandle,noCombatRestore=true}}
+end
+function RA:GetHUDPlacementMetrics()
+    local db=self:GetDB()
+    local detailed={};for key,value in pairs(DETAILED)do detailed[key]=value end
+    return {mode=db.mode,scale=db.scale or 1.25,compact=self.CompactLayout:GetMetrics(db),detailed=detailed,
+        detailedWidth=GetDetailedWidth(db),liveWidth=self:IsHUDEnabled() and HUD and HUD:GetWidth() or nil,
+        liveHeight=self:IsHUDEnabled() and HUD and HUD:GetHeight() or nil}
+end
+
 function RA:RecoverHUD()
     if InCombatLockdown() then
         self:Print("HUD recovery is unavailable during combat.")
@@ -1754,6 +1772,7 @@ function RA:RecoverHUD()
     local db = self:GetDB()
     db.position = { point = "CENTER", relativePoint = "CENTER", x = -360, y = 100 }
     db.positionAnchorVersion = 0
+    self:FireCallback("OVERLAY_POSITION_CHANGED")
     positionNormalized = false
     RestorePosition()
     self:RefreshHUD()
@@ -2178,7 +2197,7 @@ end)
 
 RA:RegisterCallback("ENCOUNTER_STATE_CHANGED", function(inEncounter)
     if RA.ConfigFrame and RA.ConfigFrame:IsShown() then
-        RA.ConfigFrame:Hide()
+        RA:CloseConfig("CONTEXT")
     end
 
     if inEncounter and RA:IsHUDEnabled() and RA:GetDB().autoShowEncounter then

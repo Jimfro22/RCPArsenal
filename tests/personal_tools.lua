@@ -224,7 +224,7 @@ local function loadTools(settings)
             events[name]=function(...) if entry.enabled then return fn(...) end end
             return entry
         end,
-        FireCallback = function(_, name) check(name == "PERSONAL_TOOLS_CHANGED", "Wrong callback"); notices = notices + 1 end,
+        FireCallback = function(_, name) check(name == "PERSONAL_TOOLS_CHANGED" or name == "OVERLAY_POSITION_CHANGED", "Wrong callback"); if name == "PERSONAL_TOOLS_CHANGED" then notices = notices + 1 end end,
     }
     assert(loadfile("RCPArsenal/ReminderSounds.lua"))("RCPArsenal", RA)
     assert(loadfile("RCPArsenal/HealingSupplies.lua"))("RCPArsenal", RA)

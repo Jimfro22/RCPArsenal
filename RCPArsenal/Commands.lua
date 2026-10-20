@@ -2,12 +2,13 @@ local _, RA = ...
 
 local function PrintHelp()
     RA:Print("Commands:")
+    print("  |cff3aa7ff/rcp setup|r - replay Setup; Preview all and Move all are on every Arsenal page")
     print("  |cff3aa7ff/rcp hud|r, |cff3aa7ff/rcp quickbar|r, |cff3aa7ff/rcp content|r, |cff3aa7ff/rcp scanning|r - open Arsenal settings")
     print("  |cff3aa7ff/rcp callouts|r, |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp profiles|r - callouts, personal tools, or profiles")
     print("  |cff3aa7ff/rcp versions|r - request group addon versions as leader or assistant")
     print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open Addons & Versions")
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
-    print("  |cff3aa7ff/rcp markers|r - set up the optional world marker cycler and keybindings")
+    print("  |cff3aa7ff/rcp markers|r - configure the normal marker sequence, optional hold wheel and keys")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
     print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
@@ -86,6 +87,8 @@ local function HandleSlash(raw)
 
     if command == "" or command == "config" then
         RA:OpenConfig()
+    elseif command == "setup" then
+        RA:OpenSetup()
     elseif command == "addons" then
         RA:OpenConfig("ADDONS")
     elseif command == "cooldowns" then
