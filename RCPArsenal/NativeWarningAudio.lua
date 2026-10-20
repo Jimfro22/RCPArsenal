@@ -231,7 +231,8 @@ RA:RegisterCallback("PERSONAL_TOOLS_CHANGED", function(option)
     if Secret(option) or type(option) ~= "string" then return end
     if option == "reminderSoundChoice" or option == "reminderSoundChannel" or option == "reminderSoundWhenEffectsMuted" then Selection(); return end
     if option == "consumableReminder" or option == "reminderSound" then Reconcile(false, true, true)
-    elseif option == "reminderCombat" then Reconcile(false, false, true) end
+    elseif option == "reminderCombat" then Reconcile(false, false, true)
+    elseif option == "reminderSupply" then Reconcile(false, false, false) end
 end)
 RA:RegisterCallback("PROFILE_RESET", function() Selection(); Reconcile(false, false, true) end)
 RA:RegisterEvent("PLAYER_ENTERING_WORLD", function()

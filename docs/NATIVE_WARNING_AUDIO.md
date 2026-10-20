@@ -1,6 +1,6 @@
 # Optional native warning sound - 0.15.3-alpha.4
 
-Historical implementation record. [Alpha.5 reminder selection and audio](REMINDER_SELECTION.md) supersedes selection, channel, empty-caption and supported-map details below.
+Historical implementation record. [Alpha.5 reminder selection and audio](REMINDER_SELECTION.md) supersedes selection, channel, empty-caption and supported-map details below. [Alpha.10 ready-item audio](READY_CONSUMABLE_AUDIO.md) adds the cached ready-item gate and supersedes the default combat policy.
 
 Owner choice: visual at the saved threshold; sound from Blizzard's native low-health warning, normally 35%. This is separate from a 60% visual setting. The native warning's settings and UI semantics apply; this proxy does not guarantee an exact health-only event in every client. No copyrighted clips, custom assets or broad sound library.
 

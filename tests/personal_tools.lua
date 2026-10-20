@@ -209,7 +209,8 @@ local function loadTools(settings)
     offer, recovery, healthResult, healthError, itemError = "Healer", 0, secret, false, false
     healthRatio, reportedHealthRatio, nativeAlpha = .35, nil, nil
     cooldownCalls, usabilityCalls, cooldownError = 0, 0, false
-    profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40 } }
+    -- Unrelated visual/inventory cases use an explicit valid saved BOTH choice.
+    profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40, reminderCombat = "BOTH" } }
     RA = {
         NormalizeReminderText = coreTextRA.NormalizeReminderText,
         GetDB = function() return profile end,
@@ -403,6 +404,7 @@ callbacks.PROFILE_RESET()
 check(active(tickers) == 0 and not frames[1].shown, "Profile reset must stop enabled visual")
 local nativePercent = UnitHealthPercent
 UnitHealthPercent = nil
+combat = true -- Reach the API guard through the new default combat gate.
 tools:SetOption("consumableReminder", true)
 check(active(tickers) == 0 and not frames[1].shown and tools:GetStatusText("consumableReminder"):find("unavailable"),
     "Missing native APIs must gate reminder with an honest status")
@@ -500,14 +502,20 @@ check(tools:PreviewReminder("potion") and frames[2].strings[1].text=="Use healin
 tools:StopReminderPreview()
 check(not frames[2].animation:IsPlaying(), "Stopping preview left bounce running")
 
-tools = loadTools()
-ready(5512)
-tools:SetOption("consumableReminder",true)
-check(tools:GetState().reminderCombat == "BOTH" and frames[1].shown, "New combat option changed existing default visibility")
-tools:SetOption("reminderCombat","IN_COMBAT")
-check(not frames[1].shown, "In-combat choice showed live reminder out of combat")
+for _, settings in ipairs({{}, {reminderCombat="invalid"}}) do
+    tools = loadTools(settings)
+    ready(5512)
+    check(tools:GetState().reminderCombat == "IN_COMBAT" and not tools:GetState().consumableReminder,
+        "Unset/invalid combat mode did not default in combat with master OFF")
+    tools:SetOption("consumableReminder",true)
+    check(#frames == 0 and itemCalls == 0 and healthCalls == 0 and not tools:GetNativeSoundEligibility(),
+        "Default combat gate allowed out-of-combat visual, scans or automatic sound")
+    combat=true;events.PLAYER_REGEN_DISABLED("PLAYER_REGEN_DISABLED")
+    check(frames[1].shown and tools:GetNativeSoundEligibility(), "Default combat gate did not allow visual and sound in combat")
+    combat=false;events.PLAYER_REGEN_ENABLED("PLAYER_REGEN_ENABLED")
+    check(not frames[1].shown and not tools:GetNativeSoundEligibility(), "Default combat gate did not suppress visual and sound after combat")
+end
 combat=true;events.PLAYER_REGEN_DISABLED("PLAYER_REGEN_DISABLED")
-check(frames[1].shown, "In-combat choice did not recover on combat event")
 tools:SetOption("reminderCombat","OUT_OF_COMBAT")
 check(not frames[1].shown, "Out-of-combat choice showed live reminder in combat")
 combat=false;events.PLAYER_REGEN_ENABLED("PLAYER_REGEN_ENABLED")
@@ -554,7 +562,24 @@ local beforeItems,beforeHealth=itemCalls,healthCalls
 check(tools:SetOption("reminderSound",false) and not tools:GetState().reminderSound,"Sound OFF not saved")
 check(itemCalls==beforeItems and healthCalls==beforeHealth and #frames==0 and #timers==0 and #tickers==0,"Sound edit created runtime work")
 local defaults=coreTextRA:CreateDefaultProfile()
-check(defaults.personalTools.reminderSound and not defaults.personalTools.consumableReminder,"Fresh sound/master defaults differ")
+check(defaults.personalTools.reminderSound and not defaults.personalTools.consumableReminder
+    and defaults.personalTools.reminderCombat=="IN_COMBAT","Fresh sound/combat/master defaults differ")
+for _, mode in ipairs({"BOTH", "IN_COMBAT", "OUT_OF_COMBAT"}) do
+    defaults.personalTools.reminderCombat=mode
+    coreTextRA:NormalizeProfile(defaults)
+    check(defaults.personalTools.reminderCombat==mode and not defaults.personalTools.consumableReminder,
+        "Normalization overwrote a valid combat choice or enabled reminder master")
+end
+defaults.personalTools.reminderCombat=nil
+coreTextRA:NormalizeProfile(defaults)
+check(defaults.personalTools.reminderCombat=="IN_COMBAT" and not defaults.personalTools.consumableReminder,
+    "Unset combat mode did not normalize in combat with master OFF")
+for _, invalid in ipairs({"invalid", false, 17, {}}) do
+    defaults.personalTools.reminderCombat=invalid
+    coreTextRA:NormalizeProfile(defaults)
+    check(defaults.personalTools.reminderCombat=="IN_COMBAT" and not defaults.personalTools.consumableReminder,
+        "Invalid combat mode did not normalize in combat with master OFF")
+end
 defaults.personalTools.reminderSound=false
 coreTextRA:NormalizeProfile(defaults)
 check(defaults.personalTools.reminderSound==false,"Normalization overwrote deliberate sound OFF")

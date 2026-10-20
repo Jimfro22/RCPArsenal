@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.9"
+RA.VERSION = "0.15.3-alpha.10"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -129,7 +129,7 @@ local DEFAULTS = {
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false, radialEnabled = false },
         personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
-            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH", reminderSound = true,
+            reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "IN_COMBAT", reminderSound = true,
             reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false, reminderStoneGlow = true },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
@@ -447,7 +447,7 @@ local function MigrateProfile(profile)
     personal.reminderSoundWhenEffectsMuted = personal.reminderSoundWhenEffectsMuted == true
     personal.reminderStoneGlow = personal.reminderStoneGlow ~= false
     if personal.reminderSound == nil then personal.reminderSound = true else personal.reminderSound = personal.reminderSound == true end
-    if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
+    if personal.reminderCombat ~= "BOTH" and personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "IN_COMBAT" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
     profile.readiness.targets = type(profile.readiness.targets) == "table" and profile.readiness.targets or {}
     profile.readiness.revision = math.max(0, tonumber(profile.readiness.revision) or 0)
