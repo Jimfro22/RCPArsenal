@@ -20,7 +20,7 @@ function IsInGroup() return true end
 function UnitIsGroupLeader() return permitted end
 function UnitIsGroupAssistant() return false end
 function GetBindingKey(action) return unpack(keys[action] or {}) end
-for _, name in ipairs({'SetBinding', 'SaveBindings', 'SetOverrideBindingClick', 'ClearOverrideBindings', 'PlaceRaidMarker', 'RunMacroText', 'MouselookStop'}) do
+for _, name in ipairs({'SetBinding', 'SaveBindings', 'SetOverrideBindingClick', 'ClearOverrideBindings', 'PlaceRaidMarker', 'RunMacroText', 'MouselookStop', 'SetCursorPosition', 'SpellTargetPosition'}) do
     _G[name] = function() error('Forbidden insecure/protected global: ' .. name) end
 end
 local function guard(frame)
@@ -91,6 +91,7 @@ function CreateFrame(kind, name, parent, templates)
     end
     function f:EnableMouse(v) guard(self); self.mouse = v end
     function f:EnableMouseMotion(v) guard(self); self.motion = v end
+    function f:SetPassThroughButtons(...) guard(self);self.passthrough={};for _,button in ipairs({...})do self.passthrough[button]=true end end
     function f:SetFrameStrata(v) guard(self); self.strata = v end
     function f:RegisterForClicks(...) guard(self); self.clicks = {...} end
     function f:RegisterEvent() end
@@ -167,10 +168,11 @@ local function loadAddon()
     eventFrame.scripts.OnEvent(eventFrame, 'ADDON_LOADED', 'RCPArsenal')
     return RA, named.RCPArsenalWorldMarkerCycle, named.RCPArsenalWorldMarkerClear, eventFrame
 end
-local function dispatch(frame, down)
+local function dispatch(frame, down, button)
+    button=button or 'LeftButton'
     local old = hardware; hardware = true
     for _, fn in ipairs(frame.wrappers.OnClick or {}) do
-        if fn(frame, 'LeftButton', down) == false then hardware = old; return end
+        if fn(frame, button, down) == false then hardware = old; return end
     end
     if frame:GetAttribute('type') and (down == frame:GetAttribute('useOnKeyDown')) then
         attempts = attempts + 1
@@ -208,6 +210,7 @@ RA.WorldMarkers:SetOrder({8, 4})
 check(RA.WorldMarkers:SetRadialEnabled(true), 'Could not opt into radial mode')
 check(RA.WorldMarkers:IsRadialEnabled() and not cycle:GetAttribute('useOnKeyDown'), 'Wheel did not use release action')
 local root, cancel = named.RCPArsenalWorldMarkerRadial, named.RCPArsenalWorldMarkerCancel
+check(root.mouse and root.clicks[1]=='RightButtonDown' and root.clicks[2]=='RightButtonUp' and root.passthrough.LeftButton and root.passthrough.MiddleButton and root.passthrough.Button4 and root.passthrough.Button31 and not root.passthrough.RightButton,'Full-screen right-click catcher stole other mouse buttons or registered wrong phase')
 local previous = #actions
 down(); check(#actions == previous and cycle:GetAttribute('rcp-radial-held'), 'Keydown placed or failed to latch')
 event('UPDATE_BINDINGS')
@@ -215,16 +218,16 @@ check(cycle:GetAttribute('rcp-radial-held'), 'Unchanged/transient binding event 
 check(cycle.overrides.F9 and cycle.overrides['ALT-CTRL-SHIFT-F9'] and cycle.overrides.F10, 'Modifier release routes missing')
 check(cycle.overrides.ESCAPE[1] == cancel.name and cycle.overrides.BUTTON2[1] == cancel.name, 'Cancel overrides missing')
 local tapTimer = timers[#timers]
-up(); check(#actions == previous + 1 and actions[#actions][2] == '/wm [@cursor] 6', 'Tap was not a restricted random marker')
+up(); check(#actions == previous and cycle:GetAttribute('macrotext')==nil, 'Center tap placed or retained a marker')
 check(not root:IsShown() and empty(cycle.overrides) and tapTimer.cancelled, 'Tap left hold UI/overrides/timer')
-fireTimer(tapTimer, true); check(activePolling() == 0 and #actions == previous + 1, 'Stale display timer rearmed or placed')
-up(); check(#actions == previous + 1, 'Repeated key-up placed twice')
+fireTimer(tapTimer, true); check(activePolling() == 0 and #actions == previous, 'Stale display timer rearmed or placed')
+up(); check(#actions == previous, 'Repeated key-up placed twice')
 resetCursor(); down(); local heldTimer = timers[#timers]
 down(); check(timers[#timers] == heldTimer, 'Repeated down restarted hold')
 combat = true
 fireTimer(heldTimer)
-check(activePolling() == 1 and #actions == previous + 1, 'Display timer placed a marker or failed to display')
-up(); check(actions[#actions][2] == '/wm [@cursor] 6' and activePolling() == 0, 'Stationary long hold did not retain random default')
+check(activePolling() == 1 and #actions == previous, 'Display timer placed a marker or failed to display')
+up(); check(#actions==previous and activePolling()==0 and cycle:GetAttribute('macrotext')==nil, 'Stationary displayed hold placed or retained a marker')
 for marker = 1, 8 do
     resetCursor(); down()
     local angle = (marker - 1) * math.pi / 4
@@ -244,6 +247,50 @@ for _, input in ipairs({'ESCAPE', 'BUTTON2'}) do
     dispatch(named[target[1]], true); dispatch(cancel, false); up()
     check(#actions == previous and empty(cycle.overrides) and not root:IsShown(), 'Cancel then release placed: ' .. input)
 end
+-- Test all cancel modifier chords independently of the full-screen pointer
+-- path; CTRL-F9 commonly leaves Ctrl held during the right-click.
+for mask=0,7 do
+    local prefix=''
+    if mask%2==1 then prefix='SHIFT-'..prefix end
+    if math.floor(mask/2)%2==1 then prefix='CTRL-'..prefix end
+    if mask>=4 then prefix='ALT-'..prefix end
+    for _,input in ipairs({'ESCAPE','BUTTON2'}) do
+        resetCursor();down();move(1100,660)
+        local target=cycle.overrides[prefix..input]
+        check(target and target[1]==cancel.name,'Missing modified cancel override: '..prefix..input)
+        local pending=timers[#timers]
+        dispatch(named[target[1]],true);up();dispatch(cancel,false);up()
+        check(#actions==previous and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+            and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and pending.cancelled and activePolling()==0,
+            'Modified cancel left a release action/state: '..prefix..input)
+    end
+end
+-- Model the registered direct RightButton path at center, sector, viewport
+-- edge and outside the drawn wheel. Native focus/camera routing is acceptance.
+local pointerCases={{960,540,false},{960,540,true},{1080,540,true},{8,8,true},{1910,1070,true}}
+for _,entry in ipairs(pointerCases) do
+    resetCursor();down();local pending=timers[#timers]
+    if entry[3] then fireTimer(pending) end
+    move(entry[1],entry[2])
+    for _,frame in ipairs(frames)do if frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame,0.05) end end
+    dispatch(root,true,'RightButton')
+    check(#actions==previous and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+        and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and activePolling()==0,'Full-screen right-click failed center/sector/outside cancellation')
+    dispatch(root,false,'RightButton');up();up();fireTimer(pending,true)
+    check(#actions==previous and not root:IsShown() and activePolling()==0,'Right-click or stale timer rearmed a later release')
+end
+-- Every no-sector release has identical protected behavior, independent of
+-- visual delay, long hold, prior sector and exactly-on-boundary cursor jitter.
+for _,offset in ipairs({{0,0},{22,22},{-22,-22},{-22,22}}) do
+    for _,displayed in ipairs({false,true}) do
+        resetCursor();down();local pending=timers[#timers]
+        if displayed then fireTimer(pending) end
+        move(960+offset[1],540+offset[2]);up()
+        check(#actions==previous and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and not root:IsShown(),
+            'Center/deadzone release placed a random marker or stranded state')
+    end
+end
+check(randomCalls==0,'Wheel center path still invokes random placement')
 resetCursor(); down(); restricted = true; root:Hide(); restricted = false; up()
 check(#actions == previous and empty(cycle.overrides), 'Native overlay/UI hide did not reset protected hold')
 resetCursor(); down(); local secure = restricted; restricted = true
@@ -275,6 +322,14 @@ resetCursor(); down(); move(1080, 540); up()
 check(#actions == previous and attempts > #actions, 'Permission simulation was bypassed')
 check(RA.WorldMarkers:GetPermissionText():find('Requires raid leader', 1, true), 'Permission explanation missing')
 permitted, combat = true, false
+keys[place]={'BUTTON4','ALT-BUTTON5'};event('UPDATE_BINDINGS')
+check(RA.WorldMarkers:IsRadialEnabled(),'Supported side-mouse aliases lost wheel mode')
+resetCursor();down();move(1080,540)
+check(cycle.overrides.BUTTON4 and cycle.overrides['ALT-BUTTON5'] and root.passthrough.Button4 and root.passthrough.Button5,
+    'Right-click catcher swallowed side-button release routes')
+local sideCancel=cycle.overrides['ALT-CTRL-BUTTON2'];dispatch(named[sideCancel[1]],true);up()
+check(#actions==previous and empty(cycle.overrides) and not root:IsShown(),'Modified cancel after side-button hold left a marker action')
+keys[place]={'CTRL-F9','F10'};event('UPDATE_BINDINGS')
 for _, alias in ipairs({'LeftButton', 'RightButton', 'Button1', 'Button2', 'BUTTON1', 'BUTTON2', 'CTRL-LeftButton', 'ALT-RightButton', 'SHIFT-MouseWheelUp'}) do
     keys[place] = {alias, 'F10'}; event('UPDATE_BINDINGS')
     check(not RA.WorldMarkers:IsRadialEnabled() and RA:GetDB().worldMarkers.radialEnabled, 'Unsupported Blizzard primary/pulse alias armed a hold: ' .. alias)
