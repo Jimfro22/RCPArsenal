@@ -132,6 +132,7 @@ local MAJOR_COVERAGE = {
         { key = "hunters_mark", name = "Hunter's Mark", effect = "+3% damage", class = "HUNTER", spellID = 257284 },
         { key = "chaos_brand", name = "Chaos Brand", class = "DEMONHUNTER", spellID = 1490 },
         { key = "mystic_touch", name = "Mystic Touch", class = "MONK", spellID = 113746 },
+        { key = "atrophic_poison", name = "Atrophic Poison", class = "ROGUE", spellID = 381637 },
     },
 }
 
