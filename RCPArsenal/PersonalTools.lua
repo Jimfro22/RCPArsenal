@@ -23,6 +23,7 @@ local layoutMasked, reminderDesiredShown = false, false
 local reminderEvents, resurrectionEvent = {}, nil
 local readinessTimer, readinessGeneration, lastExpiry = nil, 0, nil
 local reminderLabel, previewCaption
+local UpdateSampleGlow
 local COMBAT_MODES = { BOTH = true, IN_COMBAT = true, OUT_OF_COMBAT = true }
 local preview, previewMode, previewMoving, previewBounce
 local selectedItem, selectedKind, inventory, bouncing
@@ -150,9 +151,11 @@ local function FitAndClamp(frame, label, kind, requestedSize)
     local clamped = kind == "empty" or itemIcon or frame.isPreview == true
     if frame.SetClampedToScreen then pcall(frame.SetClampedToScreen, frame, clamped) end
     if frame.SetClampRectInsets then
-        local side = clamped and math.max(itemIcon and 4 or 0, (width - IconSize()) / 2) or 0
-        local top = clamped and (frame.isPreview and 20 or itemIcon and 11 or 7) or 0
-        local bottom = clamped and -(4 + height + 7) or 0
+        local appearance = RA:NormalizeReminderGlow((Settings() or {}).reminderGlow)
+        local extent = RA.ReminderGlow:GetExtent(appearance,IconSize())
+        local side = clamped and math.max(itemIcon and extent or 0, (width - IconSize()) / 2) or 0
+        local top = clamped and math.max(frame.isPreview and 20 or 7, itemIcon and extent+7 or 7) or 0
+        local bottom = clamped and -(math.max(4, itemIcon and extent or 0) + height + 7) or 0
         -- Native offset signs match Blizzard EditMode's selection-bound clamp.
         -- Include the entire caption and +/-7 animation, without saving a move.
         pcall(frame.SetClampRectInsets, frame, -side, side, top, bottom)
@@ -204,6 +207,7 @@ end
 
 local function HideGlow()
     if reminder and reminder.glow then
+        if reminder.glow.renderer then reminder.glow.renderer:Stop() end
         pcall(reminder.glow.SetAlpha, reminder.glow, 0)
         pcall(reminder.glow.Hide, reminder.glow)
     end
@@ -269,23 +273,23 @@ end
 local function CreateStoneGlow(body)
     local glow = CreateFrame("Frame", nil, body)
     glow:Hide(); glow:SetAllPoints(body); glow:EnableMouse(false); glow:SetAlpha(0)
-    local function Edge(leftPoint, rightPoint, leftX, leftY, rightX, rightY, halo)
-        local texture = glow:CreateTexture(nil, "OVERLAY")
-        texture:SetPoint("TOPLEFT", body, leftPoint, leftX, leftY)
-        texture:SetPoint("BOTTOMRIGHT", body, rightPoint, rightX, rightY)
-        texture:SetColorTexture(1, 0.72, 0.18, halo and 0.18 or 0.94)
-    end
-    -- Four-unit halo outside the icon box; two-unit gold edge leaves the dark
-    -- gap around the three-unit-inset icon. No new flash/animation or timer.
-    Edge("TOPLEFT", "TOPRIGHT", -4, 4, 4, 0, true)
-    Edge("BOTTOMLEFT", "BOTTOMRIGHT", -4, 0, 4, -4, true)
-    Edge("TOPLEFT", "BOTTOMLEFT", -4, 0, 0, 0, true)
-    Edge("TOPRIGHT", "BOTTOMRIGHT", 0, 0, 4, 0, true)
-    Edge("TOPLEFT", "TOPRIGHT", 0, 0, 0, -2)
-    Edge("BOTTOMLEFT", "BOTTOMRIGHT", 0, 2, 0, 0)
-    Edge("TOPLEFT", "BOTTOMLEFT", 0, 0, 2, 0)
-    Edge("TOPRIGHT", "BOTTOMRIGHT", -2, 0, 0, 0)
+    glow.renderer = RA.ReminderGlow:Create(glow)
     return glow
+end
+
+local function PrepareGlowAppearance()
+    if reminder and reminder.glow and Enabled("consumableReminder") and IsItemIcon(selectedKind)
+        and (Settings() or {}).reminderStoneGlow ~= false then
+        reminder.glow.renderer:Configure(RA:NormalizeReminderGlow((Settings() or {}).reminderGlow), IconSize())
+    end
+end
+
+UpdateSampleGlow = function()
+    if not preview or not preview.glow then return end
+    if previewMode and IsItemIcon(previewKind) and (Settings() or {}).reminderStoneGlow ~= false then
+        preview.glow:Configure(RA:NormalizeReminderGlow((Settings() or {}).reminderGlow), IconSize())
+        preview.glow:Start()
+    else preview.glow:Stop() end
 end
 
 local function CreateReminder()
@@ -386,10 +390,11 @@ local function ApplyHealthAlpha()
     if not ok then
         CancelReadiness(); HideReminder("Native health display unavailable; visual suppressed."); return
     end
-    if IsItemIcon(selectedKind) and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false then
+    if IsItemIcon(selectedKind) and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false and not layoutMasked then
         local glowOK = glowCurve35 and pcall(function()
             reminder.glow:SetAlpha(UnitHealthPercent("player", true, glowCurve35))
             reminder.glow:Show()
+            reminder.glow.renderer:Start()
         end)
         if not glowOK then HideGlow() end
     else HideGlow() end
@@ -484,6 +489,7 @@ function Tools:Refresh(refreshInventory)
             selectedItem, selectedKind = candidate.id, candidate.kind
             PrepareGlowCurve()
             ApplyAppearance(reminder, reminderLabel, selectedKind)
+            PrepareGlowAppearance()
             PositionFrame(reminder)
             reminder.icon:Show(); reminder.border:Show()
             reminder.icon:SetTexture(candidate.icon)
@@ -588,10 +594,13 @@ function Tools:SetOption(key, value)
     if not db then return false, "Profile unavailable." end
     if IsSecret(key) or IsSecret(value) then return false, "Invalid personal tool option." end
     if key ~= "autoRes" and key ~= "consumableReminder" and key ~= "healthThreshold"
-        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" and key ~= "reminderSoundWhenEffectsMuted" and key ~= "reminderStoneGlow" then
+        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" and key ~= "reminderSoundWhenEffectsMuted" and key ~= "reminderStoneGlow" and key ~= "reminderGlow" then
         return false, "Unknown personal tool option."
     end
-    if key == "healthThreshold" then
+    if key == "reminderGlow" then
+        if type(value) ~= "table" then return false, "Choose glow appearance settings." end
+        value = RA:NormalizeReminderGlow(value)
+    elseif key == "healthThreshold" then
         if not Number(value) then return false, "Choose a numeric health threshold." end
         value = Threshold(value)
     elseif key == "reminderStoneText" or key == "reminderPotionText" then
@@ -616,18 +625,42 @@ function Tools:SetOption(key, value)
     db.personalTools[key] = value
     -- Audio preferences do not refresh inventory, visuals or health.
     if key == "reminderSound" or key == "reminderSoundChoice" or key == "reminderSoundChannel" or key == "reminderSoundWhenEffectsMuted" then Notify(key); return true end
-    if key == "reminderStoneGlow" then
+    if key == "reminderStoneGlow" or key == "reminderGlow" then
+        ApplyAppearance(reminder, reminderLabel, selectedKind)
+        ApplyAppearance(preview, previewCaption, previewKind)
         -- Only the owned visual changes. Preserve the supply cache/expiry and
         -- audio latch; OFF tools stay unallocated and health hooks never retry.
-        if value then PrepareGlowCurve(); ApplyHealthAlpha() else HideGlow() end
+        if (Settings() or {}).reminderStoneGlow ~= false then
+            PrepareGlowCurve(); PrepareGlowAppearance(); ApplyHealthAlpha()
+        else HideGlow() end
+        UpdateSampleGlow()
         Notify(key)
         return true
     end
     ApplyAppearance(reminder, reminderLabel, selectedKind)
     ApplyAppearance(preview, previewCaption, previewKind)
+    UpdateSampleGlow()
     self:Refresh(key == "consumableReminder")
     Notify(key)
     return true
+end
+
+function Tools:SetGlowOption(key, value)
+    local appearance = RA:NormalizeReminderGlow((Settings() or {}).reminderGlow)
+    if IsSecret(key) or IsSecret(value) or type(key) ~= "string" or appearance[key] == nil then return false, "Unknown glow setting." end
+    if key == "style" then
+        if type(value) ~= "string" or not ({STEADY=true,PIXEL=true,BUTTON=true,AUTOCAST=true})[value] then return false, "Choose a glow style." end
+    elseif key == "color" then
+        if type(value) ~= "table" then return false, "Choose a glow color." end
+        for index=1,3 do if not Number(value[index]) then return false, "Choose a glow color." end end
+    elseif not Number(value) then return false, "Choose a numeric glow setting." end
+    appearance[key] = value
+    return self:SetOption("reminderGlow", appearance)
+end
+
+function Tools:ResetGlowSettings()
+    Notify("reminderGlowReset")
+    return self:SetOption("reminderGlow", {})
 end
 
 function Tools:SetReminderPosition(x, y)
@@ -660,6 +693,7 @@ end
 function Tools:SetLayoutMasked(masked)
     layoutMasked = masked == true
     if reminder then reminder:SetShown(not layoutMasked and reminderDesiredShown) end
+    if layoutMasked then HideGlow() else ApplyHealthAlpha() end
 end
 
 local function SavePreviewPosition()
@@ -707,6 +741,7 @@ local function CreatePreview()
     icon:SetPoint("BOTTOMRIGHT", -3, 3)
     icon:SetTexture(GENERIC_POTION_ICON)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    preview.glow = RA.ReminderGlow:Create(body)
     previewBounce = CreateBounce(body)
     preview.label = preview:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     preview.label:SetPoint("BOTTOM", preview, "TOP", 0, 5)
@@ -731,6 +766,7 @@ end
 function Tools:StopReminderPreview()
     if preview then
         if previewBounce then previewBounce:Stop() end
+        if preview.glow then preview.glow:Stop() end
         preview:StopMovingOrSizing()
         preview:Hide()
         preview:EnableMouse(false)
@@ -754,6 +790,7 @@ function Tools:PreviewReminder(kind)
     preview.label:SetText("BOUNCE PREVIEW - SAMPLE")
     preview:Show()
     previewBounce:Play()
+    UpdateSampleGlow()
     return true
 end
 
@@ -797,6 +834,7 @@ function Tools:GetState()
     local soundChoice, soundChannel = SoundSelection()
     return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
         reminderStoneGlow = (Settings() or {}).reminderStoneGlow ~= false,
+        reminderGlow = RA:NormalizeReminderGlow((Settings() or {}).reminderGlow),
         reminderSoundWhenEffectsMuted = Enabled("reminderSoundWhenEffectsMuted") == true, reminderShowOnCooldown = Enabled("reminderShowOnCooldown") == true, reminderSound = SoundEnabled(), reminderSoundChoice = soundChoice, reminderSoundChannel = soundChannel, healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
         reminderStoneText = ReminderText("stone"), reminderPotionText = ReminderText("potion"), reminderIconSize = IconSize(), reminderTextSize = TextSize(), reminderEmptyTextSize = EmptyTextSize(), reminderCombat = CombatMode(),
         reminderStatus = reminderReason, autoResStatus = resReason, previewMode = previewMode }

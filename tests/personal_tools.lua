@@ -119,15 +119,37 @@ C_Item = { GetItemCount = function() error("No separate counts") end,
         if cooldownError then error("Item readiness unavailable") end
         local item = items[id] or {}; return item.start, item.duration, item.enabled
     end }
+local nativeGroups, nativeTracks, nativeTextures = 0,0,0
+local function GlowAnimationGroup()
+    nativeGroups=nativeGroups+1
+    local group={animations={},plays=0,stops=0}
+    function group:SetLooping(value) check(value=="REPEAT","Glow must loop natively") end
+    function group:SetAnimationSpeedMultiplier(value) self.speed=value end
+    function group:Play(reverse,offset) self.plays=self.plays+1;self.playing=true;self.offset=offset or 0 end
+    function group:Stop() self.stops=self.stops+1;self.playing=false end
+    function group:CreateAnimation(kind)
+        check(kind=="Translation" or kind=="Rotation" or kind=="FlipBook","Unexpected glow animation")
+        nativeTracks=nativeTracks+1
+        local anim={kind=kind}
+        for _,key in ipairs({"Order","Duration","StartDelay","Degrees","FlipBookRows","FlipBookColumns","FlipBookFrames","FlipBookFrameWidth","FlipBookFrameHeight"}) do
+            anim["Set"..key]=function(self,value) check(type(value)=="number","Glow animation received secret/non-numeric data");self[key]=value end
+        end
+        function anim:SetOffset(x,y) check(type(x)=="number" and type(y)=="number","Glow translation must be appearance constants");self.x,self.y=x,y end
+        function anim:SetOrigin(...) self.origin={...} end
+        self.animations[#self.animations+1]=anim;return anim
+    end
+    return group
+end
 function CreateFrame(kind, name, parent, template)
     check(kind == "Frame" and template == nil, "Visual must be nonsecure and noninteractive")
     local frame = { name = name, parent = parent, shown = true, scripts = {} }
     local sample = name == "RCPArsenalConsumableReminderPreview"
-    function frame:Hide() self.shown = false end
+    function frame:Hide() local changed=self.shown; self.shown=false; if changed and self.scripts.OnHide then self.scripts.OnHide(self) end end
     function frame:Show()
         local changed = not self.shown; self.shown = true
         if changed and self.scripts.OnShow then self.scripts.OnShow(self) end
     end
+    function frame:SetShown(value) if value then self:Show() else self:Hide() end end
     function frame:SetAlpha(value)
         if self.failSink and rawequal(value, secret) then error("Glow alpha sink failed") end
         -- Sink receives the exact opaque token, never a processed derivative.
@@ -151,14 +173,22 @@ function CreateFrame(kind, name, parent, template)
     function frame:GetCenter() return self.centerX, self.centerY end
     function frame:GetEffectiveScale() return self.scale or 0.8 end
     function frame:SetScript(name, fn)
-        check((sample and (name == "OnDragStart" or name == "OnDragStop")) or (name == "OnShow" and self.name == "RCPArsenalConsumableReminder"), "No frame timers/action scripts allowed")
+        check((sample and (name == "OnDragStart" or name == "OnDragStop")) or (name == "OnShow" and self.name == "RCPArsenalConsumableReminder") or (name == "OnHide" and self.name == nil), "No frame timers/action scripts allowed")
         self.scripts[name] = fn
     end
     function frame:CreateTexture()
+        nativeTextures=nativeTextures+1
         local texture = {}
         function texture:Hide() self.shown = false end
         function texture:Show() self.shown = true end
         function texture:SetAllPoints() end
+        function texture:ClearAllPoints() end
+        function texture:SetSize(w,h) self.width,self.height=w,h end
+        function texture:SetVertexColor(...) self.vertex={...} end
+        function texture:SetBlendMode(value) self.blend=value end
+        function texture:SetAtlas(value) self.atlas=value end
+        function texture:SetDesaturated(value) self.desaturated=value end
+        function texture:CreateAnimationGroup() self.group=GlowAnimationGroup();return self.group end
         function texture:SetPoint(...) end
         function texture:SetColorTexture(...) end
         function texture:SetTexCoord(...) end
@@ -203,6 +233,7 @@ local coreTextChunk = assert(loadfile("RCPArsenal/Core.lua"))
 setfenv(coreTextChunk, coreTextEnv); coreTextChunk("RCPArsenal", coreTextRA)
 local function loadTools(settings)
     frames, timers, tickers, events, callbacks, initializers, items = {}, {}, {}, {}, {}, {}, {}
+    nativeGroups,nativeTracks,nativeTextures=0,0,0
     healthCalls, itemCalls, scans, accepted, hidden, notices, now = 0, 0, 0, 0, {}, 0, 100
     combat, encounter, raid, grouped, groupCount, groupCombat, exists = false, false, false, false, 0, {}, {}
     dead, petExistsUnknown, petCombatUnknown = false, false, false
@@ -213,6 +244,7 @@ local function loadTools(settings)
     profile = { personalTools = settings or { autoRes = false, consumableReminder = false, healthThreshold = 40, reminderCombat = "BOTH" } }
     RA = {
         NormalizeReminderText = coreTextRA.NormalizeReminderText,
+        NormalizeReminderGlow = coreTextRA.NormalizeReminderGlow,
         GetDB = function() return profile end,
         RegisterInitializer = function(_, fn) initializers[#initializers + 1] = fn end,
         RegisterCallback = function(_, name, fn) callbacks[name] = fn end,
@@ -229,6 +261,7 @@ local function loadTools(settings)
     }
     assert(loadfile("RCPArsenal/ReminderSounds.lua"))("RCPArsenal", RA)
     assert(loadfile("RCPArsenal/HealingSupplies.lua"))("RCPArsenal", RA)
+    assert(loadfile("RCPArsenal/ReminderGlow.lua"))("RCPArsenal", RA)
     assert(loadfile("RCPArsenal/PersonalTools.lua"))("RCPArsenal", RA)
     for _, fn in ipairs(initializers) do fn() end
     return RA.PersonalTools
@@ -305,7 +338,7 @@ tools = loadTools()
 ready(5512); ready(224464); ready(241304); ready(271884)
 check(tools:SetOption("consumableReminder", true), "Reminder enable failed")
 check(tools:GetState().itemID == 224464, "Demonic Healthstone must have priority")
-check(#frames == 3 and frames[1].shown and rawequal(frames[1].alpha, secret), "Secret alpha must reach parent sink")
+check(#frames == 4 and frames[1].shown and rawequal(frames[1].alpha, secret), "Secret alpha must reach parent sink")
 check(frames[2].animation.plays == 1 and #tickers == 0,
     "Inventory selection must use events with no readiness ticker")
 local curve = tools:GetReminderCurveForValidation()
@@ -445,7 +478,7 @@ check(tools:SetReminderPosition(32, -88), "Saved placement setup failed")
 local savedPosition = profile.personalTools.reminderPosition
 check(tools:PreviewReminder(), "Preview failed while disabled")
 local sample = frames[1]
-check(#frames == 2 and sample.name == "RCPArsenalConsumableReminderPreview" and sample.shown and sample.alpha == 1,
+check(#frames == 3 and sample.name == "RCPArsenalConsumableReminderPreview" and sample.shown and sample.alpha == 1,
     "Explicit preview must show only an ordinary sample")
 check(sample.width == 56 and sample.height == 56 and sample.mouse == false and sample.label.text:find("SAMPLE") and frames[2].animation:IsPlaying(),
     "Preview must be a labeled 56px noninteractive sample")
@@ -453,7 +486,7 @@ check(sample.point[4] == 32 and sample.point[5] == -88 and profile.personalTools
     "Preview must preserve and use saved position")
 check(not tools:GetState().consumableReminder and itemCalls == 0 and healthCalls == 0 and #tickers == 0 and #timers == 0,
     "Preview must not enable live checks or allocate timers")
-check(tools:MoveReminder() and #frames == 2 and sample.mouse and tools:GetState().previewMode == "MOVE" and not frames[2].animation:IsPlaying(),
+check(tools:MoveReminder() and #frames == 3 and sample.mouse and tools:GetState().previewMode == "MOVE" and not frames[2].animation:IsPlaying(),
     "Move must reuse explicit sample with drag enabled")
 sample.scripts.OnDragStart()
 check(sample.moving, "Move sample did not start dragging")
@@ -616,7 +649,7 @@ check(migrated.personalTools.reminderSoundChannel=='Master' and migrated.persona
 -- One native preview frame, full-text/animation clamp, saved anchor unchanged.
 tools=loadTools();tools:SetReminderPosition(800,-500);local saved=profile.personalTools.reminderPosition
 check(tools:PreviewReminder('empty'),"Empty warning sample failed")
-check(#frames==2 and not frames[1].icon.shown and frames[2].strings[1].text=='OUT OF POTIONS!'
+check(#frames==3 and not frames[1].icon.shown and frames[2].strings[1].text=='OUT OF POTIONS!'
     and frames[2].strings[1].textHeight==48,"Large empty sample has an icon or wrong independent size")
 local inset=frames[1].clampInsets
 check(inset[1]<-300 and inset[2]>300 and inset[4]<-60 and inset[3]>=20,"Move clamp excludes text/header/animation")

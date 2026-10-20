@@ -92,7 +92,10 @@ local function RenderReminder()
     local personal=RA:GetDB().personalTools
     local kind=session.kind
     frame.icon:SetShown(kind~="empty")
-    frame.glow:SetShown((kind=="stone" or kind=="potion") and personal.reminderStoneGlow~=false)
+    if (kind=="stone" or kind=="potion") and personal.reminderStoneGlow~=false then
+        frame.glow:Configure(RA:NormalizeReminderGlow(personal.reminderGlow),personal.reminderIconSize or 56)
+        frame.glow:Start()
+    else frame.glow:Stop() end
     frame.icon:SetTexture(kind=="potion" and "Interface\\Icons\\INV_Potion_51" or "Interface\\Icons\\INV_Stone_04")
     local text=kind=="empty" and "OUT OF POTIONS!" or (kind=="potion" and personal.reminderPotionText or personal.reminderStoneText)
     local size=kind=="empty" and (personal.reminderEmptyTextSize or 48) or (personal.reminderTextSize or 10)
@@ -102,7 +105,11 @@ local function RenderReminder()
     frame.caption:ClearAllPoints();frame.caption:SetPoint("TOP",frame,"BOTTOM",0,-4)
     frame.caption:SetWidth(math.min(width,kind=="empty" and (#"OUT OF POTIONS!"+1)*size or math.max(260,frame:GetWidth())))
     RA:SetVisualText(frame.caption,(text or ""):gsub("|","||"))
-    if frame.SetClampRectInsets then frame:SetClampRectInsets(-math.max(0,(frame.caption:GetWidth()-frame:GetWidth())/2),math.max(0,(frame.caption:GetWidth()-frame:GetWidth())/2),24,-math.max(24,size*2)) end
+    if frame.SetClampRectInsets then
+        local extent=kind~="empty" and RA.ReminderGlow:GetExtent(RA:NormalizeReminderGlow(personal.reminderGlow),personal.reminderIconSize or 56) or 0
+        local side=math.max(extent,(frame.caption:GetWidth()-frame:GetWidth())/2)
+        frame:SetClampRectInsets(-side,side,math.max(24,extent),-math.max(24,size*2,extent))
+    end
 end
 local function CreateSamples()
     if bar then return end
@@ -158,7 +165,7 @@ local function CreateSamples()
     puck.dock=CreateFrame("Frame",nil,puck,"BackdropTemplate");Backdrop(puck.dock,C.surfaceRaised,C.line)
     puck.dock.label=Font(puck.dock,"READY · PULL · SORT · SPLIT",9);puck.dock.label:SetPoint("CENTER",puck.dock,"CENTER",0,0)
     local reminder=samples.REMINDER
-    reminder.glow=reminder:CreateTexture(nil,"BACKGROUND");reminder.glow:SetPoint("TOPLEFT",reminder,"TOPLEFT",-3,3);reminder.glow:SetPoint("BOTTOMRIGHT",reminder,"BOTTOMRIGHT",3,-3);reminder.glow:SetColorTexture(1,0.72,0.18,0.65)
+    reminder.glow=RA.ReminderGlow:Create(reminder)
     reminder.icon=reminder:CreateTexture(nil,"ARTWORK");reminder.icon:SetPoint("TOPLEFT",reminder,"TOPLEFT",3,-3);reminder.icon:SetPoint("BOTTOMRIGHT",reminder,"BOTTOMRIGHT",-3,3)
     reminder.caption=Font(reminder,"",10);reminder.caption:SetJustifyH("CENTER")
 end
@@ -294,6 +301,7 @@ function Placement:Cancel(reason,silent)
     if not session then return end
     local close=session.onClose;session=nil
     for _,id in ipairs(ids)do samples[id]:StopMovingOrSizing();samples[id]:Hide()end
+    samples.REMINDER.glow:Stop()
     bar:Hide()
     RA.LayoutPreviewActive=false
     RA.PersonalTools:SetLayoutMasked(false)
@@ -337,3 +345,7 @@ end
 for _,name in ipairs({"PROFILE_RESET","PROFILE_IMPORTED","OVERLAY_POSITION_CHANGED"})do
     RA:RegisterCallback(name,function()Placement:Cancel("Placement cancelled because settings or positions changed.")end)
 end
+
+RA:RegisterCallback("PERSONAL_TOOLS_CHANGED",function(option)
+    if session and (option=="reminderGlow" or option=="reminderStoneGlow" or option=="reminderIconSize") then RenderReminder() end
+end)

@@ -191,6 +191,8 @@ check(before.frames==0 and before.bags==0 and before.cooldowns==0 and before.tim
 h:combat(true);h:ready(271884);h.tools:SetOption('consumableReminder',true);h.native:Show()
 before=h:metrics();local stopsBefore=#h.stops
 h.tools:SetOption('reminderStoneGlow',false);h.tools:SetOption('reminderStoneGlow',true);h.native:Fire('OnShow')
+for _,style in ipairs({'PIXEL','BUTTON','AUTOCAST','STEADY'}) do h.tools:SetGlowOption('style',style);h.tools:SetGlowOption('color',{0.2,0.4,0.6}) end
+h.tools:ResetGlowSettings();h.native:Fire('OnShow')
 check(sameItemWork(before,h:metrics()) and #h.plays==1 and #h.stops==stopsBefore and h.tools:GetNativeSoundEligibility(),
     'Icon glow edits refreshed supply readiness or reset/replayed/stopped automatic audio')
 print(('PASS: %d integrated consumable/audio assertions (actual modules; offline item/native mocks)'):format(checks))
