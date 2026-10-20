@@ -188,4 +188,9 @@ check(sameItemWork(before,h:metrics()) and h:metrics().health==before.health and
 h=Lifecycle();before=h:metrics()
 check(before.frames==0 and before.bags==0 and before.cooldowns==0 and before.timers==0 and before.tickers==0 and h.native.hookCalls==0,
     'Fresh disabled lifecycle allocated/scanned/bound')
+h:combat(true);h:ready(271884);h.tools:SetOption('consumableReminder',true);h.native:Show()
+before=h:metrics();local stopsBefore=#h.stops
+h.tools:SetOption('reminderStoneGlow',false);h.tools:SetOption('reminderStoneGlow',true);h.native:Fire('OnShow')
+check(sameItemWork(before,h:metrics()) and #h.plays==1 and #h.stops==stopsBefore and h.tools:GetNativeSoundEligibility(),
+    'Icon glow edits refreshed supply readiness or reset/replayed/stopped automatic audio')
 print(('PASS: %d integrated consumable/audio assertions (actual modules; offline item/native mocks)'):format(checks))

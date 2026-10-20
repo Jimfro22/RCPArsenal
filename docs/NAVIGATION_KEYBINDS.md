@@ -1,5 +1,7 @@
 # Navigation, direct marker keys and reminder polish - 0.15.3-alpha.6
 
+Historical glow detail: [alpha.11 icon glow](ICON_GLOW.md) extends the existing effect to visible potion icons and adds the Personal Tools switch; it supersedes the Healthstone-only description below.
+
 Bare /rcp, /rcp config and generic window-open buttons restore the last valid view, including Available Cooldowns subtabs. Explicit destinations such as /rcp addons, /rcp markers and /rcp tools retain priority. First use or invalid/removed saved views fall back to Addons & Versions. Navigation is stored in RaidArsenalDB.navigation outside portable/resettable profiles; import, reset, close and reload do not discard it or activate tools.
 
 ## Edit marker keys inside Arsenal

@@ -30,6 +30,7 @@ local soundSupplyReady = false
 local previewKind = "stone"
 local reminderReason = "Off."
 local resReason = "Off."
+local function IsItemIcon(kind) return kind == "stone" or kind == "potion" end
 
 local function IsSecret(value)
     return type(issecretvalue) == "function" and issecretvalue(value)
@@ -145,11 +146,12 @@ local function FitAndClamp(frame, label, kind, requestedSize)
         width, height = width + 2, height + 2
         if label.SetWidth then label:SetWidth(width) end
     end
-    local clamped = kind == "empty" or kind == "stone" or frame.isPreview == true
+    local itemIcon = IsItemIcon(kind)
+    local clamped = kind == "empty" or itemIcon or frame.isPreview == true
     if frame.SetClampedToScreen then pcall(frame.SetClampedToScreen, frame, clamped) end
     if frame.SetClampRectInsets then
-        local side = clamped and math.max(kind == "stone" and 4 or 0, (width - IconSize()) / 2) or 0
-        local top = clamped and (frame.isPreview and 20 or kind == "stone" and 11 or 7) or 0
+        local side = clamped and math.max(itemIcon and 4 or 0, (width - IconSize()) / 2) or 0
+        local top = clamped and (frame.isPreview and 20 or itemIcon and 11 or 7) or 0
         local bottom = clamped and -(4 + height + 7) or 0
         -- Native offset signs match Blizzard EditMode's selection-bound clamp.
         -- Include the entire caption and +/-7 animation, without saving a move.
@@ -359,6 +361,11 @@ local function BuildCurve(threshold)
     return true
 end
 
+local function PrepareGlowCurve()
+    if Enabled("consumableReminder") and IsItemIcon(selectedKind) and reminder and reminder.glow
+        and (Settings() or {}).reminderStoneGlow ~= false and not glowCurve35 then glowCurve35 = CreateHealthCurve(35) end
+end
+
 local function ApplyHealthAlpha()
     if not reminder or not selectedKind or not Enabled("consumableReminder") then return end
     -- ReadBoolean rejects secret/unknown life state before Lua branches. This
@@ -379,7 +386,7 @@ local function ApplyHealthAlpha()
     if not ok then
         CancelReadiness(); HideReminder("Native health display unavailable; visual suppressed."); return
     end
-    if selectedKind == "stone" and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false then
+    if IsItemIcon(selectedKind) and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false then
         local glowOK = glowCurve35 and pcall(function()
             reminder.glow:SetAlpha(UnitHealthPercent("player", true, glowCurve35))
             reminder.glow:Show()
@@ -475,7 +482,7 @@ function Tools:Refresh(refreshInventory)
         if candidate then
             CreateReminder()
             selectedItem, selectedKind = candidate.id, candidate.kind
-            if selectedKind == "stone" and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false and not glowCurve35 then glowCurve35 = CreateHealthCurve(35) end
+            PrepareGlowCurve()
             ApplyAppearance(reminder, reminderLabel, selectedKind)
             PositionFrame(reminder)
             reminder.icon:Show(); reminder.border:Show()
@@ -609,6 +616,13 @@ function Tools:SetOption(key, value)
     db.personalTools[key] = value
     -- Audio preferences do not refresh inventory, visuals or health.
     if key == "reminderSound" or key == "reminderSoundChoice" or key == "reminderSoundChannel" or key == "reminderSoundWhenEffectsMuted" then Notify(key); return true end
+    if key == "reminderStoneGlow" then
+        -- Only the owned visual changes. Preserve the supply cache/expiry and
+        -- audio latch; OFF tools stay unallocated and health hooks never retry.
+        if value then PrepareGlowCurve(); ApplyHealthAlpha() else HideGlow() end
+        Notify(key)
+        return true
+    end
     ApplyAppearance(reminder, reminderLabel, selectedKind)
     ApplyAppearance(preview, previewCaption, previewKind)
     self:Refresh(key == "consumableReminder")

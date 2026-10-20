@@ -92,7 +92,7 @@ local function RenderReminder()
     local personal=RA:GetDB().personalTools
     local kind=session.kind
     frame.icon:SetShown(kind~="empty")
-    frame.glow:SetShown(kind=="stone" and personal.reminderStoneGlow~=false)
+    frame.glow:SetShown((kind=="stone" or kind=="potion") and personal.reminderStoneGlow~=false)
     frame.icon:SetTexture(kind=="potion" and "Interface\\Icons\\INV_Potion_51" or "Interface\\Icons\\INV_Stone_04")
     local text=kind=="empty" and "OUT OF POTIONS!" or (kind=="potion" and personal.reminderPotionText or personal.reminderStoneText)
     local size=kind=="empty" and (personal.reminderEmptyTextSize or 48) or (personal.reminderTextSize or 10)

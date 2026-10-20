@@ -68,7 +68,7 @@ function Setup:GetSummary()
         local sound = RA.ReminderSounds:Get(personal.reminderSoundChoice)
         selected[#selected + 1] = "Reminder at " .. tostring(value.threshold) .. "%"
             .. (value.sound and ("; sound: " .. (sound and sound.label or "Sound 6") .. " / " .. (personal.reminderSoundChannel or "Master")) or "; sound off")
-            .. (value.glow and "; Healthstone glow at 35%" or "; glow off")
+            .. (value.glow and "; icon glow at ≤35%" or "; glow off")
     end
     if value.quickBar then selected[#selected + 1] = "Quick Bar; provider classes " .. (value.missing and "on" or "off") end
     if value.hud then selected[#selected + 1] = "Available Cooldowns: HUD + inspection; tile click " .. value.leftClick end
