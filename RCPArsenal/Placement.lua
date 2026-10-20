@@ -288,7 +288,7 @@ end
 function Placement:RestoreStarting()
     if not session or Restricted() then return false end
     for _,id in ipairs(ids)do session.staged[id]=Copy(session.starting[id])end
-    RenderPositions();return true
+    RenderPositions();RenderQuickBarExample();return true
 end
 function Placement:Cancel(reason,silent)
     if not session then return end
