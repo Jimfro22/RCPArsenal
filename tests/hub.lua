@@ -277,6 +277,68 @@ RA.PersonalTools.GetState=function(...)hiddenPersonalReads=hiddenPersonalReads+1
 SlashCmdList.RCPARSENAL('')
 check(RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='ADDONS', 'First open must default to Addons')
 check(hiddenPersonalReads==0,'Addons open refreshed hidden personal controls')
+-- Matrix ages/eligibility stay live without rebuilding version rows for
+-- inspection progress or every heartbeat. Real readiness changes still paint.
+local snapshotGetter,localGetter,eligibilityGetter=RA.Readiness.GetSnapshot,RA.AddonCatalog.GetLocalReport,RA.Readiness.GetQueryEligibility
+local snapshotReads,localReads,eligibilityReads=0,0,0
+RA.Readiness.GetSnapshot=function(...)snapshotReads=snapshotReads+1;return snapshotGetter(...)end
+RA.AddonCatalog.GetLocalReport=function(...)localReads=localReads+1;return localGetter(...)end
+RA.Readiness.GetQueryEligibility=function(...)eligibilityReads=eligibilityReads+1;return eligibilityGetter(...)end
+local function activeMatrixTicker()
+    for i=#timers,1,-1 do if timers[i].ticker and not timers[i].cancelled then return timers[i] end end
+end
+local heartbeat=activeMatrixTicker()
+check(heartbeat~=nil,'Visible Addons pane did not start its status heartbeat')
+for i=1,3 do heartbeat.callback() end
+check(snapshotReads==0 and localReads==0 and eligibilityReads==3,'Status heartbeat copied unchanged rows or lost fresh eligibility')
+for i=1,20 do RA:FireCallback('REPORTS_UPDATED');RA:FireCallback('INSPECTION_STATE_CHANGED') end
+check(snapshotReads==0 and localReads==0 and eligibilityReads==3,'Inspection progress refreshed unrelated addon versions')
+RA:FireCallback('READINESS_UPDATED')
+check(snapshotReads==1 and localReads==1,'New readiness data did not refresh the visible matrix')
+event('ADDON_LOADED','AnotherAddon')
+check(snapshotReads==2 and localReads>=2,'Native addon load did not refresh visible local metadata')
+RA:CloseConfig();local afterClose=snapshotReads;heartbeat.callback()
+check(heartbeat.cancelled and snapshotReads==afterClose,'Closed Addons pane retained heartbeat work')
+RA.Readiness.GetSnapshot,RA.AddonCatalog.GetLocalReport,RA.Readiness.GetQueryEligibility=snapshotGetter,localGetter,eligibilityGetter
+
+local timeGetter,clock=GetTime,5
+GetTime=function()return clock end
+local sample={rows={},targets={},status='complete',queriedAt=0,stale=false}
+local remote={name='Remote-Realm',isPlayer=false,status='complete',addons={}}
+for _,entry in ipairs(RA.AddonCatalog.Entries)do remote.addons[entry.id]={id=entry.id,installed=true,enabled=true,loaded=true,version='1.2.3',state='current',versionState='current',receivedAt=0}end
+sample.rows={remote,{name='Test-Realm',isPlayer=true,status='local',addons={}}}
+local sampleReads=0
+RA.Readiness.GetSnapshot=function()sampleReads=sampleReads+1;sample.stale=clock>RA.Readiness.SNAPSHOT_LIFETIME;return sample end
+RA:OpenConfig('SETTINGS');RA:OpenConfig('ADDONS');heartbeat=activeMatrixTicker()
+local remoteRow,targetField
+for _,obj in ipairs(objects)do
+    if obj.cells and obj.name and obj.name.text=='Remote-Realm' then remoteRow=obj end
+    if obj.kind=='EditBox' and obj:GetWidth()==184 and obj:IsVisible() then targetField=obj end
+end
+check(remoteRow and targetField,'Matrix fixture did not display the current remote row/target field')
+local lines,addTooltipLine={},GameTooltip.AddLine
+GameTooltip.AddLine=function(_,line)lines[#lines+1]=line end
+remoteRow.cells.arsenal:Fire('OnEnter')
+check(table.concat(lines,'\n'):find('Report received 5s ago',1,true),'Cell tooltip did not compute its report age on hover')
+clock=12;lines={};remoteRow.cells.arsenal:Fire('OnEnter')
+check(table.concat(lines,'\n'):find('Report received 12s ago',1,true) and sampleReads==1,'Hover age stayed cached or rebuilt the snapshot')
+targetField:SetFocus();targetField:SetText('UNSAVED TARGET');targetField:Fire('OnTextChanged',true)
+heartbeat.callback();check(targetField:GetText()=='UNSAVED TARGET' and targetField:HasFocus(),'Status heartbeat overwrote the focused target draft')
+local matrixObjects=#objects
+clock=121;heartbeat.callback()
+check(sampleReads==2 and #objects==matrixObjects,'Stale boundary failed to repaint once or recreated matrix objects')
+lines={};remoteRow.cells.arsenal:Fire('OnEnter')
+check(table.concat(lines,'\n'):find('STALE: query again for current results.',1,true),'Stale tooltip did not catch up at the age boundary')
+clock=122;heartbeat.callback();check(sampleReads==2,'Already stale matrix rebuilt each heartbeat')
+local localMember=sample.rows[2]
+sample.rows={localMember};RA:FireCallback('READINESS_UPDATED')
+check(not remoteRow:IsShown() and remoteRow.tooltip==nil,'Hidden pooled row retained its previous snapshot closure')
+for _,cell in pairs(remoteRow.cells)do check(cell.tooltip==nil,'Hidden pooled cell retained its previous snapshot closure')end
+sample.rows={remote,localMember};RA:FireCallback('READINESS_UPDATED')
+check(remoteRow:IsVisible() and type(remoteRow.tooltip)=='function' and type(remoteRow.cells.arsenal.tooltip)=='function'
+    and #objects==matrixObjects,'Returning member failed to refresh/reuse its pooled row')
+targetField:Fire('OnEscapePressed');GameTooltip.AddLine=addTooltipLine
+RA.Readiness.GetSnapshot=snapshotGetter;GetTime=timeGetter
 RA:CloseConfig()
 SlashCmdList.RCPARSENAL('settings')
 check(RA.ConfigFrame:IsShown(), 'Real config did not open')
