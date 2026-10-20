@@ -139,7 +139,7 @@ function Markers:IsRadialEnabled()
 end
 
 function Markers:GetModeHelp()
-    return "Tap for random. Hold and aim to choose. Escape/right-click cancels."
+    return "Hold and aim, then release to place. Center release places nothing. Escape/right-click cancels."
 end
 
 function Markers:GetRadialStatusText()

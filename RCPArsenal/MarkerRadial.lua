@@ -11,10 +11,9 @@ local status = "Marker wheel is off."
 local DEADZONE, RADIUS, DISPLAY_DELAY, VISUAL_LIMIT = 22, 92, 0.18, 10
 
 -- Only the hardware CLICK handler selects/arms an action. Timing is entirely
--- presentation: a stationary long hold has the same random default as a tap.
+-- presentation; every center/no-sector release ends without placing a marker.
 local RESET = [[
     self:SetAttribute("rcp-radial-held", nil)
-    self:SetAttribute("rcp-radial-aimed", nil)
     self:SetAttribute("macrotext", nil)
     self:ClearBindings()
     self:GetFrameRef("rcp-radial-root"):Hide()
@@ -29,17 +28,10 @@ local CLICK = [[
         if self:GetAttribute("rcp-radial-held") then return false end
         self:SetAttribute("macrotext", nil)
         self:SetAttribute("rcp-radial-held", true)
-        self:SetAttribute("rcp-radial-aimed", nil)
         local root = self:GetFrameRef("rcp-radial-root")
         local center = self:GetFrameRef("rcp-radial-center")
         center:ClearAllPoints()
         center:SetPoint("CENTER", "$cursor", "BOTTOMLEFT", 0, 0)
-        local width, height = root:GetWidth() * 2, root:GetHeight() * 2
-        for i = 1, 8 do
-            local zone = self:GetFrameRef("rcp-radial-zone" .. i)
-            if i == 1 or i == 5 then zone:SetWidth(44) else zone:SetWidth(width) end
-            if i == 3 or i == 7 then zone:SetHeight(44) else zone:SetHeight(height) end
-        end
         root:Show()
         for i = 1, 2 do
             local key = self:GetAttribute("rcp-radial-key" .. i)
@@ -53,8 +45,14 @@ local CLICK = [[
                 end
             end
         end
-        self:SetBindingClick(true, "ESCAPE", "RCPArsenalWorldMarkerCancel", "LeftButton")
-        self:SetBindingClick(true, "BUTTON2", "RCPArsenalWorldMarkerCancel", "LeftButton")
+        for mask = 0, 7 do
+            local prefix = ""
+            if mask % 2 == 1 then prefix = "SHIFT-" .. prefix end
+            if math.floor(mask / 2) % 2 == 1 then prefix = "CTRL-" .. prefix end
+            if mask >= 4 then prefix = "ALT-" .. prefix end
+            self:SetBindingClick(true, prefix .. "ESCAPE", "RCPArsenalWorldMarkerCancel", "LeftButton")
+            self:SetBindingClick(true, prefix .. "BUTTON2", "RCPArsenalWorldMarkerCancel", "LeftButton")
+        end
         local left, bottom = center:GetRect()
         self:CallMethod("RCPRadialBeginVisual", left + 22, bottom + 22)
         return false
@@ -68,9 +66,7 @@ local CLICK = [[
         local left, bottom, width, height = root:GetRect()
         local cl, cb = center:GetRect()
         local dx, dy = left + x * width - cl - 22, bottom + y * height - cb - 22
-        if math.abs(dx) <= 22 and math.abs(dy) <= 22 then
-            if not self:GetAttribute("rcp-radial-aimed") then marker = random(1, 8) end
-        else
+        if math.abs(dx) > 22 or math.abs(dy) > 22 then
             marker = (math.floor((math.atan2(dx, dy) + math.pi / 8) / (math.pi / 4)) % 8) + 1
         end
     end
@@ -79,9 +75,6 @@ local CLICK = [[
     self:SetAttribute("macrotext", "/wm [@cursor] " .. marker)
 ]]
 
-local AIM = [[
-    if control:GetAttribute("rcp-radial-held") then control:SetAttribute("rcp-radial-aimed", true) end
-]]
 local CANCEL = [[
     if not down then return false end
     local cycle = self:GetFrameRef("cycle")
@@ -146,9 +139,8 @@ local function UpdateVisual(_, elapsed)
         slot.icon:SetAlpha(selected and selected ~= i and 0.45 or 1)
         slot.highlight:SetAlpha(selected == i and 1 or 0)
     end
-    local aimed = cycle:GetAttribute("rcp-radial-aimed")
-    Text(visual.choice, selected and RA.WorldMarkers.Definitions[selected].name or aimed and "CANCEL" or "RANDOM")
-    Text(visual.hint, "Release to " .. (selected and "place" or aimed and "cancel" or "randomize"))
+    Text(visual.choice, selected and RA.WorldMarkers.Definitions[selected].name or "CHOOSE A MARKER")
+    Text(visual.hint, selected and "Release to place" or "Center release places nothing")
 end
 
 local function CreateVisual()
@@ -208,10 +200,18 @@ local function BeginVisual(_, x, y)
 end
 
 local function Create()
-    root = CreateFrame("Frame", "RCPArsenalWorldMarkerRadial", UIParent, "SecureHandlerBaseTemplate")
+    root = CreateFrame("Button", "RCPArsenalWorldMarkerRadial", UIParent, "SecureHandlerBaseTemplate")
     root:SetAllPoints(UIParent)
     root:SetFrameStrata("FULLSCREEN_DIALOG")
-    root:EnableMouse(false)
+    -- A hardware right-click surface covers the screen for the entire hold,
+    -- including the visual delay and cursor positions outside the wheel.
+    root:EnableMouse(true)
+    root:RegisterForClicks("RightButtonDown", "RightButtonUp")
+    local passthrough = {"LeftButton", "MiddleButton"}
+    for button = 4, 31 do passthrough[#passthrough + 1] = "Button" .. button end
+    root:SetPassThroughButtons(unpack(passthrough))
+    root:SetFrameRef("cycle", cycle)
+    SecureHandlerWrapScript(root, "OnClick", cycle, CANCEL)
     root:Hide()
     SecureHandlerWrapScript(root, "OnHide", cycle, HIDE)
     center = CreateFrame("Frame", nil, root, "SecureHandlerBaseTemplate")
@@ -219,24 +219,6 @@ local function Create()
     center:EnableMouse(false)
     cycle:SetFrameRef("rcp-radial-root", root)
     cycle:SetFrameRef("rcp-radial-center", center)
-    -- Motion-only rectangles tile the region outside the square deadzone.
-    -- Showing at the cursor cannot itself count as aiming: Blizzard's secure
-    -- OnEnter wrapper only runs its snippet for a genuine motion event.
-    local anchors = {
-        {"BOTTOM", "TOP"}, {"BOTTOMLEFT", "TOPRIGHT"},
-        {"LEFT", "RIGHT"}, {"TOPLEFT", "BOTTOMRIGHT"},
-        {"TOP", "BOTTOM"}, {"TOPRIGHT", "BOTTOMLEFT"},
-        {"RIGHT", "LEFT"}, {"BOTTOMRIGHT", "TOPLEFT"},
-    }
-    for i, points in ipairs(anchors) do
-        local zone = CreateFrame("Frame", nil, root, "SecureHandlerBaseTemplate")
-        zone:SetSize(1, 1)
-        zone:SetPoint(points[1], center, points[2], 0, 0)
-        zone:EnableMouse(false)
-        zone:EnableMouseMotion(true)
-        cycle:SetFrameRef("rcp-radial-zone" .. i, zone)
-        SecureHandlerWrapScript(zone, "OnEnter", cycle, AIM)
-    end
     local cancel = CreateFrame("Button", "RCPArsenalWorldMarkerCancel", UIParent, "SecureHandlerBaseTemplate")
     cancel:SetSize(1, 1)
     cancel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
