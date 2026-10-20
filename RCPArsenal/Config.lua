@@ -4,6 +4,12 @@ local Theme = RA.Theme
 local TC = Theme.Colors
 
 local frame
+local function HideConfig(intent)
+    if not frame then return end
+    frame.__rcpHideIntent=intent
+    frame:Hide()
+    frame.__rcpHideIntent=nil
+end
 local panes = {}
 local tabButtons = {}
 local controls = {}
@@ -35,6 +41,8 @@ local RefreshWorldMarkers
 local RefreshConfig
 local RefreshHub
 local RefreshFooter
+local RefreshSetup
+local placementReturnPending
 local advancedBack
 local cooldownScroll
 local cooldownTabs = {}
@@ -704,7 +712,7 @@ local function UpdatePreview()
 end
 
 local function CreateHUDPane(parent)
-    CreateHeading(parent, "Display & Position", "Unlock in the footer, then drag the HUD grip. Quick Bar keeps its own position.")
+    CreateHeading(parent, "Display & Position", "Move all stages every overlay together. These local controls affect only the HUD.")
 
     local settingsCard = CreateCard(parent, "LAYOUT", "Scale the complete HUD or tune its physical tile density independently.")
     SetSize(settingsCard, 438, 598)
@@ -822,6 +830,15 @@ local function CreateHUDPane(parent)
     RA:SetVisualText(positionHelp, "Unlock below, then drag the HUD grip.\nRecenter resets only the HUD position.")
     SetWidth(positionHelp, 300)
     SetPoint(positionHelp, "TOPLEFT", positionCard, "TOPLEFT", 18, -134)
+    local recenter=CreateButton(positionCard,"RECENTER HUD",144,28,function()RA:RecoverHUD();RefreshConfig()end)
+    SetPoint(recenter,"TOPLEFT",positionCard,"TOPLEFT",18,-174)
+    local lock=CreateButton(positionCard,"LOCK HUD",144,28,function()RA:SetLocked(not RA:GetDB().locked);RefreshConfig()end)
+    SetPoint(lock,"LEFT",recenter,"RIGHT",10,0)
+    lock.Refresh=function(self)
+        RA:SetVisualText(self.label,RA:GetDB().locked and "UNLOCK HUD" or "LOCK HUD")
+        self:SetSelected(RA:GetDB().locked)
+    end
+    RegisterControl(lock)
 
     local background = CreateSegmented(styleCard, "BACKGROUND STYLE", {
         {label = "NONE", value = "NONE"},
@@ -1538,9 +1555,22 @@ local function CreateWorldMarkersPane(parent)
             message = detail or ""
         end)
     SetPoint(toggle, "TOPLEFT", parent, "TOPLEFT", 0, -62)
-    SetWidth(toggle, 950)
+    SetWidth(toggle, 462)
+    local radialToggle=CreateToggle(parent,"Hold marker wheel (optional)","Tap for random. Hold and aim to choose. Escape/right-click cancels.",
+        function()return markers:GetSettings().radialEnabled==true end,
+        function(value)local _,detail=markers:SetRadialEnabled(value);message=detail or "" end)
+    SetPoint(radialToggle,"TOPRIGHT",parent,"TOPRIGHT",0,-62);SetWidth(radialToggle,472)
+    radialToggle:HookScript("OnEnter",function(self)
+        GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText("Hold marker wheel · optional prototype")
+        GameTooltip:AddLine(markers:GetModeHelp(),0.90,0.92,0.95,true)
+        GameTooltip:AddLine("Release without aiming chooses a random marker, even after a long hold. After aiming, return to center to cancel.",0.76,0.80,0.86,true)
+        GameTooltip:AddLine("Release mouse look before aiming. Key-up attempts placement at the current cursor; Blizzard checks permissions and valid terrain.",0.76,0.80,0.86,true)
+        GameTooltip:AddLine("The optional wheel is experimental; test your keybind in game before a pull. Unsupported keys use the normal sequence; your saved wheel choice is kept.",0.95,0.68,0.36,true)
+        GameTooltip:Show()
+    end)
+    radialToggle:HookScript("OnLeave",function()GameTooltip:Hide()end)
 
-    local orderCard = CreateCard(parent, "MARKER ORDER", "Click a marker to append it. Select a numbered slot to move or remove it.")
+    local orderCard = CreateCard(parent, "MARKER ORDER", "Normal sequence: click to append; select a slot to edit. The optional wheel always offers all eight markers.")
     SetSize(orderCard, 950, 270)
     SetPoint(orderCard, "TOPLEFT", parent, "TOPLEFT", 0, -126)
     local empty = Font(orderCard, 11, TC.textSoft, "REGULAR")
@@ -1635,7 +1665,7 @@ local function CreateWorldMarkersPane(parent)
     end)
     SetPoint(remove, "LEFT", right, "RIGHT", 8, 0)
 
-    local bindingCard = CreateCard(parent, "KEY BINDINGS", "Press the place key repeatedly; after the last marker, the sequence repeats.")
+    local bindingCard = CreateCard(parent, "KEY BINDINGS", "The same place key uses the normal sequence or your selected wheel mode. Clear all remains separate.")
     SetSize(bindingCard, 950, 194)
     SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -410)
     local bindings = RA.MarkerBindings
@@ -1812,6 +1842,7 @@ local function CreateWorldMarkersPane(parent)
         toggle:Refresh()
         toggle:SetEnabled(not combat)
         toggle:SetAlpha(combat and 0.45 or 1)
+        radialToggle:Refresh();radialToggle:SetEnabled(not combat);radialToggle:SetAlpha(combat and 0.45 or 1)
         for id, button in ipairs(palette) do
             local present = false
             for _, markerID in ipairs(order) do if id == markerID then present = true end end
@@ -1825,7 +1856,7 @@ local function CreateWorldMarkersPane(parent)
             slot:SetSelected(selected == id)
             if order[id] then slot.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. markers.Definitions[order[id]].icon) end
         end
-        empty:SetShown(#order == 0)
+        empty:SetShown(#order == 0 and not markers:IsRadialEnabled())
         left:SetEnabled(not combat and selected ~= nil and selected > 1)
         right:SetEnabled(not combat and selected ~= nil and selected < #order)
         remove:SetEnabled(not combat and selected ~= nil)
@@ -1848,11 +1879,13 @@ local function CreateWorldMarkersPane(parent)
         if pending then
             RA:SetVisualText(state, "Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
         elseif combat then
-            RA:SetVisualText(state, "Change setup after combat. Each place keypress advances once; placement is checked by Blizzard.")
+            RA:SetVisualText(state, "Change setup after combat. "..(markers:IsRadialEnabled() and markers:GetModeHelp() or "Normal sequence: each press advances once; Blizzard checks placement."))
+        elseif not settings.enabled then
+            RA:SetVisualText(state,"World markers off. Prepare your sequence, mode and bindings, then enable when ready.")
+        elseif settings.radialEnabled==true then
+            RA:SetVisualText(state,markers:IsRadialEnabled() and "Wheel: Random before aim; aim to choose; return to center after aim to cancel. "..markers:GetRadialStatusText() or markers:GetRadialStatusText())
         elseif #order == 0 then
             RA:SetVisualText(state, "Add at least one marker to use the cycler. Place-next is inactive.")
-        elseif not settings.enabled then
-            RA:SetVisualText(state, "Cycler off. Prepare your order and bindings, then enable when ready.")
         else
             RA:SetVisualText(state, "Each keypress attempts the next slot, even if rejected. Enabling, order changes and clear restart at slot 1.")
         end
@@ -2013,7 +2046,7 @@ local function SetTab(tabKey)
         button.icon:SetVertexColor(unpack(selected and TC.white or TC.muted))
         button.bar:SetShown(selected)
     end
-    if hudFooter then hudFooter:SetShown(tabKey == "HUD") end
+    if hudFooter then hudFooter:Show() end
     if advancedBack then
         advancedBack:SetShown(tabKey == "NORTHERNSKY")
         RA:SetVisualText(advancedBack.label, "BACK TO ADDONS")
@@ -2025,6 +2058,7 @@ RefreshConfig = function()
     if not frame then
         return
     end
+    if RefreshSetup and panes.SETUP and panes.SETUP:IsVisible() then RefreshSetup() end
     RefreshVisibleControls()
     if panes.CONTENT and panes.CONTENT:IsVisible() then RefreshCategoryRows(); RefreshAbilityList(false) end
     if panes.SCANNING and panes.SCANNING:IsVisible() then RefreshScanPane() end
@@ -2264,7 +2298,7 @@ local function CreateConfig()
     SetWidth(hint, 200)
     SetPoint(hint, "BOTTOMLEFT", sidebar, "BOTTOMLEFT", 18, 30)
 
-    local close = CreateButton(main, "X", 38, 38, function() frame:Hide() end)
+    local close = CreateButton(main, "X", 38, 38, function() HideConfig("USER") end)
     SetPoint(close, "TOPRIGHT", main, "TOPRIGHT", -16, -16)
 
     local content = CreateFrame("Frame", nil, main)
@@ -2277,6 +2311,8 @@ local function CreateConfig()
         pane:Hide()
         panes[TAB_DEFS[i].key] = pane
     end
+    panes.SETUP = CreateFrame("Frame", nil, content)
+    panes.SETUP:SetAllPoints(content);panes.SETUP:Hide()
     for key in pairs(PANE_CONTEXT) do
         if key == "NORTHERNSKY" then
             local pane = CreateFrame("Frame", nil, content)
@@ -2319,6 +2355,10 @@ local function CreateConfig()
         Toggle = CreateToggle, Slider = CreateSlider, EditBox = CreateEditBox, Segmented = CreateSegmented, Backdrop = Backdrop,
         Refresh = function() RefreshConfig() end,
     })
+    RefreshSetup = RA:CreateSetupPane(panes.SETUP, {
+        Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
+        Toggle = CreateToggle, Slider = CreateSlider, Segmented = CreateSegmented,
+    })
 
     CreateHUDPane(panes.HUD)
     CreateQuickBarPane(panes.QUICKBAR)
@@ -2327,38 +2367,18 @@ local function CreateConfig()
     CreateActionsPane(panes.ACTIONS)
     CreateWorldMarkersPane(panes.WORLDMARKERS)
 
-    local recover = CreateButton(footer, "RECENTER HUD", 144, 42, function()
-        if RA.RecoverHUD then RA:RecoverHUD() end
-        RefreshConfig()
-    end, false, Theme.Assets.IconTarget)
-    SetPoint(recover, "LEFT", footer, "LEFT", 12, 0)
-
-    local lock = CreateButton(footer, "LOCK HUD", 144, 42, function(self)
-        RA:SetLocked(not RA:GetDB().locked)
-        self:Refresh()
-    end, false, Theme.Assets.IconLock)
-    SetPoint(lock, "LEFT", recover, "RIGHT", 10, 0)
-    lock.Refresh = function(self)
-        RA:SetVisualText(self.label, RA:GetDB().locked and "UNLOCK HUD" or "LOCK HUD")
-        self:SetSelected(RA:GetDB().locked)
-    end
-    RegisterControl(lock)
-
-    local demo = CreateButton(footer, "DEMO", 144, 42, function(self)
-        RA:SetDemoMode(not RA:GetDB().demoMode)
-        self:Refresh()
-        RefreshConfig()
-    end, false, Theme.Assets.IconPlay)
-    SetPoint(demo, "LEFT", lock, "RIGHT", 10, 0)
-    demo.Refresh = function(self)
-        RA:SetVisualText(self.label, RA:GetDB().demoMode and "DEMO ON" or "DEMO OFF")
-        self:SetSelected(RA:GetDB().demoMode)
-    end
-    RegisterControl(demo)
+    local previewAll = CreateButton(footer, "PREVIEW ALL", 150, 42, function()RA:BeginGlobalPlacement("PREVIEW")end, false, Theme.Assets.IconPlay)
+    SetPoint(previewAll,"LEFT",footer,"LEFT",12,0)
+    local moveAll = CreateButton(footer, "MOVE ALL", 144, 42, function()RA:BeginGlobalPlacement("MOVE")end,false,Theme.Assets.IconTarget)
+    SetPoint(moveAll,"LEFT",previewAll,"RIGHT",10,0)
+    local setup = CreateButton(footer,"SETUP",116,42,function()RA:OpenSetup()end)
+    SetPoint(setup,"LEFT",moveAll,"RIGHT",10,0)
+    setup.Refresh=function(self)RA:SetVisualText(self.label,RA.Setup:HasDraft() and activeTab~="SETUP" and "BACK TO SETUP" or "SETUP")end
+    RegisterControl(setup)
 
     statusText = Font(footer, 9.3, TC.textSoft, "REGULAR")
     statusText:SetJustifyH("RIGHT")
-    SetPoint(statusText, "LEFT", demo, "RIGHT", 16, 0)
+    SetPoint(statusText, "LEFT", setup, "RIGHT", 16, 0)
     SetPoint(statusText, "RIGHT", footer, "RIGHT", -18, 0)
 
     local function FitToScreen()
@@ -2374,6 +2394,16 @@ local function CreateConfig()
         FitToScreen()
         SetTab(activeTab)
     end)
+    frame:HookScript("OnHide",function()
+        -- All addon-driven hides carry an intent. A native Escape from
+        -- UISpecialFrames has no intent; ancestor hides leave IsShown true.
+        local userDismiss=frame.__rcpHideIntent=="USER" or (frame.__rcpHideIntent==nil and not frame:IsShown())
+        if userDismiss and activeTab=="SETUP" and RA.Setup:HasDraft() and not RA.Placement:IsActive() then
+            local ok,destination=RA.Setup:Skip()
+            if ok then activeTab=destination or "ADDONS";Navigation().lastTab=activeTab end
+        end
+    end)
+    if type(UISpecialFrames)=="table" then table.insert(UISpecialFrames,"RCPArsenalConfig") end
 end
 
 function RA:OpenConfig(tabKey)
@@ -2381,8 +2411,12 @@ function RA:OpenConfig(tabKey)
         self:Print("Configuration is locked during combat.")
         return
     end
-    local requested = tabKey == nil and Navigation().lastTab or tabKey
+    if self.Placement:IsActive() then self.Placement:Cancel("Arsenal opened",true) end
+    placementReturnPending = nil
+    local previous = activeTab
+    local requested = tabKey == nil and (self.Setup:IsFirstRunPending() and "SETUP" or Navigation().lastTab) or tabKey
     activeTab = type(requested) == "string" and requested or "ADDONS"
+    if activeTab == "SETUP" then self.Setup:Begin(previous) end
     if not frame then
         CreateConfig()
     end
@@ -2391,6 +2425,35 @@ function RA:OpenConfig(tabKey)
     if alreadyShown then SetTab(activeTab) end
 end
 
+function RA:OpenSetup()
+    if InCombatLockdown() then self:Print("Open Setup after combat.");return false end
+    self.Setup:Begin(activeTab)
+    self:OpenConfig("SETUP")
+    return true
+end
+
+function RA:BeginGlobalPlacement(mode)
+    if not frame then self:OpenConfig() end
+    if not frame then return false end
+    local ok,reason=self.Placement:Start(mode,function(message)
+        if InCombatLockdown() or RA.InEncounter or (IsEncounterInProgress and IsEncounterInProgress()) then placementReturnPending=true
+        else RA:OpenConfig(activeTab) end
+        if message then RA:Print(message) end
+    end)
+    if ok then HideConfig("PLACEMENT") elseif reason then self:Print(reason) end
+    return ok,reason
+end
+
+RA:RegisterCallback("SETUP_CHANGED",function()if frame and frame:IsShown() and panes.SETUP:IsVisible() then RefreshConfig() end end)
+local function RestoreAfterPlacement()
+    if placementReturnPending and not InCombatLockdown() and not RA.InEncounter and not (IsEncounterInProgress and IsEncounterInProgress()) then
+        placementReturnPending=nil;RA:OpenConfig(activeTab)
+    elseif frame and frame:IsShown() and panes.SETUP:IsVisible() then RefreshConfig() end
+end
+RA:RegisterEvent("PLAYER_REGEN_DISABLED",RestoreAfterPlacement)
+RA:RegisterEvent("PLAYER_REGEN_ENABLED",RestoreAfterPlacement)
+RA:RegisterEvent("ENCOUNTER_END",RestoreAfterPlacement)
+
 function RA:OpenProfileDialog(mode)
     if not frame then
         self:OpenConfig()
@@ -2398,8 +2461,8 @@ function RA:OpenProfileDialog(mode)
     OpenProfileDialog(mode)
 end
 
-function RA:CloseConfig()
-    if frame then frame:Hide() end
+function RA:CloseConfig(intent)
+    HideConfig(intent=="CONTEXT" and "CONTEXT" or "USER")
 end
 
 RA:RegisterInitializer(function()

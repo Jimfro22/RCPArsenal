@@ -23,6 +23,10 @@ _G["BINDING_NAME_" .. Markers.ClearBinding] = "Clear all world markers"
 -- Runs in Blizzard's restricted handler environment BEFORE the secure action.
 -- A fixed down phase prevents a key's release from advancing a second time.
 local CYCLE_SNIPPET = [[
+    if self:GetAttribute("rcp-input-suppressed") then return false end
+    if self:GetAttribute("rcp-radial-enabled") then
+        return self:RunAttribute("rcp-radial-click", button, down)
+    end
     if not down then return false end
     if not self:GetAttribute("enabled") then return false end
     local count = self:GetAttribute("count") or 0
@@ -36,14 +40,18 @@ local CYCLE_SNIPPET = [[
     self:SetAttribute("index", index)
 ]]
 local CLEAR_SNIPPET = [[
+    if self:GetAttribute("rcp-input-suppressed") then return false end
     if not down then return false end
     if not self:GetAttribute("enabled") then return false end
-    self:GetFrameRef("cycle"):SetAttribute("index", 1)
+    local cycle = self:GetFrameRef("cycle")
+    if cycle:GetAttribute("rcp-radial-reset") then cycle:RunAttribute("rcp-radial-reset") end
+    cycle:SetAttribute("index", 1)
 ]]
 
 local cycle, clear
 local effectiveEnabled = false
 local pending = false
+local inputSuppressed = false
 
 local function Notify()
     RA:FireCallback("WORLD_MARKERS_CHANGED")
@@ -82,9 +90,10 @@ function Markers:ApplyConfig()
     CreateActions()
     local settings = self:GetSettings()
     local order = settings.order
+    local radial = RA.MarkerRadial and settings.radialEnabled == true
     effectiveEnabled = settings.enabled == true
-    cycle:SetAttribute("enabled", effectiveEnabled and #order > 0)
-    cycle:SetAttribute("type", effectiveEnabled and #order > 0 and "macro" or nil)
+    cycle:SetAttribute("enabled", effectiveEnabled and (#order > 0 or radial))
+    cycle:SetAttribute("type", effectiveEnabled and (#order > 0 or radial) and "macro" or nil)
     cycle:SetAttribute("macrotext", nil)
     cycle:SetAttribute("count", #order)
     cycle:SetAttribute("index", 1)
@@ -96,6 +105,9 @@ function Markers:ApplyConfig()
     clear:SetAttribute("type", effectiveEnabled and "worldmarker" or nil)
     clear:SetAttribute("action", "clear")
     clear:SetAttribute("marker", nil) -- Blizzard's clear-all path uses nil.
+    cycle:SetAttribute("rcp-input-suppressed", inputSuppressed)
+    clear:SetAttribute("rcp-input-suppressed", inputSuppressed)
+    if RA.MarkerRadial then RA.MarkerRadial:Configure(cycle, effectiveEnabled and radial) end
     pending = false
     Notify()
     return true
@@ -115,8 +127,43 @@ function Markers:SetOrder(order)
     return self:ApplyConfig()
 end
 
+function Markers:SetRadialEnabled(enabled)
+    if InCombatLockdown() then return false, "Change this after combat." end
+    if not RA.MarkerRadial then return false, "Marker wheel is unavailable." end
+    self:GetSettings().radialEnabled = enabled == true
+    return self:ApplyConfig()
+end
+
+function Markers:IsRadialEnabled()
+    return cycle and cycle:GetAttribute("rcp-radial-enabled") == true or false
+end
+
+function Markers:GetModeHelp()
+    return "Tap for random. Hold and aim to choose. Escape/right-click cancels."
+end
+
+function Markers:GetRadialStatusText()
+    return RA.MarkerRadial and RA.MarkerRadial:GetStatusText() or "Marker wheel is unavailable."
+end
+
+-- The key editor keeps this set through the matching captured release. If an
+-- editor is closed by combat, keep the existing secure guard until safe again.
+local suppressionOwners = {}
+function Markers:SetInputSuppressed(suppressed, owner)
+    owner = owner or "editor"
+    if owner ~= "editor" and owner ~= "placement" then return false end
+    suppressionOwners[owner] = suppressed == true or nil
+    inputSuppressed = suppressionOwners.editor == true or suppressionOwners.placement == true
+    if InCombatLockdown() then pending = true; return false end
+    if not cycle then return true end
+    if RA.MarkerRadial then RA.MarkerRadial:Cancel() end
+    cycle:SetAttribute("rcp-input-suppressed", inputSuppressed)
+    clear:SetAttribute("rcp-input-suppressed", inputSuppressed)
+    return true
+end
+
 function Markers:GetNextMarker()
-    if not cycle or not effectiveEnabled then return nil end
+    if not cycle or not effectiveEnabled or self:IsRadialEnabled() then return nil end
     return cycle:GetAttribute("marker" .. (cycle:GetAttribute("index") or 1))
 end
 
@@ -143,5 +190,9 @@ RA:RegisterEvent("PLAYER_REGEN_ENABLED", function()
     if pending or not cycle then Markers:ApplyConfig() else Notify() end
 end)
 RA:RegisterEvent("PLAYER_REGEN_DISABLED", Notify)
-RA:RegisterEvent("UPDATE_BINDINGS", Notify)
+RA:RegisterEvent("UPDATE_BINDINGS", function()
+    if RA.MarkerRadial and Markers:GetSettings().radialEnabled == true and RA.MarkerRadial:NeedsBindingRefresh() then
+        Markers:ApplyConfig()
+    else Notify() end
+end)
 RA:RegisterEvent("GROUP_ROSTER_UPDATE", Notify)

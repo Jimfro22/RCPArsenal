@@ -334,6 +334,7 @@ local function SavePuckPosition()
     if RA.CaptureFrameTopLeft and RA:CaptureFrameTopLeft(puckAnchor, db.position) then
         db.positionAnchorVersion = 3
         puckPositionNormalized = true
+        RA:FireCallback("OVERLAY_POSITION_CHANGED")
     end
 end
 
@@ -1767,6 +1768,7 @@ local function RefreshDockStaticIcons()
 end
 
 local function UpdateVisibility()
+    if RA.LayoutPreviewActive then return end
     local db = GetToolboxDB()
     if not puck then
         if db and db.enabled == true and not InCombatLockdown() then CreateToolbox() end
@@ -2212,6 +2214,20 @@ function Toolbox:GetMissingCoverage()
 end
 function Toolbox:Refresh() UpdateVisibility() end
 function Toolbox:RefreshGeometry() RefreshDockGeometry() end
+function Toolbox:RefreshPosition()
+    if InCombatLockdown() then return false end
+    RestorePuckPosition()
+    return true
+end
+function Toolbox:GetLayoutSurfaces()
+    return {{frame=puck},{frame=missingBadge},{frame=dock},{frame=missingPanel},{frame=sortOptionsPanel}}
+end
+function Toolbox:GetPlacementMetrics()
+    local db=GetToolboxDB()
+    return {puckSize=db.puckSize or 30,direction=ResolveDockDirection(),auto=db.flyoutDirection=="AUTO",
+        width=db.enabled and dock and dock:GetWidth() or (db.showMissing~=false and DOCK_LAYOUT.width or DOCK_LAYOUT.widthNoMissing),height=DOCK_HEIGHT,
+        showMissing=db.showMissing~=false}
+end
 function Toolbox:ResetPosition()
     if InCombatLockdown() then return false end
     CloseDock(true)
@@ -2221,6 +2237,7 @@ function Toolbox:ResetPosition()
     if not db then return false end
     db.position = { point = "LEFT", relativePoint = "LEFT", x = 12, y = 70 }
     db.positionAnchorVersion = 0
+    RA:FireCallback("OVERLAY_POSITION_CHANGED")
     puckPositionNormalized = false
     RestorePuckPosition()
     RefreshDockGeometry()

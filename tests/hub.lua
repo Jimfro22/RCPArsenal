@@ -863,7 +863,16 @@ RA:OpenConfig('WORLDMARKERS')
 local function keyButton(key)
     for _,obj in ipairs(objects) do if obj.label and obj.label.text==key and obj:IsVisible() and obj:IsEnabled() then return obj end end
 end
-local markerAttributes=attributeWrites
+local function markerActionSnapshot()
+    local values={}
+    for _,name in ipairs({'RCPArsenalWorldMarkerCycle','RCPArsenalWorldMarkerClear'})do
+        for key,value in pairs(named[name].attrs)do
+            if key~='rcp-input-suppressed' then values[#values+1]=name..':'..key..'='..tostring(value) end
+        end
+    end
+    table.sort(values);return table.concat(values,'\n')
+end
+local markerAttributes=markerActionSnapshot()
 check(keyButton('F9') and keyButton('F10') and keyButton('F11'),'Current primary/alternate marker keys missing')
 keyButton('F9'):Fire('OnClick')
 local input=named.RCPArsenalMarkerBindingEditor
@@ -874,7 +883,7 @@ check(bindingWrites==writesBefore and bindingSaves==savesBefore and input:IsVisi
 input:Fire('OnKeyUp','F7');check(input:IsVisible() and bindingWrites==writesBefore,'Unrelated release ended key capture')
 input:Fire('OnKeyUp','F8')
 check(not input:IsShown() and bindingMap.F8==RA.WorldMarkers.PlaceBinding and bindingMap.F10==RA.WorldMarkers.PlaceBinding
-    and bindingMap.F9==nil and bindingSaves==savesBefore+1 and attributeWrites==markerAttributes,'UI assignment lost alternate or changed secure marker actions')
+    and bindingMap.F9==nil and bindingSaves==savesBefore+1 and markerActionSnapshot()==markerAttributes,'UI assignment lost alternate or changed secure marker actions')
 keyButton('F8'):Fire('OnClick');writesBefore,savesBefore=bindingWrites,bindingSaves
 input:Fire('OnKeyDown','SPACE');input:Fire('OnKeyUp','SPACE')
 check(input:IsVisible() and hasVisibleText('SPACE is assigned to Jump. Replace it?') and bindingWrites==writesBefore,'UI conflict replaced a key silently')

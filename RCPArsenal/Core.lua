@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.8"
+RA.VERSION = "0.15.3-alpha.9"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -127,10 +127,10 @@ local DEFAULTS = {
 
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
-        worldMarkers = { enabled = false },
+        worldMarkers = { enabled = false, radialEnabled = false },
         personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
             reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "BOTH", reminderSound = true,
-            reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false },
+            reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false, reminderStoneGlow = true },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
 
         -- Small hover puck that expands into pre-pull raid utilities. By
@@ -196,6 +196,7 @@ end
 function RA:NormalizeWorldMarkerSettings(settings)
     settings = type(settings) == "table" and settings or {}
     settings.enabled = settings.enabled == true
+    settings.radialEnabled = settings.radialEnabled == true
     local source = settings.order
     if type(source) ~= "table" then source = {1, 2, 3, 4, 5, 6, 7, 8} end
     local order, seen = {}, {}
@@ -444,6 +445,7 @@ local function MigrateProfile(profile)
     personal.reminderSoundChoice = RA.ReminderSounds and RA.ReminderSounds:NormalizeID(personal.reminderSoundChoice) or "sound_6"
     personal.reminderShowOnCooldown = personal.reminderShowOnCooldown == true
     personal.reminderSoundWhenEffectsMuted = personal.reminderSoundWhenEffectsMuted == true
+    personal.reminderStoneGlow = personal.reminderStoneGlow ~= false
     if personal.reminderSound == nil then personal.reminderSound = true else personal.reminderSound = personal.reminderSound == true end
     if personal.reminderCombat ~= "IN_COMBAT" and personal.reminderCombat ~= "OUT_OF_COMBAT" then personal.reminderCombat = "BOTH" end
     profile.readiness = type(profile.readiness) == "table" and profile.readiness or {}
@@ -690,12 +692,12 @@ function RA:SetHUDEnabled(enabled)
     return true
 end
 
-function RA:SetQuickBarEnabled(enabled)
+function RA:SetQuickBarEnabled(enabled, reviewedShowMissing)
     if InCombatLockdown() then return false, "Change this after combat." end
     local toolbox = self:GetDB().leaderToolbox
     -- Explicit activation adopts provider coverage even for legacy defaults.
     -- Ordinary refresh/normalization preserves a later deliberate OFF choice.
-    if enabled == true then toolbox.showMissing = true end
+    if enabled == true then toolbox.showMissing = reviewedShowMissing ~= false end
     toolbox.enabled = enabled == true
     if self.RaidLeaderToolbox then self.RaidLeaderToolbox:Refresh() end
     self:FireCallback("TOOLS_CHANGED")
@@ -930,6 +932,7 @@ RA:RegisterEvent("ADDON_LOADED", function(_, loadedAddon)
         return
     end
 
+    RA.WasExistingInstall = type(RaidArsenalDB) == "table" and type(RaidArsenalDB.profile) == "table"
     RaidArsenalDB = RaidArsenalDB or {}
     CopyDefaults(DEFAULTS, RaidArsenalDB)
     MigrateProfile(RaidArsenalDB.profile)

@@ -19,6 +19,7 @@ local VALID_POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true,
     CENTER = true, RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
 
 local reminder, bounce, curve, curveThreshold, glowCurve35, resTimer
+local layoutMasked, reminderDesiredShown = false, false
 local reminderEvents, resurrectionEvent = {}, nil
 local readinessTimer, readinessGeneration, lastExpiry = nil, 0, nil
 local reminderLabel, previewCaption
@@ -206,6 +207,7 @@ local function HideGlow()
 end
 
 local function HideReminder(reason)
+    reminderDesiredShown = false
     selectedItem, selectedKind = nil, nil
     reminderReason = reason
     HideGlow()
@@ -376,7 +378,7 @@ local function ApplyHealthAlpha()
     if not ok then
         CancelReadiness(); HideReminder("Native health display unavailable; visual suppressed."); return
     end
-    if selectedKind == "stone" and reminder.glow then
+    if selectedKind == "stone" and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false then
         local glowOK = glowCurve35 and pcall(function()
             reminder.glow:SetAlpha(UnitHealthPercent("player", true, glowCurve35))
             reminder.glow:Show()
@@ -466,14 +468,15 @@ function Tools:Refresh(refreshInventory)
         if candidate then
             CreateReminder()
             selectedItem, selectedKind = candidate.id, candidate.kind
-            if selectedKind == "stone" and reminder.glow and not glowCurve35 then glowCurve35 = CreateHealthCurve(35) end
+            if selectedKind == "stone" and reminder.glow and (Settings() or {}).reminderStoneGlow ~= false and not glowCurve35 then glowCurve35 = CreateHealthCurve(35) end
             ApplyAppearance(reminder, reminderLabel, selectedKind)
             PositionFrame(reminder)
             reminder.icon:Show(); reminder.border:Show()
             reminder.icon:SetTexture(candidate.icon)
             local label = selectedKind == "stone" and "Healthstone" or "Healing potion"
             reminderReason = label .. (readiness == "ready" and " ready (carried)." or readiness == "cooldown" and " carried; on cooldown." or " carried; readiness not confirmed.")
-            reminder:Show()
+            reminderDesiredShown = true
+            if not layoutMasked then reminder:Show() end
             StartBounce()
             ApplyHealthAlpha()
         elseif inventory.stone == false and inventory.potion == false then
@@ -483,7 +486,8 @@ function Tools:Refresh(refreshInventory)
             PositionFrame(reminder)
             reminder.icon:Hide(); reminder.border:Hide()
             reminderReason = "No supported healing item carried. Low-health visual: OUT OF POTIONS!"
-            reminder:Show()
+            reminderDesiredShown = true
+            if not layoutMasked then reminder:Show() end
             StartBounce()
             ApplyHealthAlpha()
         elseif inventory.stone == true or inventory.potion == true then
@@ -569,7 +573,7 @@ function Tools:SetOption(key, value)
     if not db then return false, "Profile unavailable." end
     if IsSecret(key) or IsSecret(value) then return false, "Invalid personal tool option." end
     if key ~= "autoRes" and key ~= "consumableReminder" and key ~= "healthThreshold"
-        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" and key ~= "reminderSoundWhenEffectsMuted" then
+        and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" and key ~= "reminderSoundWhenEffectsMuted" and key ~= "reminderStoneGlow" then
         return false, "Unknown personal tool option."
     end
     if key == "healthThreshold" then
@@ -613,6 +617,7 @@ function Tools:SetReminderPosition(x, y)
         x = math.max(-4096, math.min(4096, x)), y = math.max(-4096, math.min(4096, y)) }
     PositionReminder()
     Notify()
+    RA:FireCallback("OVERLAY_POSITION_CHANGED")
     return true
 end
 
@@ -622,7 +627,17 @@ function Tools:ResetReminderPosition()
     settings.reminderPosition = nil
     PositionReminder()
     Notify()
+    RA:FireCallback("OVERLAY_POSITION_CHANGED")
     return true
+end
+
+function Tools:RefreshReminderPosition()
+    PositionReminder()
+    return true
+end
+function Tools:SetLayoutMasked(masked)
+    layoutMasked = masked == true
+    if reminder then reminder:SetShown(not layoutMasked and reminderDesiredShown) end
 end
 
 local function SavePreviewPosition()
@@ -758,6 +773,7 @@ end
 function Tools:GetState()
     local soundChoice, soundChannel = SoundSelection()
     return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
+        reminderStoneGlow = (Settings() or {}).reminderStoneGlow ~= false,
         reminderSoundWhenEffectsMuted = Enabled("reminderSoundWhenEffectsMuted") == true, reminderShowOnCooldown = Enabled("reminderShowOnCooldown") == true, reminderSound = SoundEnabled(), reminderSoundChoice = soundChoice, reminderSoundChannel = soundChannel, healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
         reminderStoneText = ReminderText("stone"), reminderPotionText = ReminderText("potion"), reminderIconSize = IconSize(), reminderTextSize = TextSize(), reminderEmptyTextSize = EmptyTextSize(), reminderCombat = CombatMode(),
         reminderStatus = reminderReason, autoResStatus = resReason, previewMode = previewMode }
