@@ -20,7 +20,7 @@ function IsInGroup() return true end
 function UnitIsGroupLeader() return permitted end
 function UnitIsGroupAssistant() return false end
 function GetBindingKey(action) return unpack(keys[action] or {}) end
-for _, name in ipairs({'SetBinding', 'SaveBindings', 'SetOverrideBindingClick', 'ClearOverrideBindings', 'PlaceRaidMarker', 'RunMacroText', 'MouselookStop', 'SetCursorPosition', 'SpellTargetPosition'}) do
+for _, name in ipairs({'SetBinding', 'SaveBindings', 'SetOverrideBindingClick', 'ClearOverrideBindings', 'PlaceRaidMarker', 'RunMacroText', 'MouselookStop', 'SetCursorPosition', 'SpellTargetPosition', 'SpellTargetUnit', 'SpellStopTargeting', 'SpellIsTargeting'}) do
     _G[name] = function() error('Forbidden insecure/protected global: ' .. name) end
 end
 local function guard(frame)
@@ -177,7 +177,11 @@ local function dispatch(frame, down, button)
     if frame:GetAttribute('type') and (down == frame:GetAttribute('useOnKeyDown')) then
         attempts = attempts + 1
         check(hardware, 'Protected action without actual input')
-        if permitted then actions[#actions + 1] = {frame:GetAttribute('type'), frame:GetAttribute('macrotext'), cursorX, cursorY} end
+        if permitted then
+            local catcher=frame:GetFrameRef('rcp-radial-root')
+            actions[#actions + 1] = {frame:GetAttribute('type'), frame:GetAttribute('macrotext'), cursorX, cursorY,
+                {held=frame:GetAttribute('rcp-radial-held'),catcherShown=catcher and catcher:IsShown(),overrides=next(frame.overrides)~=nil}}
+        end
     end
     hardware = old
 end
@@ -233,10 +237,26 @@ for marker = 1, 8 do
     local angle = (marker - 1) * math.pi / 4
     move(960 + math.sin(angle) * 120, 540 + math.cos(angle) * 120)
     local before = #actions
+    local pending=timers[#timers]
+    if marker==1 then
+        fireTimer(pending)
+        local hint,flow=false,false
+        for _,frame in ipairs(frames) do
+            if frame:IsVisible() and frame.text=='Release to aim' then hint=true end
+            if frame:IsVisible() and frame.text=='Then left-click ground · Right-click / Escape cancels' then flow=true end
+        end
+        check(hint and flow,'Wheel visual does not explain release-to-aim and ground-click placement')
+    end
     up()
-    check(#actions == before + 1 and actions[#actions][2] == '/wm [@cursor] ' .. marker, 'Wrong radial sector ' .. marker)
-    check(actions[#actions][3] == cursorX and actions[#actions][4] == cursorY, 'Placement did not use release-position cursor')
-    check(empty(cycle.overrides) and not root:IsShown(), 'Sector release stranded state')
+    check(#actions == before + 1 and actions[#actions][2] == '/wm ' .. marker, 'Wrong radial ground-targeting command ' .. marker)
+    local boundary=actions[#actions][5]
+    check(not boundary.held and not boundary.catcherShown and not boundary.overrides,
+        'Wheel failed to reset BEFORE the protected targeting action')
+    check(empty(cycle.overrides) and not root:IsShown() and activePolling()==0,
+        'Wheel retained input capture or polling during native ground targeting')
+    up();fireTimer(pending,true)
+    check(#actions==before+1 and empty(cycle.overrides) and not root:IsShown() and activePolling()==0,
+        'Repeated release or stale timer reissued targeting/placement')
 end
 resetCursor(); down(); move(1100, 540); move(960, 540)
 previous = #actions; up()
@@ -355,7 +375,7 @@ combat = false; event('PLAYER_REGEN_ENABLED')
 check(not cycle:GetAttribute('rcp-input-suppressed'), 'Deferred editor guard failed to recover')
 RA.WorldMarkers:SetOrder({})
 resetCursor(); down(); move(960, 660); up()
-check(actions[#actions][2] == '/wm [@cursor] 1', 'Wheel incorrectly depended on ordinary sequence order')
+check(actions[#actions][2] == '/wm 1', 'Wheel incorrectly depended on ordinary sequence order')
 local settings = RA:GetDB().worldMarkers
 local exported = assert(RA:ExportProfileString())
 check(not exported:find('worldMarkers'), 'Local wheel choice leaked into portable profile')

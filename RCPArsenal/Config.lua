@@ -1556,15 +1556,15 @@ local function CreateWorldMarkersPane(parent)
         end)
     SetPoint(toggle, "TOPLEFT", parent, "TOPLEFT", 0, -62)
     SetWidth(toggle, 462)
-    local radialToggle=CreateToggle(parent,"Hold marker wheel (optional)","Hold and aim. Center release places nothing. Escape/right-click cancels.",
+    local radialToggle=CreateToggle(parent,"Hold marker wheel (optional)","Choose a marker; release to aim, then left-click ground. Center release cancels.",
         function()return markers:GetSettings().radialEnabled==true end,
         function(value)local _,detail=markers:SetRadialEnabled(value);message=detail or "" end)
     SetPoint(radialToggle,"TOPRIGHT",parent,"TOPRIGHT",0,-62);SetWidth(radialToggle,472)
     radialToggle:HookScript("OnEnter",function(self)
         GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText("Hold marker wheel · optional prototype")
         GameTooltip:AddLine(markers:GetModeHelp(),0.90,0.92,0.95,true)
-        GameTooltip:AddLine("Releasing in the center places nothing, including a quick tap. Choose a sector before release; return to center to cancel.",0.76,0.80,0.86,true)
-        GameTooltip:AddLine("Release mouse look before aiming. Key-up attempts placement at the current cursor; Blizzard checks permissions and valid terrain.",0.76,0.80,0.86,true)
+        GameTooltip:AddLine("Releasing in the center places nothing, including a quick tap. Release over a sector to choose it, then left-click the ground to place.",0.76,0.80,0.86,true)
+        GameTooltip:AddLine("Release mouse look before choosing. Release opens Blizzard’s normal ground-targeting reticle; right-click or Escape cancels targeting. Blizzard checks permissions and valid terrain.",0.76,0.80,0.86,true)
         GameTooltip:AddLine("The optional wheel is experimental; test your keybind in game before a pull. Unsupported keys use the normal sequence; your saved wheel choice is kept.",0.95,0.68,0.36,true)
         GameTooltip:Show()
     end)
