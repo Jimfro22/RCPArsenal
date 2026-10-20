@@ -83,6 +83,11 @@ end
 local selected, summary = setup:GetSummary()
 check(selected == 4 and summary:find('sound off', 1, true) and summary:find('glow off', 1, true)
     and summary:find('provider classes off', 1, true), 'Summary omitted reviewed choices')
+setup:Set('glow', true)
+local _, glowSummary=setup:GetSummary()
+check(glowSummary:find('icon glow at ≤35%',1,true)
+    and not glowSummary:find('Healthstone glow',1,true),'Welcome summary still limits glow to Healthstone')
+setup:Set('glow', false)
 check(equal(db, baseline), 'Begin/Set/Summary activated or changed live profile before Save')
 quiet('Staging')
 local copy = setup:GetDraft(); copy.hud = false

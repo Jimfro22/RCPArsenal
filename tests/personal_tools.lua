@@ -672,42 +672,72 @@ local priorItems=itemCalls
 events.UNIT_HEALTH("UNIT_HEALTH","player")
 check(frames[1].renderAlpha==1 and itemCalls==priorItems,"Reminder opted out of native predicted health")
 reportedHealthRatio=nil
--- The independent glow uses opaque native output under the main gate.
-tools=loadTools();ready(5512);healthRatio=.5
-tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
-local glow=frames[1].glow
-check(glow and glow.parent==frames[2] and frames[1].renderAlpha==1 and glow.renderAlpha==0,
-    'Glow was not parented under the existing main threshold/body gate')
-local glowBag,glowCD,glowTimer=itemCalls,cooldownCalls,#timers
-for _,entry in ipairs({{.35,1},{.350001,0},{.5,0},{.2,1}}) do
-    healthRatio=entry[1];events.UNIT_HEALTH('UNIT_HEALTH','player')
-    check(glow.renderAlpha==entry[2] and frames[1].renderAlpha==1,'Fixed glow boundary/recovery altered main threshold')
+-- Both item icons use the same opaque native glow under the main gate.
+for _,id in ipairs({5512,241304}) do
+    tools=loadTools();ready(id);healthRatio=.5
+    tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
+    local glow=frames[1].glow
+    check(glow and glow.parent==frames[2] and frames[1].renderAlpha==1 and glow.renderAlpha==0,
+        'Item glow was not parented under the existing main threshold/body gate')
+    local inset=frames[1].clampInsets
+    check(frames[1].clamped and inset[1]<=-4 and inset[2]>=4 and inset[3]>=11,
+        'Item halo/bounce extends outside live clamp allowance')
+    local glowBag,glowCD,glowUsable,glowTimer=itemCalls,cooldownCalls,usabilityCalls,#timers
+    for _,entry in ipairs({{.349999,1},{.35,1},{.350001,0},{.5,0},{.2,1}}) do
+        healthRatio=entry[1];events.UNIT_HEALTH('UNIT_HEALTH','player')
+        check(glow.renderAlpha==entry[2] and frames[1].renderAlpha==1,'Fixed item-glow boundary/recovery altered main threshold')
+    end
+    check(itemCalls==glowBag and cooldownCalls==glowCD and usabilityCalls==glowUsable and #timers==glowTimer and #tickers==0,
+        'Item glow added bag/readiness/timer work')
+    tools:SetOption('healthThreshold',30);healthRatio=.34;events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(frames[1].renderAlpha==0 and glow.renderAlpha==1,'Item glow escaped a main threshold below35')
+    tools:SetOption('healthThreshold',60)
+    local other=id==5512 and 241304 or 5512
+    ready(other).start=now;items[other].duration=10;tools:Refresh()
+    local expiry=timers[#timers];glow.failSink=true
+    local beforeGlowCD,beforeGlowBag,beforeGlowUsable=cooldownCalls,itemCalls,usabilityCalls
+    events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(frames[1].shown and frames[1].renderAlpha==1 and not glow.shown and glow.alpha==0
+        and active(timers)==1 and not expiry.cancelled,'Item glow sink failure hid the main prompt or cancelled expiry')
+    glow.failSink=false;events.UNIT_MAXHEALTH('UNIT_MAXHEALTH','player')
+    check(glow.shown and glow.renderAlpha==1,'Item glow did not recover after a transient sink failure')
+    tools:SetOption('reminderStoneGlow',false)
+    check(not glow.shown and glow.alpha==0 and frames[1].shown and tools:GetState().reminderStoneGlow==false,
+        'Explicit glow OFF hid the reminder or retained item glow')
+    events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(not glow.shown and glow.alpha==0,'Health event ignored saved glow OFF')
+    tools:SetOption('reminderStoneGlow',true)
+    check(glow.shown and glow.renderAlpha==1 and active(timers)==1 and not expiry.cancelled,
+        'Glow ON did not restore the visual or changed owned expiry')
+    check(cooldownCalls==beforeGlowCD and itemCalls==beforeGlowBag and usabilityCalls==beforeGlowUsable,
+        'Glow failure/recovery/toggle queried readiness/inventory')
+    items[id].start,items[id].duration=now,20;items[other].duration=0;tools:Refresh()
+    check(tools:GetState().itemID==other and frames[1].glow==glow and glow.shown and glow.renderAlpha==1,
+        'Stone/potion kind change did not reuse the native item glow')
+    items={};tools:Refresh();check(not glow.shown and glow.alpha==0,'Empty warning retained item glow')
+    ready(id);tools:Refresh();tools:SetOption('reminderCombat','IN_COMBAT')
+    check(not frames[1].shown and not glow.shown,'Combat-hidden reminder retained item glow')
+    combat=true;events.PLAYER_REGEN_DISABLED('PLAYER_REGEN_DISABLED')
+    check(frames[1].shown and glow.shown,'Combat re-entry did not restore item glow')
+    dead=true;events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(not frames[1].shown and not glow.shown and glow.alpha==0,'Death retained item glow')
+    dead=false;tools:Refresh();tools:SetOption('consumableReminder',false)
+    local hiddenHealth=healthCalls
+    tools:SetOption('reminderStoneGlow',false);tools:SetOption('reminderStoneGlow',true)
+    check(not frames[1].shown and not glow.shown and glow.alpha==0 and healthCalls==hiddenHealth,
+        'Glow edits bypassed the disabled master')
+    tools=loadTools({reminderStoneGlow=false,consumableReminder=false,reminderCombat='BOTH'})
+    ready(id);healthRatio=.2;tools:SetOption('consumableReminder',true)
+    check(not frames[1].glow.shown and tools:GetState().reminderStoneGlow==false,'Saved glow OFF was overwritten for an item kind')
+    tools=loadTools();ready(id);healthRatio=.2
+    local createCurve=C_CurveUtil.CreateCurve;local curveAttempts=0
+    C_CurveUtil.CreateCurve=function() curveAttempts=curveAttempts+1;if curveAttempts>1 then error('Glow curve unavailable') end;return createCurve() end
+    tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
+    check(frames[1].shown and frames[1].renderAlpha==1 and not frames[1].glow.shown,'Item glow curve failure suppressed main display')
+    events.UNIT_HEALTH('UNIT_HEALTH','player')
+    check(curveAttempts==2 and frames[1].renderAlpha==1,'Health event retried unavailable item-glow curve')
+    C_CurveUtil.CreateCurve=createCurve
 end
-check(itemCalls==glowBag and cooldownCalls==glowCD and #timers==glowTimer and #tickers==0,'Glow added bag/cooldown/timer work')
-tools:SetOption('healthThreshold',30);healthRatio=.34;events.UNIT_HEALTH('UNIT_HEALTH','player')
-check(frames[1].renderAlpha==0 and glow.renderAlpha==1,'Glow escaped a main threshold below35')
-tools:SetOption('healthThreshold',60);ready(241304).start=now;items[241304].duration=10;tools:Refresh()
-local expiry=timers[#timers];glow.failSink=true
-local beforeGlowCD,beforeGlowBag=cooldownCalls,itemCalls
-events.UNIT_HEALTH('UNIT_HEALTH','player')
-check(frames[1].shown and frames[1].renderAlpha==1 and not glow.shown and glow.alpha==0
-    and active(timers)==1 and not expiry.cancelled,'Glow sink failure hid the main prompt or cancelled readiness expiry')
-check(cooldownCalls==beforeGlowCD and itemCalls==beforeGlowBag,'Failed glow queried readiness/inventory')
-glow.failSink=false;items[5512].start,items[5512].duration=now,20;items[241304].duration=0;tools:Refresh()
-check(tools:GetState().itemID==241304 and not glow.shown and glow.alpha==0,'Potion selection retained Healthstone glow')
-items={};tools:Refresh();check(not glow.shown and glow.alpha==0,'Empty warning retained glow')
-ready(5512);tools:Refresh();dead=true;events.UNIT_HEALTH('UNIT_HEALTH','player')
-check(not frames[1].shown and not glow.shown and glow.alpha==0,'Death retained glow')
-dead=false;tools:Refresh();tools:SetOption('consumableReminder',false)
-check(not glow.shown and glow.alpha==0,'Disable retained glow')
-tools=loadTools();ready(5512);healthRatio=.2
-local createCurve=C_CurveUtil.CreateCurve;local curveAttempts=0
-C_CurveUtil.CreateCurve=function() curveAttempts=curveAttempts+1;if curveAttempts>1 then error('Glow curve unavailable') end;return createCurve() end
-tools:SetOption('healthThreshold',60);tools:SetOption('consumableReminder',true)
-check(frames[1].shown and frames[1].renderAlpha==1 and not frames[1].glow.shown,'Glow curve failure suppressed successful main display')
-events.UNIT_HEALTH('UNIT_HEALTH','player')
-check(curveAttempts==2 and frames[1].renderAlpha==1,'Health event retried unavailable glow curve')
-C_CurveUtil.CreateCurve=createCurve
 -- UTF-8 limits agree across setter/getter and the actual profile normalizer.
 for _, entry in ipairs({
     {string.rep("界",21), string.rep("界",21)},

@@ -379,7 +379,42 @@ local function clickVisible(label)
     end
     return false
 end
-check(clickVisible('REMINDER TEXT & SOUND +'),'Cold personal pane disclosure missing')
+do
+    local glow, disclosure, sizeControl, masterControl
+    for _,obj in ipairs(objects) do
+        if obj.title and obj.title.text=='Icon glow at ≤35%' then glow=obj end
+        if obj.label and obj.label.text=='REMINDER TEXT & SOUND +' then disclosure=obj end
+        if obj.title and obj.title.text=='EMPTY WARNING SIZE' then sizeControl=obj end
+        if obj.title and obj.title.text=='Enable Healthstone / healing potion reminder' then masterControl=obj end
+    end
+    check(glow and glow:IsVisible() and RA.PersonalTools:GetState().reminderStoneGlow,'Everyday icon-glow control missing or default changed')
+    local function rect(obj)
+        local p=obj.points[#obj.points]
+        check(p and p[1]=='TOPLEFT' and p[2]==glow.parent and p[3]=='TOPLEFT','Layout fixture needs direct pane-relative control bounds')
+        return p[4],-p[5],obj:GetWidth(),obj:GetHeight()
+    end
+    local x,y,w,h=rect(glow)
+    local dx,dy,dw,dh=rect(disclosure)
+    local _,sy,_,sh=rect(sizeControl)
+    -- The fixture does not resolve anchor-derived pane width; its full-width
+    -- master row supplies the same content boundary without hardcoded bounds.
+    check(x>=0 and x+w<=masterControl:GetWidth() and y>=sy+sh
+        and (x>=dx+dw or dx>=x+w or y>=dy+dh or dy>=y+h),'Compact glow control overlaps disclosure/sizes or exceeds pane')
+    check(glow.title:GetStringWidth()<=w-80 and glow.description:GetStringWidth()<=w-80
+        and 25+glow.description:GetStringHeight()<=h,'Compact glow label/helper exceed the control')
+    local beforeFrames,beforeTimers,beforeSent=#objects,#timers,sent
+    local sound,position=personalSettings.reminderSound,personalSettings.reminderPosition
+    glow:Fire('OnClick');RA:NormalizeProfile(db)
+    check(personalSettings.reminderStoneGlow==false and not personalSettings.consumableReminder,'Glow switch OFF was overwritten or enabled reminder')
+    glow:Fire('OnClick')
+    check(personalSettings.reminderStoneGlow and personalSettings.reminderSound==sound and personalSettings.reminderPosition==position
+        and #objects==beforeFrames and #timers==beforeTimers and sent==beforeSent,'Glow switch changed audio/anchor or allocated OFF runtime work')
+    check(clickVisible('REMINDER TEXT & SOUND +'),'Cold personal pane disclosure missing')
+    local details
+    for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text=='HEALTHSTONE TEXT' then details=obj.parent end end
+    local _,detailsY=rect(details)
+    check(glow:IsVisible() and y+h<=detailsY,'Expanded reminder controls overlap or hide icon-glow switch')
+end
 local function visibleField(label)
     for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text==label and obj:IsVisible() then return obj.box:GetText() end end
 end
