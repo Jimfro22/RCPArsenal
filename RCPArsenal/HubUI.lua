@@ -469,7 +469,7 @@ function RA:CreateHubPanes(panes, kit)
     Point(stop, "LEFT", move, "RIGHT", 8, 0)
     local resetReminder = Button(tools, "RESET POSITION", 154, 34, function() RA.PersonalTools:ResetReminderPosition() end)
     Point(resetReminder, "LEFT", stop, "RIGHT", 8, 0)
-    local helper = Text(tools, "Preview bounces; Move stays still. Native ~35% sound is separate. Routes obey global game mute.", 9.5, 16, -435, 914)
+    local helper = Text(tools, "Automatic ~35% sound needs a ready stone/potion. Preview sound is independent. Routes obey game mute.", 9.5, 16, -435, 914)
     local personalStatus = Text(tools, "", 10, 16, -479, 914)
     personalStatus:SetSpacing(4)
     local supplyLabel = Text(tools, "RAID SUPPLIES", 9, 600, -369, 334)
@@ -581,7 +581,7 @@ function RA:CreateHubPanes(panes, kit)
         mutedPermission:SetAlpha(state.reminderSoundChannel == "Master" and 1 or 0.45)
         mutedPermission:SetSelected(state.reminderSoundWhenEffectsMuted)
         mutedCheck:SetShown(state.reminderSoundWhenEffectsMuted)
-        local combatLabel = ({BOTH="Both",IN_COMBAT="In combat",OUT_OF_COMBAT="Out of combat"})[state.reminderCombat] or "Both"
+        local combatLabel = ({BOTH="Both",IN_COMBAT="In combat",OUT_OF_COMBAT="Out of combat"})[state.reminderCombat] or "In combat"
         SetText(personalStatus, (details:IsShown() and ("Normal res: " .. (state.autoRes and "On" or "Off") .. " ; Reminder: ")
             or ("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: ")) ..
             (state.consumableReminder and ("Enabled · At/below " .. state.healthThreshold .. "% · " .. combatLabel .. " · ") or "") .. RA.PersonalTools:GetStatusText("consumableReminder"))

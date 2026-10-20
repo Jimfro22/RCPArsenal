@@ -247,6 +247,8 @@ check(not db.autoShowEncounter and not db.scan.showStrip and not db.leaderToolbo
 check(db.actions.leftClickMode == 'OFF' and not db.actions.raidWarningEnabled, 'Inherited announcements stayed active')
 check(db.worldMarkers.enabled and table.concat(db.worldMarkers.order,',') == '8,4,2', 'Schema-18 marker intent was reset')
 check(db.categories.MANA and db.abilities.spirit_link == false and db.position.x == 200, 'Quiet migration lost content or position')
+check(db.personalTools.reminderCombat == 'IN_COMBAT' and not db.personalTools.consumableReminder,
+    'Unset legacy reminder mode did not default in combat with master OFF')
 check(not named.RCPArsenalHUD and not named.RCPArsenalRaidLeaderPuck, 'Disabled startup eagerly allocated optional overlays')
 for _,obj in ipairs(objects) do check(obj.kind~='Texture' and obj.kind~='FontString','Disabled startup allocated optional visual resources') end
 check(not eventFrame.registered.UNIT_HEALTH and not eventFrame.registered.BAG_UPDATE_DELAYED

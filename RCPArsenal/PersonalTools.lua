@@ -26,6 +26,7 @@ local reminderLabel, previewCaption
 local COMBAT_MODES = { BOTH = true, IN_COMBAT = true, OUT_OF_COMBAT = true }
 local preview, previewMode, previewMoving, previewBounce
 local selectedItem, selectedKind, inventory, bouncing
+local soundSupplyReady = false
 local previewKind = "stone"
 local reminderReason = "Off."
 local resReason = "Off."
@@ -97,7 +98,7 @@ end
 
 local function CombatMode()
     local mode = (Settings() or {}).reminderCombat
-    return COMBAT_MODES[mode] and mode or "BOTH"
+    return COMBAT_MODES[mode] and mode or "IN_COMBAT"
 end
 
 local function CombatAllowsReminder()
@@ -448,6 +449,8 @@ function Tools:Refresh(refreshInventory)
     -- Invalidate before visibility/life guards, without scanning hidden bags.
     if refreshInventory ~= false then inventory, lastExpiry = nil, nil end
     local previousItem, previousReason, previousRes = selectedItem, reminderReason, resReason
+    local previousSoundReady = soundSupplyReady
+    soundSupplyReady = false
     if not Enabled("autoRes") then CancelRes(); resReason = "Off."
     elseif resReason == "Off." then resReason = "On. Combat/encounter offers stay manual; client confirmation pending." end
     if not Enabled("consumableReminder") then
@@ -464,6 +467,10 @@ function Tools:Refresh(refreshInventory)
     else
         if not inventory then inventory = RA.HealingSupplies:Snapshot() end
         local candidate, readiness, deadline, now = SelectCarried(inventory)
+        -- SelectCarried prefers any positively ready candidate before its
+        -- optional cooldown/unknown visual fallback. Audio never uses that
+        -- fallback or queries inventory from a health/native-warning hook.
+        soundSupplyReady = readiness == "ready"
         ScheduleExpiry(deadline, now, inventory)
         if candidate then
             CreateReminder()
@@ -496,6 +503,7 @@ function Tools:Refresh(refreshInventory)
             HideReminder("Inventory unavailable or potion family unknown; reminder hidden.")
         end
     end
+    if previousSoundReady ~= soundSupplyReady then Notify("reminderSupply") end
     if previousItem ~= selectedItem or previousReason ~= reminderReason or previousRes ~= resReason then Notify() end
 end
 
@@ -756,6 +764,7 @@ function Tools:GetNativeSoundEligibility()
     if not SoundEnabled() then return false, "Sound is off." end
     if not CombatAllowsReminder() then return false, "Hidden by combat setting." end
     if ReadBoolean(UnitIsDeadOrGhost, "player") ~= false then return false, "Player dead or life state unknown." end
+    if not soundSupplyReady then return false, "No known-ready healing item carried." end
     return true
 end
 
