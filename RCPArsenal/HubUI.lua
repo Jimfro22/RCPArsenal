@@ -219,27 +219,47 @@ function RA:CreateHubPanes(panes, kit)
         elseif state=="missing" or state=="disabled" or state=="not_loaded" or comparison=="outdated" or comparison=="different" then color=C.orange
         elseif state=="current" then color=C.text end
         cell.state:SetTextColor(unpack(color))
-        local lines={Literal(RA.AddonCatalog:GetEntry(addon.id).name) .. " — " .. Literal(member.name),
-            "Response: " .. (responseLabels[member.status] or "Unknown"),"Version: " .. version,
-            "Local target: " .. (snapshot.targets[addon.id] and Literal(snapshot.targets[addon.id]) or "No target set")}
-        lines[#lines+1]="Status: " .. (state=="no_response" and "Unknown — no response" or (state=="unreported" and "Unknown — not reported" or labels[state] or "Unknown"))
-        if received and state~="offline" and state~="no_response" then
-            lines[#lines+1]="Comparison: " .. (labels[comparison] or "Unknown")
-            lines[#lines+1]="Installed " .. Tri(addon.installed) .. " · Enabled " .. Tri(addon.enabled) .. " · Loaded " .. Tri(addon.loaded)
-            if pendingReload then lines[#lines+1]="Disabled for the next reload; this code is still loaded now." end
-            if addon.id=="arsenal" then lines[#lines+1]="Build " .. Literal(addon.build) .. " · Protocol " .. tostring(addon.protocol or "Unknown") end
-            lines[#lines+1]=(isLocal and "Local metadata refreshed " .. Age(localReport.refreshedAt) or "Report received " .. Age(addon.receivedAt))
-        elseif state=="offline" then lines[#lines+1]="Offline is distinct from a missing addon."
-        else lines[#lines+1]="This addon has not been reported. Its installation and version are unknown." end
-        if not isLocal then
-            lines[#lines+1]="Group query: " .. (snapshot.queriedAt and Age(snapshot.queriedAt) or "Not queried")
-            if snapshot.stale then lines[#lines+1]="STALE: query again for current results." end
+        cell.tooltip=function()
+            local lines={Literal(RA.AddonCatalog:GetEntry(addon.id).name) .. " — " .. Literal(member.name),
+                "Response: " .. (responseLabels[member.status] or "Unknown"),"Version: " .. version,
+                "Local target: " .. (snapshot.targets[addon.id] and Literal(snapshot.targets[addon.id]) or "No target set")}
+            lines[#lines+1]="Status: " .. (state=="no_response" and "Unknown — no response" or (state=="unreported" and "Unknown — not reported" or labels[state] or "Unknown"))
+            if received and state~="offline" and state~="no_response" then
+                lines[#lines+1]="Comparison: " .. (labels[comparison] or "Unknown")
+                lines[#lines+1]="Installed " .. Tri(addon.installed) .. " · Enabled " .. Tri(addon.enabled) .. " · Loaded " .. Tri(addon.loaded)
+                if pendingReload then lines[#lines+1]="Disabled for the next reload; this code is still loaded now." end
+                if addon.id=="arsenal" then lines[#lines+1]="Build " .. Literal(addon.build) .. " · Protocol " .. tostring(addon.protocol or "Unknown") end
+                lines[#lines+1]=(isLocal and "Local metadata refreshed " .. Age(localReport.refreshedAt) or "Report received " .. Age(addon.receivedAt))
+            elseif state=="offline" then lines[#lines+1]="Offline is distinct from a missing addon."
+            else lines[#lines+1]="This addon has not been reported. Its installation and version are unknown." end
+            if not isLocal then
+                lines[#lines+1]="Group query: " .. (snapshot.queriedAt and Age(snapshot.queriedAt) or "Not queried")
+                if snapshot.stale then lines[#lines+1]="STALE: query again for current results." end
+            end
+            return lines
         end
-        cell.tooltip=lines
+    end
+    local matrixSnapshot, matrixLocalReport
+    local function RefreshMatrixStatus(snapshot, localReport)
+        if not snapshot or not localReport then return end
+        local wasStale = snapshot.stale
+        snapshot.stale = snapshot.queriedAt ~= nil and (GetTime() or 0) - snapshot.queriedAt > RA.Readiness.SNAPSHOT_LIFETIME
+        snapshot.restriction = RA.Readiness:GetRestrictionReason()
+        -- Keep native UI eligibility fresh. QueryGroup and each queued send
+        -- independently retain their existing current-roster authorization.
+        local eligible, reason = RA.Readiness:GetQueryEligibility()
+        query:SetEnabled(eligible);query:SetAlpha(eligible and 1 or 0.55)
+        local status=snapshot.restriction or snapshot.reason or (snapshot.status=="checking" and "Checking group addon versions…" or "No response means unknown.")
+        SetText(matrixMeta,(snapshot.stale and "STALE · " or "") .. (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "No group query")
+            .. " · Local " .. Age(localReport.refreshedAt) .. "\n" .. (not eligible and reason or status or ""))
+        local combat=(InCombatLockdown and InCombatLockdown()) or (IsEncounterInProgress and IsEncounterInProgress())
+        for _,button in ipairs({save,clear,capture}) do button:SetEnabled(not combat);button:SetAlpha(combat and 0.55 or 1) end
+        return wasStale ~= snapshot.stale
     end
     refreshers.ADDONS=function()
         local snapshot=RA.Readiness:GetSnapshot()
         local localReport=RA.AddonCatalog:GetLocalReport()
+        matrixSnapshot,matrixLocalReport=snapshot,localReport
         snapshot.targets=snapshot.targets or {}
         local settings=RA.Readiness:GetTargets()
         local target=RA.AddonCatalog:NormalizeVersion(settings.targets[selectedAddon]) or ""
@@ -257,13 +277,7 @@ function RA:CreateHubPanes(panes, kit)
         for id,button in pairs(selectors) do button:SetSelected(id==selectedAddon) end
         setup:SetShown(selectedAddon=="northernsky" or selectedAddon=="arsenal")
         SetText(setup.label,selectedAddon=="arsenal" and "PROFILES" or "SETUP")
-        local eligible,reason=RA.Readiness:GetQueryEligibility()
-        query:SetEnabled(eligible);query:SetAlpha(eligible and 1 or 0.55)
-        local status=snapshot.restriction or snapshot.reason or (snapshot.status=="checking" and "Checking group addon versions…" or "No response means unknown.")
-        SetText(matrixMeta,(snapshot.stale and "STALE · " or "") .. (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "No group query")
-            .. " · Local " .. Age(localReport.refreshedAt) .. "\n" .. (not eligible and reason or status or ""))
-        local combat=(InCombatLockdown and InCombatLockdown()) or (IsEncounterInProgress and IsEncounterInProgress())
-        for _,button in ipairs({save,clear,capture}) do button:SetEnabled(not combat);button:SetAlpha(combat and 0.55 or 1) end
+        RefreshMatrixStatus(snapshot,localReport)
         local rows={}
         for _,member in ipairs(snapshot.rows or {}) do if member.isPlayer then rows[#rows+1]=member end end
         for _,member in ipairs(snapshot.rows or {}) do if not member.isPlayer then rows[#rows+1]=member end end
@@ -277,7 +291,7 @@ function RA:CreateHubPanes(panes, kit)
                 row.name=Text(row,"",10.1,10,-3,164,C.text);row.name:SetWordWrap(false)
                 row.response=Text(row,"",8.6,10,-18,164,C.muted);row.response:SetWordWrap(false)
                 row:EnableMouse(true)
-                row:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip) end)
+                row:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip()) end)
                 row:SetScript("OnLeave",function() GameTooltip:Hide() end)
                 row.cells={}
                 for j,definition in ipairs(RA.AddonCatalog.Entries) do
@@ -286,7 +300,7 @@ function RA:CreateHubPanes(panes, kit)
                     cell.version=Text(cell,"",9.4,4,-3,97,C.text);cell.version:SetWordWrap(false)
                     cell.state=Text(cell,"",8.4,4,-18,97,C.textSoft);cell.state:SetWordWrap(false)
                     cell:EnableMouse(true)
-                    cell:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip) end)
+                    cell:SetScript("OnEnter",function(self) Tooltip(self,self.tooltip()) end)
                     cell:SetScript("OnLeave",function() GameTooltip:Hide() end)
                     row.cells[definition.id]=cell
                 end
@@ -294,22 +308,34 @@ function RA:CreateHubPanes(panes, kit)
             end
             SetText(row.name,Literal(member.name));SetText(row.response,(responseLabels[member.status] or "Unknown")
                 .. ((member.status=="partial" or member.status=="responding") and (" " .. tostring(member.receivedCount or 0) .. "/7") or ""))
-            row.tooltip={Literal(member.name),responseLabels[member.status] or "Unknown",member.isPlayer and ("Local metadata refreshed " .. Age(localReport.refreshedAt))
-                or (snapshot.stale and "STALE group snapshot" or (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "Not queried"))}
+            row.tooltip=function() return {Literal(member.name),responseLabels[member.status] or "Unknown",member.isPlayer and ("Local metadata refreshed " .. Age(localReport.refreshedAt))
+                or (snapshot.stale and "STALE group snapshot" or (snapshot.queriedAt and ("Group query " .. Age(snapshot.queriedAt)) or "Not queried"))} end
             for _,definition in ipairs(RA.AddonCatalog.Entries) do
                 local addon=(member.isPlayer and localReport.byID[definition.id]) or (member.addons and member.addons[definition.id]) or {id=definition.id}
                 UpdateCell(row.cells[definition.id],member,addon,snapshot,localReport)
             end
             row:Show()
         end
-        for i=#rows+1,#matrixRows do matrixRows[i]:Hide() end
+        for i=#rows+1,#matrixRows do
+            local row=matrixRows[i]
+            row:Hide();row.tooltip=nil
+            -- Pooled hidden rows must not retain older whole snapshots via
+            -- their hover closures as members leave one at a time.
+            for _,cell in pairs(row.cells) do cell.tooltip=nil end
+        end
         T.SetHeight(matrixChild,math.max(282,#rows*34))
     end
     refreshers.RAIDTOOLS=refreshers.ADDONS -- compatibility for callers during UI integration
     local matrixTicker
     addons:HookScript("OnShow",function()
         if not matrixTicker and C_Timer and C_Timer.NewTicker then
-            matrixTicker=C_Timer.NewTicker(1,function() if addons:IsVisible() then refreshers.ADDONS() end end)
+            matrixTicker=C_Timer.NewTicker(1,function()
+                if addons:IsVisible() and RefreshMatrixStatus(matrixSnapshot,matrixLocalReport) then
+                    -- Staleness changes cell colors once; ages alone do not
+                    -- require new snapshots, rows or hover-tooltip tables.
+                    refreshers.ADDONS()
+                end
+            end)
         end
     end)
     local function StopMatrixTicker()
@@ -317,6 +343,7 @@ function RA:CreateHubPanes(panes, kit)
     end
     addons:HookScript("OnHide",StopMatrixTicker)
     RA.ConfigFrame:HookScript("OnHide",StopMatrixTicker)
+    RA:RegisterEvent("ADDON_LOADED",function() if addons:IsVisible() then refreshers.ADDONS() end end)
 
     local tools = panes.MYTOOLS
     kit.Heading(tools, "Personal tools", "Optional resurrection and consumable reminders. Available Cooldowns, Quick Bar, and World Markers have their own settings.")

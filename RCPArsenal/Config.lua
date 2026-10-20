@@ -34,6 +34,7 @@ local hudFooter
 local RefreshWorldMarkers
 local RefreshConfig
 local RefreshHub
+local RefreshFooter
 local advancedBack
 local cooldownScroll
 local cooldownTabs = {}
@@ -2037,6 +2038,10 @@ RefreshConfig = function()
         RA:SetVisualText(actionStatusDetail, "Secure macros execute on " .. clickMode .. ". Left-click uses exactly one selected channel (Whisper, Say, or Off); right-click requests Raid Warning. Reopen or rearm after changing action templates.")
     end
 
+    RefreshFooter()
+end
+
+RefreshFooter = function()
     local primary = ScanStatusText()
     local reason = RA.GetHUDVisibilityReason and RA:GetHUDVisibilityReason() or nil
     local hudState = reason and ("HUD HIDDEN: " .. reason) or "HUD VISIBLE"
@@ -2402,7 +2407,7 @@ RA:RegisterInitializer(function()
 end)
 
 RA:RegisterCallback("READINESS_UPDATED", function()
-    if frame and frame:IsShown() and RefreshHub then RefreshHub(activeTab) end
+    if frame and frame:IsShown() and panes.ADDONS:IsVisible() and RefreshHub then RefreshHub("ADDONS") end
 end)
 RA:RegisterCallback("TOOLS_CHANGED", function()
     if frame and frame:IsShown() then RefreshConfig() end
@@ -2412,7 +2417,10 @@ RA:RegisterCallback("PERSONAL_TOOLS_CHANGED", function()
 end)
 
 RA:RegisterCallback("REPORTS_UPDATED", function()
-    if frame and frame:IsShown() then RefreshConfig() end
+    if frame and frame:IsShown() then
+        -- Capability reports change the scan footer, not addon versions.
+        if panes.ADDONS:IsVisible() then RefreshFooter() else RefreshConfig() end
+    end
 end)
 RA:RegisterCallback("ACCENT_THEME_CHANGED", function()
     if frame and frame:IsShown() then RefreshConfig() end
