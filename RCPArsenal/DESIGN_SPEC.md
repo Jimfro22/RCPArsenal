@@ -183,6 +183,7 @@ This is composition coverage, not aura-state tracking.
 - Hunter's Mark — target takes 3% increased damage
 - Chaos Brand
 - Mystic Touch
+- Atrophic Poison
 
 Only missing effects appear. Offline providers and providers in ignored raid groups do not satisfy coverage.
 

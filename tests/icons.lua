@@ -353,7 +353,26 @@ for _, region in ipairs(objects) do
     if region.kind == 'FontString' and region:IsVisible() then textRefs[region] = region.fontCalls or 0 end
     if region.item and region.icon then spellRefs[#spellRefs + 1] = region.icon end
 end
-check(#spellRefs == 10, 'Actual missing-panel spell icon references were not constructed')
+check(#spellRefs == 11, 'All eleven actual missing-panel spell icons were not constructed')
+do
+    local atrophic, previousBottom
+    local panel=named.RCPArsenalMissingRaidCoverage
+    for _,row in ipairs(objects) do
+        if row.item and row.icon and row:IsShown() then
+            local p=row.points[#row.points]
+            local top=-p[5]
+            check(p[2]==panel and (not previousBottom or top>=previousBottom)
+                and top+row:GetHeight()<=panel:GetHeight()-8,'Eleven-row missing panel clips or overlaps rows')
+            previousBottom=top+row:GetHeight()
+            if row.item.key=='atrophic_poison' then atrophic=row end
+        end
+    end
+    check(atrophic and atrophic.item.class=='ROGUE' and atrophic.item.spellID==381637
+        and atrophic.text:GetText()=='Atrophic Poison' and panel.sectionTwo:GetText()=='DEBUFFS',
+        'Rogue provider is absent, misidentified or outside Debuffs')
+    check(atrophic.icon.texture==134400 and spellRequests[381637]==1 and atrophic.text:GetStringWidth()<=atrophic:GetWidth()-35,
+        'Cold Rogue icon lacks fallback or its label exceeds the row')
+end
 check(puck.logo.texture == 134400 and dock.logo == nil, 'Cold puck fallback failed or the removed decorative dock logo returned')
 check(panic.label.font == 'Fonts\\ARIALN.TTF', 'PANIC needs a bundled-client font fallback')
 local sortIcon
@@ -465,4 +484,44 @@ check(puck.logo.texture==RA.Theme.Assets.Checkmark, 'First shown puck waited for
 check(geometryWrites==firstShowGeometry and attributeWrites==firstShowAttributes and scanCalls==firstShowScans, 'First-display resource recovery rebuilt geometry, attributes or inspection')
 check(pending()==1, 'First display did not use the single bounded recovery queue')
 RA:CancelVisualAssetRefresh()
+-- Composition-only provider checks use the actual row map and roster reader.
+do
+    local roster, ignored, inRaid, reads, forbidden = {}, {}, true, 0, 0
+    local scansBefore=scanCalls
+    IsInRaid=function() return inRaid end
+    GetNumGroupMembers=function() return #roster end
+    GetRaidRosterInfo=function(index)
+        reads=reads+1;local row=roster[index]
+        return 'Provider'..index,0,row.group,90,'Rogue',row.class,'',row.online
+    end
+    function RA:IsRaidGroupIgnored(group) return ignored[group]==true end
+    local function noExtraWork() forbidden=forbidden+1;error('Composition coverage queried an aura, combat log or inspection') end
+    UnitAura,CombatLogGetCurrentEventInfo,NotifyInspect=noExtraWork,noExtraWork,noExtraWork
+    C_UnitAuras=setmetatable({}, {__index=function() return noExtraWork end})
+    local function missing()
+        reads=0
+        local total,buffs,debuffs=RA.RaidLeaderToolbox:GetMissingCoverage()
+        local rogue
+        for _,item in ipairs(debuffs) do if item.key=='atrophic_poison' then rogue=item end end
+        check(reads==(inRaid and #roster or 0),'Coverage added a roster pass or queried an out-of-raid roster')
+        check(scanCalls==scansBefore and forbidden==0,'Rogue coverage scanned auras/talents or inspected')
+        return rogue,total,#buffs,#debuffs
+    end
+    local rogue,total,buffs,debuffs=missing()
+    check(rogue and total==11 and buffs==7 and debuffs==4 and rogue.effect==nil,'Absent Rogue did not add one provider-only Debuff')
+    roster={{class='ROGUE',group=1,online=true}}
+    rogue,total=missing();check(not rogue and total==10,'Online tracked Rogue did not satisfy provider coverage')
+    roster[1].online=false
+    rogue,total=missing();check(rogue and total==11,'Offline Rogue incorrectly satisfied coverage')
+    roster[1].online=true;roster[1].group=8;ignored[8]=true
+    check(missing(),'Rogue in ignored group incorrectly satisfied coverage')
+    roster[2]={class='ROGUE',group=1,online=true}
+    check(not missing(),'Tracked Rogue was hidden by another ignored Rogue')
+    roster={{class='ROGUE',online=true}}
+    check(missing(),'Rogue without a tracked subgroup incorrectly satisfied coverage')
+    roster={{class='MAGE',group=1,online=true}}
+    rogue,total=missing();check(rogue and total==10,'Unrelated provider class incorrectly covered Rogue')
+    roster={{class='ROGUE',group=1,online=true}};inRaid=false
+    check(missing(),'Out-of-raid roster mock incorrectly satisfied coverage')
+end
 print('PASS: ' .. checks .. ' asset/font/actual-frame assertions (offline Lua harness; no WoW runtime claim)')

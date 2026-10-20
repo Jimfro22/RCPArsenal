@@ -46,12 +46,15 @@ The Quick Bar's missing-major-buff/debuff list is intentionally separate from th
 |---|---|---|---:|
 | Buff | Mark of the Wild | Druid | 1126 |
 | Buff | Blessing of the Bronze | Evoker | 364342 |
-| Buff | Hunter's Mark | Hunter | 257284 |
+| Buff | Devotion Aura | Paladin | 465 |
 | Buff | Arcane Intellect | Mage | 1459 |
 | Buff | Power Word: Fortitude | Priest | 21562 |
 | Buff | Skyfury | Shaman | 462854 |
 | Buff | Battle Shout | Warrior | 6673 |
+| Debuff | Hunter's Mark | Hunter | 257284 |
 | Debuff | Chaos Brand | Demon Hunter | 1490 |
 | Debuff | Mystic Touch | Monk | 113746 |
+| Debuff | Atrophic Poison | Rogue | 381637 |
 
 Coverage means an online provider class is present in a tracked raid group. It does not mean an aura/debuff is currently active.
+Rogue presence does not confirm its talent choice or an active Atrophic Poison.
