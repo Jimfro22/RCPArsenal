@@ -67,12 +67,12 @@ for _,id in ipairs({5512,241304}) do
                 check(renderer.nodes[1].texture.width==16 and renderer.nodes[1].texture.height==4 and live.clampInsets[3]>=17,'Pixel geometry or edited clamp stale')
             elseif style=='BUTTON' then
                 tools:SetGlowOption('buttonSpeed',0.5)
-                check(renderer.button.group.speed==0.5 and renderer.button.texture.width==size*1.4,'Proc native speed/extent wrong')
+                check(renderer.button.group.speed==0.5 and renderer.button.texture.width==size*1.6,'Proc native speed/extent wrong')
                 local flip=renderer.button.group.animations[1]
                 check(flip.FlipBookRows==6 and flip.FlipBookColumns==5 and flip.FlipBookFrames==30,'Proc atlas flipbook contract wrong')
             else
                 tools:SetGlowOption('autocastGroups',8);tools:SetGlowOption('autocastSize',150)
-                check(renderer.count==32 and renderer.nodes[1].texture.width==10.5 and renderer.nodes[25].texture.width==6,'Autocast groups/tier sizes wrong')
+                check(renderer.count==32 and renderer.nodes[1].texture.width==({[24]=13.5,[56]=18,[128]=27})[size] and renderer.nodes[25].texture.width==({[24]=6.75,[56]=9,[128]=13.5})[size],'Autocast groups/tier sizes wrong')
             end
             local after=h:metrics();local plays=renderer.nodes[1] and renderer.nodes[1].group.plays
             for _,health in ipairs({0.349999,0.35,0.350001,0.5,0.2}) do
@@ -115,7 +115,7 @@ local mode=tools:GetState().previewMode
 tools:SetGlowOption('style','BUTTON');tools:SetGlowOption('color',{0,1,0})
 check(renderer.active and renderer.style=='BUTTON' and tools:GetState().previewMode==mode and h:metrics().health==0,'Active sample did not update silently')
 tools:MoveReminder('stone');tools:SetOption('reminderIconSize',128)
-check(sample.clampInsets[3]>=25.6+7 and tools:GetState().previewMode=='MOVE','Move sample clamp/mode stale after style edit')
+check(sample.clampInsets[3]>=38.4+7-0.000001 and tools:GetState().previewMode=='MOVE','Move sample clamp/mode stale after style edit')
 tools:PreviewReminder('empty');check(not renderer.active,'Empty sample retained animated style')
 tools:StopReminderPreview();tools:SetGlowOption('style','AUTOCAST');check(not renderer.active and tools:GetState().previewMode==nil,'Style edit started stopped sample')
 

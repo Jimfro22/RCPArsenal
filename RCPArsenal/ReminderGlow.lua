@@ -8,10 +8,15 @@ RA.ReminderGlow = Glow
 -- Only an owned OnHide cleanup hook; no OnUpdate, timers, animation-progress
 -- queries or animation callbacks.
 local ATLAS = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
+local PROC_SCALE = 1.6
+local GAP = 1
+local function SparkScale(settings,size)
+    return math.max(0.75,math.min(1.5,size/56))*settings.autocastSize/100
+end
 function Glow:GetExtent(settings,size)
-    if settings.style=="BUTTON" then return size*0.2 end
-    if settings.style=="PIXEL" then return (settings.pixelLength+settings.pixelThickness)/2 end
-    if settings.style=="AUTOCAST" then return 3.5*settings.autocastSize/100 end
+    if settings.style=="BUTTON" then return size*(PROC_SCALE-1)/2 end
+    if settings.style=="PIXEL" then return GAP+settings.pixelThickness+settings.pixelLength/2 end
+    if settings.style=="AUTOCAST" then return GAP+12*SparkScale(settings,size) end
     return 4
 end
 local function Group(texture)
@@ -25,7 +30,8 @@ local function Animation(group, kind, order)
     return animation
 end
 local function Texture(owner)
-    local texture = owner:CreateTexture(nil, "OVERLAY")
+    local texture = owner:CreateTexture(nil, "OVERLAY", nil, 7)
+    texture:SetAlpha(1)
     texture:Hide()
     return texture
 end
@@ -33,6 +39,8 @@ end
 function Glow:Create(parent)
     local visual = CreateFrame("Frame", nil, parent)
     visual:SetAllPoints(parent); visual:EnableMouse(false); visual:Hide()
+    visual:SetFrameLevel(parent:GetFrameLevel()+1)
+    visual:SetClipsChildren(false)
     local controller = {frame=visual, nodes={}, edges={}, active=false}
 
     function controller:Stop()
@@ -92,10 +100,14 @@ function Glow:Create(parent)
             local node = Node(self,index)
             local tier = pixel and 1 or math.floor((index-1)/settings.autocastGroups)+1
             local thickness = pixel and settings.pixelThickness or 2
-            local span = size-thickness
-            local width = pixel and settings.pixelLength or (8-tier)*settings.autocastSize/100
+            local sparkScale = SparkScale(settings,size)
+            -- Keep the whole stroke/spark outside the icon's static backing.
+            -- The largest spark's inner edge stays one UI unit beyond it.
+            local padding = GAP+(pixel and thickness/2 or 6*sparkScale)
+            local span = size+padding*2
+            local width = pixel and settings.pixelLength or (14-tier*2)*sparkScale
             node.texture:ClearAllPoints()
-            node.texture:SetPoint("CENTER",visual,"BOTTOMLEFT",thickness/2,thickness/2)
+            node.texture:SetPoint("CENTER",visual,"BOTTOMLEFT",-padding,-padding)
             node.texture:SetSize(width,pixel and thickness or width)
             if pixel then
                 node.texture:SetVertexColor(1,1,1,1)
@@ -108,7 +120,10 @@ function Glow:Create(parent)
             local duration = pixel and 1 or 2*tier
             Square(node,span,duration,pixel)
             node.group:SetAnimationSpeedMultiplier(pixel and settings.pixelSpeed or settings.autocastSpeed)
-            node.offset = 4*duration*((index-1)%(pixel and count or settings.autocastGroups))/(pixel and count or settings.autocastGroups)
+            local phase = ((index-1)%(pixel and count or settings.autocastGroups))/(pixel and count or settings.autocastGroups)
+            -- Four tiers must not all start on the same four corners.
+            if not pixel then phase=(phase+(tier-1)/(settings.autocastGroups*4))%1 end
+            node.offset = 4*duration*phase
             node.texture:Show()
         end
         self.count=count
@@ -126,8 +141,9 @@ function Glow:Create(parent)
         self.button.texture:SetAtlas(ATLAS)
         self.button.texture:SetDesaturated(true)
         self.button.texture:SetVertexColor(settings.color[1],settings.color[2],settings.color[3],1)
+        self.button.texture:SetBlendMode("BLEND")
         self.button.texture:SetPoint("CENTER",visual,"CENTER",0,0)
-        self.button.texture:SetSize(size*1.4,size*1.4)
+        self.button.texture:SetSize(size*PROC_SCALE,size*PROC_SCALE)
         self.button.texture:Show()
         self.button.group:SetAnimationSpeedMultiplier(settings.buttonSpeed)
     end
@@ -162,6 +178,9 @@ function Glow:Create(parent)
         if self.active or not self.signature then return end
         -- Mark active before any native Play so even a partial failure cleans up.
         self.active=true
+        -- Match Blizzard's proc/phase lifecycle: show the owned visual before
+        -- starting its groups. No health or animation-progress query is needed.
+        self.frame:Show()
         local ok=pcall(function()
             if self.style=="BUTTON" then self.button.group:Play()
             else for index=1,self.count do local node=self.nodes[index]; node.group:Play(false,node.offset) end end

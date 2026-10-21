@@ -35,6 +35,7 @@ metrics=function()return {sent=sent,talents=talentReads,inspects=inspectCalls,at
     end
     h.methods.GetLeft=function(self)local x=rect(self);return x end
     h.methods.GetTop=function(self)local _,y=rect(self);return y end
+    h.methods.SetClampRectInsets=function(self,...)self.clampInsets={...}end
     function h:click(text)
         for _,obj in ipairs(self.objects)do if obj.label and obj.label.text==text and obj:IsVisible() and obj:IsEnabled()then obj:Fire('OnClick');return true end end
     end
@@ -102,6 +103,24 @@ RA.PersonalTools:SetGlowOption('style','PIXEL')
 check(sampleGlow.style=='PIXEL' and sampleGlow.active and RA.Placement:IsActive() and RA.Placement:GetState().positions.REMINDER.x==staged,'Saved style did not update active placement without changing session/anchor')
 RA.PersonalTools:SetGlowOption('style','BUTTON')
 check(sampleGlow.style=='BUTTON' and h.named.RCPArsenalPlacementREMINDER.glow==sampleGlow,'Global item sample failed style reuse')
+local sampleFrame=h.named.RCPArsenalPlacementREMINDER
+local halo=RA.ReminderGlow:GetExtent(RA.PersonalTools:GetState().reminderGlow,RA:GetDB().personalTools.reminderIconSize)
+check(sampleFrame.caption.points[#sampleFrame.caption.points][5]<=-halo-4+0.000001
+    and sampleFrame.title.points[#sampleFrame.title.points][5]>=halo+5-0.000001,'Placement sample labels overlap glow halo')
+local textBefore,sizeBefore=RA:GetDB().personalTools.reminderStoneText,RA:GetDB().personalTools.reminderTextSize
+local heightBefore=sampleFrame.caption.GetStringHeight
+RA:GetDB().personalTools.reminderStoneText=string.rep('W',60);RA:GetDB().personalTools.reminderTextSize=32
+sampleFrame.caption.GetStringHeight=function()return 320 end
+RA.PersonalTools:SetGlowOption('color',{1,0.72,0.18})
+check(-sampleFrame.clampInsets[4]>=halo+4+320,'Placement clamp assumed two lines instead of measured wrapped caption height')
+sampleFrame.caption.GetStringHeight=function()return 0 end
+RA.PersonalTools:SetGlowOption('color',{1,0.72,0.18})
+check(-sampleFrame.clampInsets[4]>halo+4+32*2,'Zero-metric caption fallback still assumes two lines')
+sampleFrame.caption.GetStringHeight=heightBefore
+RA:GetDB().personalTools.reminderStoneText,RA:GetDB().personalTools.reminderTextSize=textBefore,sizeBefore
+RA.PersonalTools:SetGlowOption('color',{1,0.72,0.18})
+
+
 RA.PersonalTools:SetOption('reminderStoneGlow',false)
 check(not sampleGlow.active and RA.Placement:IsActive(),'Saved OFF retained global sample glow or ended placement')
 RA.PersonalTools:SetOption('reminderStoneGlow',true)
