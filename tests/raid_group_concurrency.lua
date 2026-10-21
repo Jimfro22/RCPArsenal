@@ -147,6 +147,23 @@ RA:OpenConfig('RAIDGROUPS');check(g:GetState().open,'Actual Config route did not
 RA:CloseConfig('CONTEXT');check(not g:GetState().open,'Ancestor window hide retained planner observation')
 RA:OpenConfig();check(g:GetState().open,'Neutral reopen did not restore planner visibility lifecycle')
 RA:CloseConfig();check(not g:GetState().open,'User window close retained planner observation')
+-- The actual shared classifier reads only verified same-identity local facts.
+local function kind(role,className)
+ return toolbox:GetDraftMemberKind({role=role,class=className,fullName='Aster-Realm',guid='Player-1-AA'})
+end
+local scansBefore=#moves;local requestsBefore=scanRequests
+check(kind('TANK','DRUID')=='TANK' and kind('HEALER','DRUID')=='HEALER','Assigned tank/healer role not classified')
+check(kind('DAMAGER','MAGE')=='RANGED' and kind('DAMAGER','WARRIOR')=='MELEE','Safe damage-class fallback changed')
+for _,className in ipairs({'DRUID','SHAMAN','HUNTER','DEMONHUNTER'})do check(kind('DAMAGER',className)==nil,'Ambiguous damage class guessed')end
+local usable=RA.IsReportUsable
+RA.IsReportUsable=function(_,report,info)check(info.role=='DAMAGER' and info.guid=='Player-1-AA','Classifier supplied stale role/GUID');return report.role=='DAMAGER'end
+RA.Reports={['Aster-Realm']={verified=true,name='Aster-Realm',guid='Player-1-AA',class='DEMONHUNTER',role='DAMAGER',specID=1480,cached=true,source='PERSISTED_CACHE'}}
+local resolved,fromCache=kind('DAMAGER','DEMONHUNTER');check(resolved=='RANGED' and fromCache,'Validated Devourer/cache provenance lost')
+RA.Reports['Aster-Realm'].role='HEALER';check(kind('DAMAGER','DEMONHUNTER')==nil,'Conflicting cached role classified')
+RA.Reports['Aster-Realm'].role='DAMAGER';RA.Reports['Aster-Realm'].source='DEMO';check(kind('DAMAGER','DEMONHUNTER')==nil,'Demo report used by draft sorter')
+RA.Reports['Aster-Realm'].source='PERSISTED_CACHE';RA.Reports['Aster-Realm'].guid='Player-1-BB';check(kind('DAMAGER','DEMONHUNTER')==nil,'Wrong GUID report classified')
+RA.IsReportUsable=usable
+check(#moves==scansBefore and scanRequests==requestsBefore,'Pure classifier started native sorting/inspection')
 print=nativePrint
 print('PASS: '..checks..' shared raid-group controller/routing assertions (actual planner and legacy controllers; offline native APIs)')
 ]=]

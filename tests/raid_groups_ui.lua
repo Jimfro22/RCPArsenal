@@ -29,6 +29,7 @@ env.GetRaidRosterInfo=function(i)
 end
 env.UnitFullName=function(unit)reads=reads+1;local r=member(unit);if r then return r.name,r.realm end end
 env.UnitGUID=function(unit)reads=reads+1;local r=member(unit);return r and not unreadable and r.guid or nil end
+env.UnitGroupRolesAssigned=function(unit)reads=reads+1;local r=member(unit);return r and r.role end
 env.UnitAffectingCombat=function()reads=reads+1;return combat end
 env.InCombatLockdown=function()reads=reads+1;return combat end
 env.UnitIsGroupLeader=function()reads=reads+1;return leader end
@@ -61,7 +62,7 @@ for _,obj in ipairs(h.objects)do if obj.parent==pane then check(not obj.scripts.
 RA:FireCallback('RAID_GROUPS_CHANGED');refresh()
 check(reads==0 and getters==0,'Hidden callback/getter performed work')
 local function button(text)
-    for _,obj in ipairs(h.objects)do if obj.kind=='Button' and obj.label and obj.label.text==text and obj:IsVisible()then return obj end end
+    for _,obj in ipairs(h.objects)do if obj.kind=='Button' and obj.label and (obj.label.text==text or text=='SAVE' and obj.label.text=='SAVE AS') and obj:IsVisible()then return obj end end
 end
 local function click(text)
     local b=button(text);check(b and b:IsEnabled(),'Missing/disabled button '..text);b:Fire('OnMouseDown');b:Fire('OnClick','LeftButton');return b
@@ -99,6 +100,13 @@ source=ui.slots[3][1];source:Fire('OnDragStart');mouseOver={};focus={source};sou
 check(ui.slots[3][1].entryID==first,'Outside drag edited draft')
 nameBox():SetText('');click('SAVE');check(statusContains('name'),'Invalid Save name had no feedback')
 nameBox():SetText('Boss One');click('SAVE');check(statusContains('Layout saved locally.'),'Save success hidden by preview')
+check(not ui.dirty and ui.saveStatus.text=='Saved' and not button('SAVE').selected,'Save did not clear persistent unsaved cue')
+if ui.selected then card(3,1) end
+card(3,1);card(4,1);check(ui.dirty and button('SAVE').selected and ui.saveStatus.text=='Unsaved changes','Edit did not highlight Save with text')
+card(4,1);card(3,1);check(not ui.dirty and not button('SAVE').selected,'Move back to saved content did not clear highlight')
+nameBox():SetText('Boss Copy');nameBox():Fire('OnTextChanged')
+check(ui.dirty and button('SAVE').label.text=='SAVE AS','Name edit did not become Save as')
+nameBox():SetText('Boss One');nameBox():Fire('OnTextChanged');check(not ui.dirty and button('SAVE').label.text=='SAVE','Returning to saved name did not restore Save state')
 check(env.RaidArsenalDB.raidGroupLayouts.items['Boss One']~=nil,'Save did not persist named layout')
 local savedSlots=env.RaidArsenalDB.raidGroupLayouts.items['Boss One'].slots
 click('FROM RAID');click('LOAD');ui.modalRows[1]:Fire('OnClick')
@@ -160,8 +168,23 @@ ui.modal:Fire('OnKeyDown','ESCAPE')
 click('IMPORT WOWUTILS');ui.paste:SetText('EncounterID:123;Difficulty:Heroic;Name:Boss Import\ninvitelist:Future-TestRealm,,Twin-AlphaRealm;')
 ui.paste:Fire('OnTextChanged');click('READ SECTIONS')
 check(not ui.importConfirm:IsEnabled() and #actions==1,'Parsing imported/applied without explicit choice')
-check(ui.modalRows[1]:IsShown(),'Parsed section missing');ui.modalRows[1]:Fire('OnClick');click('IMPORT DRAFT')
+check(ui.modalRows[1]:IsShown(),'Parsed section missing');ui.modalRows[1]:Fire('OnClick');click('IMPORT & SAVE')
 check(nameBox():GetText()=='Boss Import' and #actions==1,'Import did not update only named local draft')
+check(env.RaidArsenalDB.raidGroupLayouts.items['Boss Import'] and not ui.dirty and ui.saveStatus.text=='Saved','Imported layout missing from Load storage or not clean')
+click('LOAD');local importRow
+for _,row in ipairs(ui.modalRows)do if row:IsShown() and row.item.name=='Boss Import'then importRow=row end end
+check(importRow~=nil,'Imported layout absent from actual Load list');importRow:Fire('OnClick')
+local importNote='EncounterID:123;Difficulty:Heroic;Name:Boss Import\ninvitelist:Future-TestRealm,,Twin-AlphaRealm;'
+click('IMPORT WOWUTILS');ui.paste:SetText(importNote);ui.paste:Fire('OnTextChanged');click('READ SECTIONS');ui.modalRows[1]:Fire('OnClick')
+check(ui.modalStatus.text:find('Boss Import (2)',1,true),'Import did not disclose unique collision name')
+local beforeFailure=core:GetState().draft.revision;local filled={};local count=0
+for _ in pairs(env.RaidArsenalDB.raidGroupLayouts.items)do count=count+1 end
+for i=count+1,50 do local n='Filled '..i;filled[#filled+1]=n;env.RaidArsenalDB.raidGroupLayouts.items[n]={name=n}end
+click('IMPORT & SAVE')
+check(core:GetState().draft.revision==beforeFailure and ui.modalMode=='paste' and ui.modalStatus.text:find('50',1,true),'Failed import falsely saved/closed or replaced draft')
+for _,n in ipairs(filled)do env.RaidArsenalDB.raidGroupLayouts.items[n]=nil end
+click('IMPORT & SAVE')
+check(nameBox():GetText()=='Boss Import (2)' and env.RaidArsenalDB.raidGroupLayouts.items['Boss Import'] and not ui.dirty,'Import collision did not save distinct reusable layout')
 local imported=core:GetState();local futureID=imported.view.groups[1][1]
 check(imported.view.entries[futureID].missing,'Absent planned card vanished')
 -- Explicit exact reconciliation maps a joining planned player without replacing slots.
@@ -186,9 +209,34 @@ ui.paste:Fire('OnEscapePressed');check(not ui.paste:HasFocus() and not ui.modal:
 -- Plain text errors are escaped before reaching a rendered region.
 local save=core.SaveLayout;core.SaveLayout=function()return false,'Invalid |Hplayer:Evil|hlink|h' end
 click('SAVE');check(statusContains('||Hplayer:Evil||hlink||h'),'Dynamic status rendered executable markup');core.SaveLayout=save
+-- Role-only observations update reusable icons without inventing unknown roles.
+roster[1].role='TANK';roster[2].role='HEALER';core:RefreshRoster();refresh()
+local function findCard(guid)
+ for group=1,8 do for slot=1,5 do local b=ui.slots[group][slot];local e=ui.state.view.entries[b.entryID];if e and e.guid==guid then return b end end end
+ for _,b in ipairs(ui.tray)do local e=ui.state.view.entries[b.entryID];if b:IsShown() and e and e.guid==guid then return b end end
+end
+local tank,healer=findCard(roster[1].guid),findCard(roster[2].guid)
+check(tank.roleIcon:IsShown() and healer.roleIcon:IsShown(),'Known tank/healer icons missing')
+tank:Fire('OnEnter');check(env.GameTooltip.lines[#env.GameTooltip.lines-3]=='Tank' or table.concat(env.GameTooltip.lines,' '):find('Tank',1,true),'Role tooltip missing')
+roster[1].role=nil;roster[2].role='DAMAGER';core:RefreshRoster();refresh()
+check(not tank.roleIcon:IsShown() and not healer.roleIcon:IsShown(),'Reused card retained guessed/stale tank/healer icon')
+-- Sort menu stays local, preserves the card set and fences under uncertainty.
+for _,r in ipairs(roster)do r.role='DAMAGER'end
+core:RefreshRoster();refresh();click('SORT DRAFT');check(ui.sortMenu:IsShown(),'Sort popover unavailable')
+local drag=ui.slots[2][1];local dragID=drag.entryID
+drag:Fire('OnDragStart');mouseOver={[ui.sortMenu]=true,[ui.slots[3][1]]=true};drag:Fire('OnDragStop')
+check(ui.slots[2][1].entryID==dragID,'Drop passed through sort menu to covered group card')
+mouseOver={};click('Role sort');check(not ui.sortMenu:IsShown() and #actions==1,'Role sort started live action or kept menu open')
+click('SORT DRAFT');click('Split odd / even');click('SORT DRAFT');click('Split adjacent groups')
+check(#actions==1 and ui.dirty,'Split menu moved live players or failed unsaved state')
+local stateGetter=core.GetState
+core.GetState=function(self)local state=stateGetter(self);state.apply={status='stopped',unknownResult=true};return state end
+refresh();check(not button('SORT DRAFT'):IsEnabled(),'Unresolved Apply enabled local sort menu');core.GetState=stateGetter;refresh()
+click('SORT DRAFT')
 pane:Hide();local hiddenReads,hiddenGetters=reads,getters
 RA:FireCallback('RAID_GROUPS_CHANGED');refresh()
 check(reads==hiddenReads and getters==hiddenGetters and not ui.active,'Hidden pane refreshed/reopened core')
 check(core:GetState().draft~=nil and not ui.modal:IsShown() and ui.selected==nil and ui.dragging==nil,'Hide discarded draft or retained interactive state')
+check(not ui.sortMenu:IsShown(),'Hide retained local sort menu')
 check(#actions==1,'Local editor made unexpected game actions')
 print(('raid_groups_ui.lua: %d assertions passed'):format(checks))

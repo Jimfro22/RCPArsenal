@@ -2238,6 +2238,27 @@ CreateToolbox = function()
 end
 
 function Toolbox:IsSorting() return sortState.active end
+-- Pure classification for the local planner. No roster refresh/cache restore,
+-- inspection, native unit lookup or live sort controller is invoked here.
+function Toolbox:GetDraftMemberKind(member)
+    local role=member.role
+    if role=="TANK" or role=="HEALER" then return role end
+    if role~="DAMAGER" then return nil end
+    local report=RA.Reports and RA.Reports[member.fullName]
+    if report and not IsSecret(report) and type(report)=="table" and not IsSecret(report.verified) and report.verified==true
+        and not IsSecret(report.source) and report.source~="DEMO" and not IsSecret(report.guid) and report.guid==member.guid
+        and not IsSecret(report.name) and report.name==member.fullName and not IsSecret(report.class) and report.class==member.class
+        and not IsSecret(report.specID) and type(report.specID)=="number" and not IsSecret(report.cached)
+        and RA.IsReportUsable then
+        local info={name=member.fullName,guid=member.guid,class=member.class,role=role}
+        local ok,usable=pcall(RA.IsReportUsable,RA,report,info)
+        if ok and not IsSecret(usable) and usable==true then
+            local kind=SPEC_KIND[report.specID]
+            if kind=="MELEE" or kind=="RANGED" then return kind,report.cached==true end
+        end
+    end
+    return DAMAGE_CLASS_FALLBACK[member.class]
+end
 -- Excludes the planner itself; RaidGroups uses this to reject a competing job.
 function Toolbox:IsGroupOperationPending() return sortState.active or pendingMode ~= nil end
 function Toolbox:CancelGroupOperation()
