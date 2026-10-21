@@ -1,0 +1,15 @@
+# One-key marker center release (alpha.18)
+
+With the optional wheel enabled, release in the center to place the next configured sequence marker at the current cursor. A quick tap works on release. A center release after a long hold, or after returning from an outer sector, does the same. This is the owner-approved one-key compromise; it does not distinguish hold duration. Nothing places on key down.
+
+Release over an outer sector to open Blizzard's normal ground-targeting reticle, then left-click the ground to place precisely. Right-click/Escape cancels the wheel before release, or cancels native targeting afterward. Center release is not Cancel. The two existing Place/Clear keybinding identities and assigned keys remain unchanged. Wheel OFF retains the normal down-phase instant sequence.
+
+The secure hardware release validates the pointer position. Only a valid center position may use `rcp-sequence-macro-N`; missing/outside-viewport pointer coordinates are a no-op. An empty sequence is a center no-op but does not disable the eight outer sectors. Center placement advances the shared configured index once and wraps; sector selection and cancellation do not advance it. Clear resets it as before. Index advancement records an attempted action, not successful terrain/permission acceptance.
+
+The existing restricted reset clears the held state, macro, catcher, transient bindings and visual work before the protected action runs. Repeated up, cancelled release, stale visual timer, editor/placement suppression and existing native context/UI hide remain guarded. All modified Escape/right-click routes and mouse pass-through remain intact. There is no random fallback, third binding, synthetic input, native target-completion polling or cursor movement.
+
+The 0.18-second timer controls presentation only. The restricted environment has no ordinary elapsed-time clock; native auto-hide tracks pointer enter/leave and is not a stationary-hold clock. No addon timer or OnUpdate writes protected action state. The lost-release recovery cue asks the user to cancel before releasing the marker key, so it does not imply that a late center release cancels.
+
+Offline checks use the actual modules and restricted snippets, including both short and displayed long center releases, configured sequence wrap, valid/missing/outside pointer positions, empty order, sectors, cancel/modifier routes, stale release/timer, cleanup before action and suppression. The captured alpha.17 handler is a negative control and must fail the new quick-center contract. Native hardware, combat taint, permissions, terrain and mouse-look behavior still require owner acceptance.
+
+Update the existing Windows checkout with Fetch origin → Pull origin → full WoW restart. Test center release before and after the visual appears, return-to-center, all eight sectors plus the ground click, right-click/Escape then later key-up, clear, empty order, keyboard/side buttons and both native action-keydown CVar settings. No reinstall, binding reset or junction change is required. CurseForge/tags/releases remain held.

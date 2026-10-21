@@ -139,7 +139,10 @@ function Markers:IsRadialEnabled()
 end
 
 function Markers:GetModeHelp()
-    return "Hold and choose a marker; release to aim, then left-click the ground to place. Center release places nothing. Escape/right-click cancels."
+    if #self:GetSettings().order == 0 then
+        return "Marker order empty: center release does nothing. Choose an outer marker; release to aim, then click ground. Right-click/Escape cancels."
+    end
+    return "Center release places the next sequence marker, even after a long hold. Choose a sector; release to aim, then left-click ground. Right-click/Escape cancels."
 end
 
 function Markers:GetRadialStatusText()
