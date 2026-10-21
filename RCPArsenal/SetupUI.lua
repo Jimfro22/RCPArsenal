@@ -1,109 +1,145 @@
 local _, RA = ...
-function RA:CreateSetupPane(parent, kit)
-    local T, C, Setup = self.Theme, self.Theme.Colors, self.Setup
-    local function Text(owner, value, size, x, y, width)
-        local label = kit.Font(owner, size or 10, C.textSoft, "REGULAR")
-        self:SetVisualText(label, value)
-        label:SetWordWrap(true); T.SetWidth(label, width or 420)
-        T.SetPoint(label, "TOPLEFT", owner, "TOPLEFT", x or 0, y or 0)
-        return label
+local function Text(kit, owner, value, size, x, y, width)
+    local label = kit.Font(owner, size or 10, RA.Theme.Colors.textSoft, "REGULAR")
+    RA:SetVisualText(label, value); label:SetWordWrap(true)
+    RA.Theme.SetWidth(label, width or 918)
+    RA.Theme.SetPoint(label, "TOPLEFT", owner, "TOPLEFT", x or 0, y or 0)
+    return label
+end
+local function Body(parent, bottom)
+    local T = RA.Theme
+    local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    T.SetPoint(scroll,"TOPLEFT",parent,"TOPLEFT",0,-62)
+    T.SetPoint(scroll,"BOTTOMRIGHT",parent,"BOTTOMRIGHT",-28,bottom or 0)
+    local child = CreateFrame("Frame",nil,scroll); T.SetSize(child,918,598-(bottom or 0)); scroll:SetScrollChild(child)
+    local function Resize(height)
+        child:SetHeight(height)
+        local viewport=scroll:GetHeight()
+        if not viewport or viewport<=0 then viewport=598-(bottom or 0) end
+        local current=scroll:GetVerticalScroll() or 0
+        local maximum=math.max(0,height-viewport)
+        if current>maximum then scroll:SetVerticalScroll(maximum) end
     end
-    local function Set(key, value) Setup:Set(key, value) end
-    local function Toggle(owner, label, detail, key, x, y, width)
-        local control = kit.Toggle(owner, label, detail, function() return Setup:Get(key) end, function(value) Set(key, value) end)
-        T.SetWidth(control, width or 426); T.SetPoint(control, "TOPLEFT", owner, "TOPLEFT", x or 16, y)
-        return control
-    end
-    kit.Heading(parent, "Set up Arsenal", "Turn on only what you want. You can change everything later.")
-    local role = kit.Segmented(parent, "HOW DO YOU USE ARSENAL?", {{label="RAIDER",value="RAIDER"},{label="RAID LEADER",value="LEADER"}},
-        function() return Setup:Get("role") or "RAIDER" end, function(value) Set("role",value) end)
-    T.SetPoint(role,"TOPLEFT",parent,"TOPLEFT",0,-62);T.SetSize(role,458,54);role:Layout(458)
-    Text(parent,"Presentation only. Raid permissions still apply.",9,0,-122,458)
-    Text(parent,"MORNING BREW ADDONS · We use these addons. Download and install outside WoW.",8.5,0,-490,760)
-    local checklist=kit.Button(parent,"VIEW CHECKLIST",142,22,function()RA:OpenConfig("ADDONS")end)
-    T.SetPoint(checklist,"TOPRIGHT",parent,"TOPRIGHT",0,-483)
-    local chips={}
-    for index,entry in ipairs(RA.AddonCatalog.Entries) do
+    return child, Resize
+end
+-- Local addon metadata only. The version-query workflow remains on Addons.
+local function Addons(parent, kit, refresh)
+    local T, expanded, chips = RA.Theme, false, {}
+    local header=kit.Button(parent,"Morning Brew addons · 6 addons +",918,34,function()
+        expanded=not expanded; refresh()
+    end)
+    local details=CreateFrame("Frame",nil,parent); T.SetSize(details,918,220); details:Hide()
+    Text(kit,details,"Download and install outside WoW.",10,0,0,918)
+    local n=0
+    for _,entry in ipairs(RA.AddonCatalog.Entries) do
         if not entry.internal then
             local definition=entry
-            local chip=kit.Button(parent,entry.name,467,28,function()RA:ShowAddonLink(definition.id)end)
-            local offset=index-2
-            T.SetPoint(chip,"TOPLEFT",parent,"TOPLEFT",(offset%2)*483,-510-math.floor(offset/2)*30)
-            chip.label:SetWordWrap(false);chip.label:SetHeight(24);RA:ApplyFont(chip.label,10,"REGULAR",false)
-            chip:HookScript("OnEnter",function(self)
-                GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText(definition.name)
+            local chip=kit.Button(details,entry.name,451,56,function()RA:ShowAddonLink(definition.id)end)
+            T.SetPoint(chip,"TOPLEFT",details,"TOPLEFT",(n%2)*467,-28-math.floor(n/2)*62)
+            chip.label:SetWordWrap(true);chip.label:SetHeight(48);RA:ApplyFont(chip.label,10,"REGULAR",false)
+            chip:HookScript("OnEnter",function(owner)
+                GameTooltip:SetOwner(owner,"ANCHOR_RIGHT");GameTooltip:SetText(definition.name)
                 GameTooltip:AddLine(definition.priority.." · "..definition.description,0.76,0.80,0.86,true)
-                GameTooltip:AddLine("Copy its download link, then install outside WoW. This does not install or configure it.",0.76,0.80,0.86,true);GameTooltip:Show()
+                GameTooltip:AddLine("Copy its download link, then install outside WoW.",0.76,0.80,0.86,true);GameTooltip:Show()
             end)
             chip:HookScript("OnLeave",function()GameTooltip:Hide()end)
-            chips[definition.id]=chip
+            chips[entry.id]=chip;n=n+1
         end
     end
-    local everyone=kit.Card(parent,"FOR EVERYONE","Optional personal tools. Existing child preferences are preserved.")
-    T.SetPoint(everyone,"TOPLEFT",parent,"TOPLEFT",0,-150);T.SetSize(everyone,458,326)
-    Toggle(everyone,"Accept normal resurrection","Combat resurrection stays manual.","autoRes",16,-48)
-    Toggle(everyone,"Healthstone / potion reminder","Ready Healthstone first, then a potion. You use the item.","reminder",16,-102)
-    local reminder=CreateFrame("Frame",nil,everyone)
-    T.SetPoint(reminder,"TOPLEFT",everyone,"TOPLEFT",16,-156);T.SetSize(reminder,426,170)
-    local threshold=kit.Slider(reminder,"SHOW AT OR BELOW",1,99,1,function()return Setup:Get("threshold") or 40 end,
-        function(value)Set("threshold",value)end,function(value)return tostring(value).."% health"end)
-    T.SetPoint(threshold,"TOPLEFT",reminder,"TOPLEFT",0,0);T.SetWidth(threshold,426)
-    Toggle(reminder,"Play low-health sound","Native warning ~35%; separate from visual health.","sound",0,-62,205)
-    Toggle(reminder,"Icon edge glow","Healthstone or potion at ≤35%, while visible.","glow",221,-62,205)
-    local savedSound=Text(reminder,"",9,0,-125,286)
-    local sampleResult=Text(parent,"Team-check replies stay available with tools off.",9,0,-134,950)
-    local play=kit.Button(reminder,"PLAY SOUND SAMPLE",154,28,function()
-        local ok,reason=RA.PersonalTools:PreviewReminderSound()
-        RA:SetVisualText(sampleResult,reason or (ok and "Played the saved sound sample." or "Sound sample unavailable."))
-    end)
-    T.SetPoint(play,"TOPRIGHT",reminder,"TOPRIGHT",0,-126)
-    local leader=kit.Card(parent,"RAID-LEADER CHOICES","These controls grant no group permissions.")
-    T.SetPoint(leader,"TOPRIGHT",parent,"TOPRIGHT",0,-150);T.SetSize(leader,478,326)
-    local leaderChoices=CreateFrame("Frame",nil,leader);leaderChoices:SetAllPoints(leader)
-    Toggle(leaderChoices,"Enable Quick Bar","Hover puck for ready checks, countdowns and raid setup.","quickBar",16,-48,446)
-    local missing=Toggle(leaderChoices,"Missing provider classes","Group classes only; no inspection.","missing",32,-110,430)
-    Toggle(leaderChoices,"Enable Available Cooldowns","Inspects the group for available abilities. No live cooldown timers.","hud",16,-164,446)
-    local callout=kit.Segmented(leaderChoices,"TILE LEFT-CLICK",{{label="OFF",value="OFF"},{label="WHISPER",value="WHISPER"},{label="SAY",value="SAY"}},
-        function()return Setup:Get("leftClick") or "OFF"end,function(value)Set("leftClick",value)end)
-    T.SetPoint(callout,"TOPLEFT",leaderChoices,"TOPLEFT",32,-226);T.SetSize(callout,430,54);callout:Layout(430)
-    local calloutHelp=Text(leaderChoices,"Whisper sends the clicked player a callout. Say is nearby chat. Off sends neither.",9,32,-286,430)
-    local raider=CreateFrame("Frame",nil,leader);raider:SetAllPoints(leader)
-    Text(raider,"Your raid lead can still request supported addon and supply checks.\n\nOptional tools stay as reviewed here. Existing raid tools on a setup replay keep their saved choices.",12,20,-80,434)
-    local showLeader=kit.Button(raider,"SHOW RAID-LEADER CHOICES",310,34,function()Set("role","LEADER")end)
-    T.SetPoint(showLeader,"TOPLEFT",raider,"TOPLEFT",20,-228)
-    local summary=Text(parent,"",9.3,0,-620,540)
-    local count=Text(parent,"",10,0,-602,540)
+    return function(y)
+        header:ClearAllPoints();T.SetPoint(header,"TOPLEFT",parent,"TOPLEFT",0,-y)
+        details:ClearAllPoints();T.SetPoint(details,"TOPLEFT",header,"BOTTOMLEFT",0,-8)
+        details:SetShown(expanded)
+        RA:SetVisualText(header.label,"Morning Brew addons · 6 addons "..(expanded and "-" or "+"))
+        if expanded then
+            local report=RA.AddonCatalog:GetLocalReport()
+            for id,chip in pairs(chips) do
+                local entry,row=RA.AddonCatalog:GetEntry(id),(report.byID or {})[id] or {}
+                local status=row.installed==false and "Not detected" or row.installed==true and row.enabled==false and "Disabled" or row.installed==true and "Installed" or "Unknown"
+                RA:SetVisualText(chip.label,entry.name.."\n"..entry.priority.." · "..status)
+            end
+        end
+        return y+34+(expanded and 228 or 0)
+    end
+end
+function RA:CreateGeneralPane(parent,kit)
+    local T,Setup=self.Theme,self.Setup
+    kit.Heading(parent,"General","Choose the tools you want.")
+    local body,Resize=Body(parent)
+    local welcome=Text(kit,body,"Welcome to Arsenal. Turn on only the tools you want.",12,0,0,918)
+    local title=Text(kit,body,"Your tools",13,0,-34,918)
+    local rows={}
+    for i,row in ipairs({{"autoRes","Normal resurrection"},{"reminder","Consumable reminder"},{"quickBar","Quick Bar"},{"hud","Available Cooldowns"}}) do
+        rows[i]=Text(kit,body,"",11,((i-1)%2)*467,-66-math.floor((i-1)/2)*30,451)
+        rows[i].choiceKey,rows[i].choiceLabel=row[1],row[2]
+    end
+    local role=Text(kit,body,"",10,0,-136,918)
+    local pending=Text(kit,body,"Choices not saved.",10,0,-162,380)
+    local review=kit.Button(body,"REVIEW CHOICES",190,34,function()RA:OpenSetup()end,true)
+    T.SetPoint(review,"TOPLEFT",body,"TOPLEFT",0,-190)
+    local discard=kit.Button(body,"DISCARD",130,34,function()Setup:Cancel();kit.Refresh()end)
+    T.SetPoint(discard,"LEFT",review,"RIGHT",10,0)
+    local skip=kit.Button(body,"SKIP FOR NOW",160,34,function()Setup:Skip();kit.Refresh()end)
+    T.SetPoint(skip,"LEFT",review,"RIGHT",10,0)
+    local Refresh
+    local addonLayout=Addons(body,kit,function()Refresh()end)
+    Refresh=function()
+        welcome:SetShown(Setup:IsIntroduction())
+        for _,row in ipairs(rows) do RA:SetVisualText(row,row.choiceLabel.." · "..(Setup:GetCurrent(row.choiceKey) and "On" or "Off")) end
+        RA:SetVisualText(role,"Presentation: "..(Setup:GetRole()=="LEADER" and "Raid leader" or "Raider"))
+        pending:SetShown(Setup:HasDraft())
+        RA:SetVisualText(review.label,Setup:HasDraft() and "RESUME REVIEW" or "REVIEW CHOICES")
+        discard:SetShown(Setup:HasDraft());skip:SetShown(Setup:IsIntroduction() and not Setup:HasDraft())
+        Resize(addonLayout(246)+14)
+    end
+    return Refresh
+end
+function RA:CreateSetupPane(parent,kit)
+    local T,Setup=self.Theme,self.Setup
+    kit.Heading(parent,"Review choices","Changes apply when you save.")
+    local body,Resize=Body(parent,64)
+    local role=kit.Segmented(body,"REVIEW AS",{{label="RAIDER",value="RAIDER"},{label="RAID LEADER",value="LEADER"}},
+        function()return Setup:Get("role") or "RAIDER"end,function(value)Setup:Set("role",value)end)
+    T.SetPoint(role,"TOPLEFT",body,"TOPLEFT",0,0);T.SetSize(role,451,54);role:Layout(451)
+    Text(kit,body,"Presentation only. Raid permissions still apply.",10,0,-64,918)
+    local personal=kit.Card(body,"PERSONAL TOOLS","")
+    T.SetPoint(personal,"TOPLEFT",body,"TOPLEFT",0,-96);T.SetSize(personal,451,190)
+    local leader=kit.Card(body,"RAID LEADER TOOLS","")
+    T.SetPoint(leader,"TOPLEFT",body,"TOPLEFT",467,-96);T.SetSize(leader,451,190)
+    local function Toggle(owner,label,detail,key,y)
+        local control=kit.Toggle(owner,label,detail,function()return Setup:Get(key)end,function(value)Setup:Set(key,value)end)
+        T.SetWidth(control,419);T.SetPoint(control,"TOPLEFT",owner,"TOPLEFT",16,y)
+    end
+    Toggle(personal,"Normal resurrection","Ordinary offers; combat resurrection stays manual.","autoRes",-64)
+    Toggle(personal,"Consumable reminder","Ready Healthstone first, then healing potion.","reminder",-124)
+    Toggle(leader,"Quick Bar","Hover puck for raid setup controls.","quickBar",-64)
+    Toggle(leader,"Available Cooldowns","Enables the HUD and inspection.","hud",-124)
+    local leaderSummary=Text(kit,body,"Existing leader tools stay as saved.",10,467,-114,451)
+    local Refresh
+    local addonLayout=Addons(body,kit,function()Refresh()end)
+    local status=Text(kit,parent,"",10,0,-610,460)
     local function Finish(save)
         local ok,result
-        if save then ok,result=Setup:Save() else ok,result=Setup:Skip() end
-        if not ok then RA:SetVisualText(sampleResult,result or "Choices unavailable.");return end
-        RA:OpenConfig(result or "ADDONS")
+        if save then ok,result=Setup:Save()
+        elseif Setup:IsFirstUseDraft() then ok,result=Setup:Skip()
+        else ok,result=Setup:Cancel() end
+        if ok then RA:OpenConfig(result or "GENERAL") else RA:SetVisualText(status,result or "Choices unavailable.");Refresh() end
     end
-    local skip=kit.Button(parent,"SKIP FOR NOW",174,34,function()Finish(false)end)
-    T.SetPoint(skip,"BOTTOMRIGHT",parent,"BOTTOMRIGHT",-214,10)
+    local cancel=kit.Button(parent,"CANCEL",156,34,function()Finish(false)end)
+    T.SetPoint(cancel,"BOTTOMRIGHT",parent,"BOTTOMRIGHT",-210,16)
     local save=kit.Button(parent,"SAVE CHOICES",200,34,function()Finish(true)end,true)
-    T.SetPoint(save,"BOTTOMRIGHT",parent,"BOTTOMRIGHT",0,10)
-    return function()
-        local report=RA.AddonCatalog:GetLocalReport()
-        for id,chip in pairs(chips)do
-            local entry,row=RA.AddonCatalog:GetEntry(id),report.byID[id] or {}
-            local status=row.installed==false and "Not detected" or row.installed==true and row.enabled==false and "Disabled" or row.installed==true and "Installed" or "Unknown"
-            local name=id=="northernsky" and "Northern Sky" or entry.name
-            RA:SetVisualText(chip.label,name.." · "..entry.priority.." · "..status)
-        end
+    T.SetPoint(save,"BOTTOMRIGHT",parent,"BOTTOMRIGHT",0,16)
+    local reload=kit.Button(body,"RELOAD CHOICES",180,32,function()Setup:Reload();RA:SetVisualText(status,"");kit.Refresh()end)
+    Refresh=function()
         local isLeader=Setup:Get("role")=="LEADER"
-        leaderChoices:SetShown(isLeader);raider:SetShown(not isLeader)
-        reminder:SetShown(Setup:Get("reminder")==true)
-        missing:SetShown(Setup:Get("quickBar")==true)
-        callout:SetShown(Setup:Get("hud")==true);calloutHelp:SetShown(Setup:Get("hud")==true)
-        local personal=RA:GetDB().personalTools
-        local sound=RA.ReminderSounds:Get(personal.reminderSoundChoice)
-        RA:SetVisualText(savedSound,(sound and sound.label or "Sound 6").." · "..(personal.reminderSoundChannel or "Master").."\nSaved sound and audio policy.")
-        local selected,detail=Setup:GetSummary()
-        RA:SetVisualText(count,tostring(selected).." tools selected")
-        RA:SetVisualText(summary,detail:gsub("\n"," · "))
+        leader:SetShown(isLeader);leaderSummary:SetShown(not isLeader and (Setup:Get("quickBar") or Setup:Get("hud")))
+        local conflict=Setup:GetConflict()
+        reload:ClearAllPoints();T.SetPoint(reload,"TOPLEFT",body,"TOPLEFT",0,-302);reload:SetShown(conflict~=nil)
+        Resize(addonLayout(conflict and 350 or 302)+14)
+        RA:SetVisualText(cancel.label,Setup:IsFirstUseDraft() and "SKIP FOR NOW" or "CANCEL")
         local restricted=InCombatLockdown() or RA.InEncounter or (IsEncounterInProgress and IsEncounterInProgress())
-        save:SetEnabled(not restricted);save:SetAlpha(restricted and 0.5 or 1)
-        if restricted then RA:SetVisualText(sampleResult,"Finish setup after combat. Your draft is kept; nothing applies automatically.") end
+        save:SetEnabled(not restricted and not conflict);save:SetAlpha((restricted or conflict) and 0.5 or 1)
+        RA:SetVisualText(status,conflict or (restricted and "Save after combat. Your choices are kept." or ""))
     end
+    return Refresh
 end

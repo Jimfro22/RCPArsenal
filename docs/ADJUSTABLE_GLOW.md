@@ -1,5 +1,7 @@
 # Adjustable reminder glow — alpha.16
 
+Current settings routing: alpha.17 places explicit Review choices under General, detailed reminder options under Personal Tools disclosures, and supply results under Quick Bar → Raid checks. See [the settings cleanup contract](SETTINGS_CLEANUP.md) for current navigation and draft behavior. The runtime behavior documented below is retained.
+
 Alpha.16 repairs outside geometry, preview contrast, spark phases/sizing and label clearance. See the [visibility repair and native acceptance](GLOW_VISIBILITY.md).
 
 Personal Tools has one initially collapsed **Glow settings** disclosure alongside Text & Sound. Opening either closes the other to fit the existing panel. The everyday **Icon glow at ≤35%** switch remains visible. Steady border and the existing warm gold remain the default; existing users gain no animated cost until choosing an animated style. No media or branding changes, library dependency, or broader UI redesign.

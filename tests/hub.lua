@@ -18,6 +18,9 @@ function methods:SetThumbTexture(value) self.thumb = self:CreateTexture(); self.
 function methods:GetValue() return self.value or 0 end
 function methods:SetValue(value) self.value = value; if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,value) end end
 function methods:SetScrollChild(child) self.child = child end
+function methods:SetClampedToScreen(value) self.clampedToScreen=value end
+function methods:SetVerticalScroll(value) self.verticalScroll=value end
+function methods:GetVerticalScroll() return self.verticalScroll or 0 end
 function methods:HasFocus() return self.focus end
 function methods:SetFocus() self.focus = true end
 function methods:ClearFocus() self.focus = false end
@@ -277,8 +280,12 @@ local personalGetState=RA.PersonalTools.GetState
 local hiddenPersonalReads=0
 RA.PersonalTools.GetState=function(...)hiddenPersonalReads=hiddenPersonalReads+1;return personalGetState(...)end
 SlashCmdList.RCPARSENAL('')
-check(RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='ADDONS', 'First open must default to Addons')
-check(hiddenPersonalReads==0,'Addons open refreshed hidden personal controls')
+check(RA.ConfigFrame:IsShown() and RaidArsenalDB.navigation.lastTab=='GENERAL', 'First open must default to General')
+check(hiddenPersonalReads==0,'General open refreshed hidden personal controls')
+check(not RA.Setup:HasDraft(),'General created a draft')
+SlashCmdList.RCPARSENAL('general')
+check(RaidArsenalDB.navigation.lastTab=='GENERAL' and not RA.Setup:HasDraft(),'Explicit general route failed')
+RA:OpenConfig('ADDONS')
 -- Matrix ages/eligibility stay live without rebuilding version rows for
 -- inspection progress or every heartbeat. Real readiness changes still paint.
 local snapshotGetter,localGetter,eligibilityGetter=RA.Readiness.GetSnapshot,RA.AddonCatalog.GetLocalReport,RA.Readiness.GetQueryEligibility
@@ -372,61 +379,43 @@ personalSettings.reminderStoneText,personalSettings.reminderPotionText='SAVED_ST
 RA:OpenConfig('MYTOOLS'); cleanErrors()
 check(hiddenPersonalReads>0,'Showing Personal Tools did not refresh its controls')
 RA.PersonalTools.GetState=personalGetState
-check(hasVisibleText('Personal tools'), 'Personal tools did not open')
+check(hasVisibleText('Personal Tools'), 'Personal tools did not open')
 local function clickVisible(label)
     for _, obj in ipairs(objects) do
         if obj.label and obj.label.text == label and obj:IsVisible() and obj:IsEnabled() then obj:Fire('OnClick'); return true end
     end
     return false
 end
-do
-    local glow, disclosure, sizeControl, masterControl
+local function clickDisclosure(name)
     for _,obj in ipairs(objects) do
-        if obj.title and obj.title.text=='Icon glow at 35% or lower' then glow=obj end
-        if obj.label and obj.label.text=='REMINDER TEXT & SOUND +' then disclosure=obj end
-        if obj.title and obj.title.text=='EMPTY WARNING SIZE' then sizeControl=obj end
-        if obj.title and obj.title.text=='Enable Healthstone / healing potion reminder' then masterControl=obj end
+        if obj.label and obj.label.text:find(name..' · ',1,true)==1 and obj:IsVisible() then obj:Fire('OnClick');return true end
     end
-    check(glow and glow:IsVisible() and RA.PersonalTools:GetState().reminderStoneGlow,'Everyday icon-glow control missing or default changed')
-    local function rect(obj)
-        local p=obj.points[#obj.points]
-        check(p and p[1]=='TOPLEFT' and p[2]==glow.parent and p[3]=='TOPLEFT','Layout fixture needs direct pane-relative control bounds')
-        return p[4],-p[5],obj:GetWidth(),obj:GetHeight()
-    end
-    local x,y,w,h=rect(glow)
-    local dx,dy,dw,dh=rect(disclosure)
-    local _,sy,_,sh=rect(sizeControl)
-    -- The fixture does not resolve anchor-derived pane width; its full-width
-    -- master row supplies the same content boundary without hardcoded bounds.
-    check(x>=0 and x+w<=masterControl:GetWidth() and y>=sy+sh
-        and (x>=dx+dw or dx>=x+w or y>=dy+dh or dy>=y+h),'Compact glow control overlaps disclosure/sizes or exceeds pane')
-    check(glow.title:GetStringWidth()<=w-80 and glow.description:GetStringWidth()<=w-80
-        and 25+glow.description:GetStringHeight()<=h,'Compact glow label/helper exceed the control')
-    local beforeFrames,beforeTimers,beforeSent=#objects,#timers,sent
-    local sound,position=personalSettings.reminderSound,personalSettings.reminderPosition
-    glow:Fire('OnClick');RA:NormalizeProfile(db)
-    check(personalSettings.reminderStoneGlow==false and not personalSettings.consumableReminder,'Glow switch OFF was overwritten or enabled reminder')
-    glow:Fire('OnClick')
-    check(personalSettings.reminderStoneGlow and personalSettings.reminderSound==sound and personalSettings.reminderPosition==position
-        and #objects==beforeFrames and #timers==beforeTimers and sent==beforeSent,'Glow switch changed audio/anchor or allocated OFF runtime work')
-    check(clickVisible('REMINDER TEXT & SOUND +'),'Cold personal pane disclosure missing')
-    local details
-    for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text=='HEALTHSTONE TEXT' then details=obj.parent end end
-    local _,detailsY=rect(details)
-    check(glow:IsVisible() and y+h<=detailsY,'Expanded reminder controls overlap or hide icon-glow switch')
 end
+check(not hasVisibleText('HEALTH THRESHOLD') and not hasVisibleText('ICON SIZE'),'OFF reminder exposed saved options without Settings')
+local beforeSettingsTimers,beforeSettingsSent=#timers,sent
+check(clickVisible('SETTINGS') and hasVisibleText('HEALTH THRESHOLD') and hasVisibleText('WHEN TO SHOW'),'OFF settings action failed')
+check(not personalSettings.consumableReminder and #timers==beforeSettingsTimers and sent==beforeSettingsSent,'Settings opted in or started work')
+check(not hasVisibleText('Warning sound') and not hasVisibleText('ICON SIZE'),'Disclosures did not start closed')
 local function visibleField(label)
     for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text==label and obj:IsVisible() then return obj.box:GetText() end end
 end
-check(visibleField('HEALTHSTONE TEXT')=='SAVED_STONE_SENTINEL' and visibleField('HEALING POTION TEXT')=='SAVED_POTION_SENTINEL',
-    'First disclosure expansion did not refresh saved reminder text')
-check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Reminder disclosure did not collapse')
-personalSettings.reminderStoneText='CHANGED_WHILE_COLLAPSED'
-RA:FireCallback('PERSONAL_TOOLS_CHANGED')
-check(clickVisible('REMINDER TEXT & SOUND +') and visibleField('HEALTHSTONE TEXT')=='CHANGED_WHILE_COLLAPSED',
-    'Re-expanding disclosure did not catch up to a changed hidden preference')
+check(clickDisclosure('Messages') and visibleField('Healthstone message')=='SAVED_STONE_SENTINEL'
+    and visibleField('Potion message')=='SAVED_POTION_SENTINEL','First message expansion did not refresh saved text')
+check(clickDisclosure('Messages') and not visibleField('Healthstone message'),'Messages failed to close')
+personalSettings.reminderStoneText='CHANGED_WHILE_COLLAPSED';RA:FireCallback('PERSONAL_TOOLS_CHANGED')
+check(clickDisclosure('Messages') and visibleField('Healthstone message')=='CHANGED_WHILE_COLLAPSED','Hidden preference did not refresh on expand')
 personalSettings.reminderStoneText,personalSettings.reminderPotionText=originalStoneText,originalPotionText
-check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Reminder disclosure did not return to compact layout')
+clickDisclosure('Messages')
+check(clickDisclosure('Appearance') and hasVisibleText('ICON SIZE') and hasVisibleText('Glow at 35% or lower'),'Appearance lost sizes/glow master')
+local glow
+for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Glow at 35% or lower' then glow=obj end end
+local sound,position=personalSettings.reminderSound,personalSettings.reminderPosition
+local beforeFrames,beforeTimers,beforeSent=#objects,#timers,sent
+glow:Fire('OnClick');RA:NormalizeProfile(db)
+check(not personalSettings.reminderStoneGlow and not personalSettings.consumableReminder,'Glow OFF reset or enabled reminder')
+glow:Fire('OnClick')
+check(personalSettings.reminderStoneGlow and personalSettings.reminderSound==sound and personalSettings.reminderPosition==position
+    and #objects==beforeFrames and #timers==beforeTimers and sent==beforeSent,'Glow changed audio/anchor or allocated OFF runtime work')
 
 -- The compact glow disclosure shares the existing expanded region and never
 -- starts a sample or applies a Setup draft. Native picker callbacks own one
@@ -436,8 +425,8 @@ do
     for _,obj in ipairs(objects) do if obj.label and obj.label.text=='RESET GLOW SETTINGS' then glowDetails=obj.parent end end
     check(glowDetails and not glowDetails:IsShown(),'Glow settings did not start collapsed')
     local mode=RA.PersonalTools:GetState().previewMode
-    check(clickVisible('GLOW SETTINGS +') and glowDetails:IsShown(),'Glow disclosure did not open')
-    check(not visibleField('HEALTHSTONE TEXT') and hasVisibleText('COLOR'),'Glow disclosure overlapped Text & Sound or lost shared Color')
+    check(clickVisible('Advanced glow +') and glowDetails:IsShown(),'Glow disclosure did not open')
+    check(not visibleField('Healthstone message') and hasVisibleText('COLOR'),'Glow disclosure overlapped Text & Sound or lost shared Color')
     check(clickVisible('Steady border  v') and clickVisible('Pixel Glow'),'Style chooser missing requested Pixel style')
     check(hasVisibleText('LINES') and hasVisibleText('LINE LENGTH') and hasVisibleText('THICKNESS') and not hasVisibleText('PARTICLE GROUPS · 4 SPARKS EACH'),'Pixel active-only controls wrong')
     local lines
@@ -469,17 +458,17 @@ do
     local resetHides=ColorPickerFrame.hides;staleCancel()
     check(p.reminderGlow.color[1]==1 and p.reminderGlow.color[2]==0.72 and resetHides>=1,'Picker Cancel overwrote reset or owned picker stayed open')
     clickVisible('Color');local ownHides=ColorPickerFrame.hides
-    clickVisible('HIDE GLOW SETTINGS')
+    clickVisible('Advanced glow -')
     check(ColorPickerFrame.hides==ownHides+1,'Disclosure close left owned picker open')
-    clickVisible('GLOW SETTINGS +');clickVisible('Color');ownHides=ColorPickerFrame.hides
-    ColorPickerFrame.swatchFunc=function()end;clickVisible('HIDE GLOW SETTINGS')
+    clickVisible('Advanced glow +');clickVisible('Color');ownHides=ColorPickerFrame.hides
+    ColorPickerFrame.swatchFunc=function()end;clickVisible('Advanced glow -')
     check(ColorPickerFrame.hides==ownHides,'Disclosure close hid another picker owner')
-    clickVisible('GLOW SETTINGS +')
+    clickVisible('Advanced glow +')
 
     check(p.consumableReminder==master and p.reminderStoneGlow==glow and p.healthThreshold==threshold and p.reminderSound==sound and p.reminderPosition==position
         and RA.PersonalTools:GetState().previewMode==mode,'Glow UI/reset changed opt-ins, threshold, sound, position or sample')
-    check(clickVisible('REMINDER TEXT & SOUND +') and not glowDetails:IsShown(),'Text & Sound did not close Glow settings')
-    check(clickVisible('HIDE REMINDER TEXT & SOUND'),'Disclosure did not return compact')
+    check(clickDisclosure('Messages') and not glowDetails:IsShown(),'Messages did not close Appearance/glow')
+    check(clickDisclosure('Messages'),'Disclosure did not return compact')
 end
 
 -- Exercise real entry buttons and Back routes; these are navigation assertions,
@@ -516,9 +505,9 @@ local navHUD, navPuck, navMarkers = db.hudEnabled, db.leaderToolbox.enabled, db.
 local navReads, navInspects, navSent = talentReads, inspectCalls, sent
 local navPosition, navPuckPosition = db.position, db.leaderToolbox.position
 local navX, navY, navPuckX, navPuckY, navScale = db.position.x, db.position.y, db.leaderToolbox.position.x, db.leaderToolbox.position.y, db.scale
-local routes = {{'AVAILABLE COOLDOWNS','Available Cooldowns'}, {'ADDONS & VERSIONS','Addons & versions'},
-    {'QUICK BAR','Quick Bar'}, {'WORLD MARKERS','World marker cycler'},
-    {'PERSONAL TOOLS','Personal tools'}, {'PROFILES & RECOVERY','Profiles & Recovery'}}
+local routes = {{'GENERAL','General'},{'PERSONAL TOOLS','Personal Tools'},{'ADDONS & VERSIONS','Addons & versions'},
+    {'QUICK BAR','Quick Bar'},{'AVAILABLE COOLDOWNS','Available Cooldowns'},{'WORLD MARKERS','World marker cycler'},
+    {'PROFILES & RECOVERY','Profiles & Recovery'}}
 local previousBottom = 0
 for _, route in ipairs(routes) do
     for _, obj in ipairs(objects) do
@@ -574,15 +563,12 @@ check(db.position == navPosition and db.leaderToolbox.position == navPuckPositio
     db.leaderToolbox.position.x == navPuckX and db.leaderToolbox.position.y == navPuckY and db.scale == navScale,
     'Opening settings changed saved geometry')
 check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
-check(hasVisibleText("Prefers a ready Healthstone, then a ready healing potion. Use your own item/macro key."), 'Reminder copy claims readiness')
-check(hasVisibleText('SHOW REMINDER') and hasVisibleText('ICON SIZE') and hasVisibleText('TEXT SIZE') and hasVisibleText('EMPTY WARNING SIZE'), 'Everyday controls hidden')
-check(not hasVisibleText('HEALTHSTONE TEXT') and clickVisible('REMINDER TEXT & SOUND +'), 'Text details not initially collapsed')
-check(hasVisibleText('HEALTHSTONE TEXT') and hasVisibleText('HEALING POTION TEXT') and hasVisibleText('PREVIEW SAMPLE'), 'Message/sample options missing')
-check(hasVisibleText('Low-health sound') and hasVisibleText('Native warning ~35%'), 'Native audio scope/setting missing')
-check(hasVisibleText('CHANNEL'), 'Audio threshold distinction missing')
-check(hasVisibleText('Empty bags: large OUT OF POTIONS! text, with the icon hidden.') and not hasVisibleText('RAID SUPPLIES'), 'Expanded audio/raid label overlap or hide-empty explanation missing')
+check(hasVisibleText('Ready Healthstone first, then healing potion. You use the item.'),'Reminder explanation missing')
+check(hasVisibleText('HEALTH THRESHOLD') and hasVisibleText('WHEN TO SHOW') and not hasVisibleText('ICON SIZE'),'Reminder essentials wrong')
+check(clickDisclosure('Sound') and not hasVisibleText('Healthstone message'),'Sound disclosure failed single-open rule')
+check(hasVisibleText('Warning sound') and hasVisibleText('Normally around 35%, with a supported item ready.') and hasVisibleText('CHANNEL'),'Sound controls missing')
 local audioToggle
-for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Low-health sound' and obj.switch then audioToggle=obj end end
+for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Warning sound' and obj.switch then audioToggle=obj end end
 check(audioToggle~=nil and RA:GetDB().personalTools.reminderSound==true, 'Default native sound preference missing')
 audioToggle:Fire('OnClick')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder, 'Sound toggle enabled master or failed OFF')
@@ -590,7 +576,7 @@ local oldKit,oldPlaySound,oldPlayFile=SOUNDKIT,PlaySound,PlaySoundFile
 local previews,beforeSoundTimers,beforeSoundSent=0,#timers,sent
 SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
 PlaySoundFile=function(path,channel,...) check(path:find('RCP_Sound06.ogg',1,true) and channel=='Master' and select('#',...)==0,'Preview did not use default Sound 6 / Master');previews=previews+1;return true,7777 end
-check(clickVisible('PREVIEW SOUND') and previews==1, 'Explicit sound preview failed')
+check(clickVisible('PLAY SAMPLE') and previews==1, 'Explicit sound preview failed')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder
     and #timers==beforeSoundTimers and sent==beforeSoundSent, 'Audio preview changed opt-in or started timer/network work')
 SOUNDKIT,PlaySound,PlaySoundFile=oldKit,oldPlaySound,oldPlayFile
@@ -604,7 +590,7 @@ for _,obj in ipairs(objects) do
     if obj.title and obj.title.text=='CHANNEL' and obj.buttons then channelControl=obj end
 end
 check(muteOption and muteOption:IsEnabled() and not RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted
-    and hasVisibleText('Requires Master. Does not override global sound or master volume.'),'Mute permission default/helper missing')
+    and hasVisibleText('Obeys global sound and master volume.'),'Mute permission default/helper missing')
 local channelBottom=-channelControl.points[1][5]+channelControl:GetHeight()
 check(-muteOption.points[1][5]>=channelBottom+4,'Muted-effects hit area overlaps channel buttons')
 check(clickVisible('Play when game effects are muted') and RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted
@@ -614,7 +600,7 @@ check(not muteOption:IsEnabled() and not clickVisible('Play when game effects ar
     and RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted,'SFX route did not disable/preserve mute permission')
 RA.PersonalTools:SetOption('reminderSoundChannel','Master')
 check(muteOption:IsEnabled() and clickVisible('Play when game effects are muted') and not RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted,'Master route did not recover existing mute choice')
-check(hasVisibleText('Show while on cooldown') and RA:GetDB().personalTools.reminderShowOnCooldown==false, 'Show-on-cooldown default/control wrong')
+check(clickDisclosure('Item behavior') and hasVisibleText('SHOW ITEMS') and RA:GetDB().personalTools.reminderShowOnCooldown==false, 'Item readiness control/default wrong')
 local personalSnapshot=RA:GetDB().personalTools
 local pos=personalSnapshot.reminderPosition
 RA.PersonalTools:SetOption('reminderStoneText','Stone now')
@@ -623,20 +609,19 @@ RA.PersonalTools:SetOption('reminderIconSize',72)
 RA.PersonalTools:SetOption('reminderTextSize',18)
 RA.PersonalTools:SetOption('reminderCombat','OUT_OF_COMBAT')
 check(personalSnapshot.reminderPosition==pos and not personalSnapshot.consumableReminder, 'Options changed anchor/opt-in')
-check(clickVisible('RESET POSITION') and personalSnapshot.reminderStoneText=='Stone now' and personalSnapshot.reminderIconSize==72
+check(clickDisclosure('Appearance') and clickVisible('RESET REMINDER POSITION') and personalSnapshot.reminderStoneText=='Stone now' and personalSnapshot.reminderIconSize==72
     and personalSnapshot.reminderTextSize==18 and personalSnapshot.reminderCombat=='OUT_OF_COMBAT', 'Position reset changed appearance/visibility')
+RA:OpenConfig('QUICKBAR')
 local beforeSupplySent, beforeSupplyTimers, beforeSupplyReads=sent,#timers,talentReads
-check(clickVisible('VIEW RESULTS') and hasVisibleText('Carried healing supplies'), 'Manual supplies dialog missing')
+check(clickVisible('RAID CHECKS') and hasVisibleText('Carried healing supplies'), 'Manual supplies dialog missing')
 check(sent==beforeSupplySent and #timers==beforeSupplyTimers and talentReads==beforeSupplyReads, 'Viewing supply results queried/polled/inspected')
-check(clickVisible('CLOSE') and clickVisible('VIEW RESULTS') and #timers==beforeSupplyTimers and sent==beforeSupplySent, 'Reopening supply results starts a request')
-check(clickVisible('CLOSE') and clickVisible('CHECK RAID SUPPLIES') and hasVisibleText('Join a raid to check supplies.'), 'Ineligible query lacks explanation')
+check(clickVisible('CLOSE') and clickVisible('RAID CHECKS') and #timers==beforeSupplyTimers and sent==beforeSupplySent, 'Reopening supply results starts a request')
+check(clickVisible('CLOSE') and clickVisible('RAID CHECKS') and clickVisible('CHECK SUPPLIES') and hasVisibleText('Join a raid to check supplies.'), 'Ineligible query lacks explanation')
 check(sent==beforeSupplySent and #timers==beforeSupplyTimers, 'Ineligible supply action sent/started work')
-check(clickVisible('CLOSE') and clickVisible('HIDE REMINDER TEXT & SOUND') and hasVisibleText('RAID SUPPLIES'), 'Disclosure collapse lost raid label')
-check(clickVisible('PREVIEW'), 'Reminder preview button missing')
-check(RA.PersonalTools:GetState().previewMode == 'PREVIEW' and not RA:GetDB().personalTools.consumableReminder, 'Preview changed activation')
-check(clickVisible('MOVE') and RA.PersonalTools:GetState().previewMode == 'MOVE', 'Move button did not select mover')
-check(clickVisible('STOP PREVIEW') and RA.PersonalTools:GetState().previewMode == nil, 'Stop button left sample active')
-check(clickVisible('PREVIEW'), 'Preview could not reopen')
+check(clickVisible('CLOSE') and not db.leaderToolbox.enabled,'Raid checks required enabled puck')
+RA:OpenConfig('MYTOOLS')
+check(not clickVisible('PREVIEW') and not clickVisible('MOVE') and not clickVisible('STOP PREVIEW'),'Local placement duplicates remain')
+check(visibleButton('PREVIEW ALL') and visibleButton('MOVE ALL'),'Shared placement shelf disappeared')
 RA:OpenConfig('ADDONS')
 check(RA.PersonalTools:GetState().previewMode == nil, 'Navigation left reminder sample visible')
 RA:OpenConfig('MYTOOLS'); clickVisible('MOVE'); RA:CloseConfig()
@@ -1027,13 +1012,13 @@ check(clickNav('ADDONS & VERSIONS') and clickNav('AVAILABLE COOLDOWNS') and hasV
 SlashCmdList.RCPARSENAL('content')
 check(RaidArsenalDB.navigation.lastTab=='CONTENT', 'Explicit categories deep link ignored')
 SlashCmdList.RCPARSENAL('tools'); RA:CloseConfig(); SlashCmdList.RCPARSENAL('')
-check(hasVisibleText('Personal tools') and RaidArsenalDB.navigation.lastTab=='MYTOOLS', 'Close/reopen lost explicit deep-link destination')
+check(hasVisibleText('Personal Tools') and RaidArsenalDB.navigation.lastTab=='MYTOOLS', 'Close/reopen lost explicit deep-link destination')
 savedNavigation.privateSentinel='PRIVATE-NAVIGATION-SENTINEL'
 check(not RA:ExportProfileString():find('PRIVATE-NAVIGATION-SENTINEL',1,true), 'Portable profile includes navigation state')
 RA:CloseConfig(); savedNavigation.lastTab='invalid-pane'; RA:OpenConfig()
-check(hasVisibleText('Addons & versions') and savedNavigation.lastTab=='ADDONS', 'Invalid saved pane did not fall back safely')
+check(hasVisibleText('General') and savedNavigation.lastTab=='GENERAL', 'Invalid saved pane did not fall back safely')
 RaidArsenalDB.navigation='invalid-state'; RA:CloseConfig(); RA:OpenConfig()
-check(hasVisibleText('Addons & versions') and type(RaidArsenalDB.navigation)=='table', 'Malformed navigation state was not repaired')
+check(hasVisibleText('General') and type(RaidArsenalDB.navigation)=='table', 'Malformed navigation state was not repaired')
 RA:OpenConfig('RAIDTOOLS')
 check(hasVisibleText('Addons & versions'), 'Legacy explicit raid-tools route changed')
 RA:CloseConfig(); combat=true; SlashCmdList.RCPARSENAL('tools'); combat=false

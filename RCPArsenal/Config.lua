@@ -13,7 +13,7 @@ end
 local panes = {}
 local tabButtons = {}
 local controls = {}
-local activeTab = "ADDONS"
+local activeTab = "GENERAL"
 local selectedCategory = "RAID_DEFENSIVE"
 local abilityRows = {}
 local categoryRows = {}
@@ -42,6 +42,7 @@ local RefreshConfig
 local RefreshHub
 local RefreshFooter
 local RefreshSetup
+local RefreshGeneral
 local placementReturnPending
 local advancedBack
 local cooldownScroll
@@ -72,15 +73,16 @@ local COLORS = {
 }
 
 local TAB_DEFS = {
-    { key = "COOLDOWNS", label = "AVAILABLE COOLDOWNS", group = "ARSENAL", icon = Theme.Assets.NavHUD },
-    { key = "ADDONS", label = "ADDONS & VERSIONS", group = "ARSENAL", icon = Theme.Assets.NavContent },
-    { key = "QUICKBAR", label = "QUICK BAR", subtitle = "Puck & raid controls", group = "ARSENAL", icon = Theme.Assets.NavHUD },
-    { key = "WORLDMARKERS", label = "WORLD MARKERS", subtitle = "Sequence & keybindings", group = "ARSENAL", icon = Theme.Assets.NavActions },
-    { key = "MYTOOLS", label = "PERSONAL TOOLS", subtitle = "Resurrection & reminders", group = "OTHER", icon = Theme.Assets.NavHUD },
-    { key = "SETTINGS", label = "PROFILES & RECOVERY", subtitle = "Import, export & reset", group = "OTHER", icon = Theme.Assets.NavActions },
+    { key = "GENERAL", label = "GENERAL", group = "PERSONAL", icon = Theme.Assets.NavContent },
+    { key = "MYTOOLS", label = "PERSONAL TOOLS", group = "PERSONAL", icon = Theme.Assets.NavHUD },
+    { key = "ADDONS", label = "ADDONS & VERSIONS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavContent },
+    { key = "QUICKBAR", label = "QUICK BAR", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavHUD },
+    { key = "COOLDOWNS", label = "AVAILABLE COOLDOWNS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavHUD },
+    { key = "WORLDMARKERS", label = "WORLD MARKERS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavActions },
+    { key = "SETTINGS", label = "PROFILES & RECOVERY", group = "SYSTEM", icon = Theme.Assets.NavActions },
 }
 local PANE_CONTEXT = {
-    NORTHERNSKY = "ADDONS",
+    SETUP = "GENERAL", NORTHERNSKY = "ADDONS",
     CONTENT = "COOLDOWNS", HUD = "COOLDOWNS", SCANNING = "COOLDOWNS", ACTIONS = "COOLDOWNS",
 }
 local COOLDOWN_TABS = {
@@ -2027,10 +2029,11 @@ local function SetTab(tabKey)
     if tabKey == "COOLDOWNS" then
         tabKey = PANE_CONTEXT[navigation.cooldownTab] == "COOLDOWNS" and navigation.cooldownTab or "CONTENT"
     end
-    if not panes[tabKey] then tabKey = "ADDONS" end
+    if not panes[tabKey] then tabKey = "GENERAL" end
+    if tabKey == "GENERAL" then RA.Setup:PresentIntroduction() end
     if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
     activeTab = tabKey
-    navigation.lastTab = tabKey
+    if tabKey ~= "SETUP" then navigation.lastTab = tabKey end
     if PaneContext(tabKey) == "COOLDOWNS" then navigation.cooldownTab = tabKey end
     for key, pane in pairs(panes) do
         pane:SetShown(key == tabKey or (key == "COOLDOWNS" and PaneContext(tabKey) == "COOLDOWNS"))
@@ -2058,6 +2061,7 @@ RefreshConfig = function()
     if not frame then
         return
     end
+    if RefreshGeneral and panes.GENERAL and panes.GENERAL:IsVisible() then RefreshGeneral() end
     if RefreshSetup and panes.SETUP and panes.SETUP:IsVisible() then RefreshSetup() end
     RefreshVisibleControls()
     if panes.CONTENT and panes.CONTENT:IsVisible() then RefreshCategoryRows(); RefreshAbilityList(false) end
@@ -2076,6 +2080,8 @@ RefreshConfig = function()
 end
 
 RefreshFooter = function()
+    if statusText then statusText:SetShown(PaneContext(activeTab) == "COOLDOWNS") end
+    if PaneContext(activeTab) ~= "COOLDOWNS" then return end
     local primary = ScanStatusText()
     local reason = RA.GetHUDVisibilityReason and RA:GetHUDVisibilityReason() or nil
     local hudState = reason and ("HUD HIDDEN: " .. reason) or "HUD VISIBLE"
@@ -2355,9 +2361,12 @@ local function CreateConfig()
         Toggle = CreateToggle, Slider = CreateSlider, EditBox = CreateEditBox, Segmented = CreateSegmented, Backdrop = Backdrop,
         Refresh = function() RefreshConfig() end,
     })
+    RefreshGeneral = RA:CreateGeneralPane(panes.GENERAL, {
+        Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading, Refresh = function() RefreshConfig() end,
+    })
     RefreshSetup = RA:CreateSetupPane(panes.SETUP, {
         Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
-        Toggle = CreateToggle, Slider = CreateSlider, Segmented = CreateSegmented,
+        Toggle = CreateToggle, Slider = CreateSlider, Segmented = CreateSegmented, Refresh = function() RefreshConfig() end,
     })
 
     CreateHUDPane(panes.HUD)
@@ -2371,9 +2380,10 @@ local function CreateConfig()
     SetPoint(previewAll,"LEFT",footer,"LEFT",12,0)
     local moveAll = CreateButton(footer, "MOVE ALL", 144, 42, function()RA:BeginGlobalPlacement("MOVE")end,false,Theme.Assets.IconTarget)
     SetPoint(moveAll,"LEFT",previewAll,"RIGHT",10,0)
-    local setup = CreateButton(footer,"SETUP",116,42,function()RA:OpenSetup()end)
+    local setup = CreateButton(footer,"RESUME REVIEW",156,42,function()RA:OpenSetup()end)
     SetPoint(setup,"LEFT",moveAll,"RIGHT",10,0)
-    setup.Refresh=function(self)RA:SetVisualText(self.label,RA.Setup:HasDraft() and activeTab~="SETUP" and "BACK TO SETUP" or "SETUP")end
+    setup.owner=footer
+    setup.Refresh=function(self)self:SetShown(RA.Setup:HasDraft() and activeTab~="SETUP" and activeTab~="GENERAL")end
     RegisterControl(setup)
 
     statusText = Font(footer, 9.3, TC.textSoft, "REGULAR")
@@ -2398,9 +2408,13 @@ local function CreateConfig()
         -- All addon-driven hides carry an intent. A native Escape from
         -- UISpecialFrames has no intent; ancestor hides leave IsShown true.
         local userDismiss=frame.__rcpHideIntent=="USER" or (frame.__rcpHideIntent==nil and not frame:IsShown())
-        if userDismiss and activeTab=="SETUP" and RA.Setup:HasDraft() and not RA.Placement:IsActive() then
-            local ok,destination=RA.Setup:Skip()
-            if ok then activeTab=destination or "ADDONS";Navigation().lastTab=activeTab end
+        if userDismiss and not RA.Placement:IsActive() then
+            -- Clearing an active editor may synchronously route its empty pane
+            -- to General. User dismissal must retain the last ordinary page.
+            local closingReview=activeTab=="SETUP"
+            local ordinary=Navigation().lastTab or "GENERAL"
+            RA.Setup:Dismiss()
+            if closingReview then activeTab=ordinary;Navigation().lastTab=ordinary end
         end
     end)
     if type(UISpecialFrames)=="table" then table.insert(UISpecialFrames,"RCPArsenalConfig") end
@@ -2414,8 +2428,13 @@ function RA:OpenConfig(tabKey)
     if self.Placement:IsActive() then self.Placement:Cancel("Arsenal opened",true) end
     placementReturnPending = nil
     local previous = activeTab
-    local requested = tabKey == nil and (self.Setup:IsFirstRunPending() and "SETUP" or Navigation().lastTab) or tabKey
-    activeTab = type(requested) == "string" and requested or "ADDONS"
+    local requested = tabKey
+    if requested == nil then
+        requested = self.Setup:IsFirstRunPending() and "GENERAL" or Navigation().lastTab
+        if requested == "SETUP" then requested = "GENERAL" end
+    end
+    activeTab = type(requested) == "string" and requested or "GENERAL"
+    if activeTab == "GENERAL" then self.Setup:PresentIntroduction() end
     if activeTab == "SETUP" then self.Setup:Begin(previous) end
     if not frame then
         CreateConfig()
@@ -2444,7 +2463,10 @@ function RA:BeginGlobalPlacement(mode)
     return ok,reason
 end
 
-RA:RegisterCallback("SETUP_CHANGED",function()if frame and frame:IsShown() and panes.SETUP:IsVisible() then RefreshConfig() end end)
+RA:RegisterCallback("SETUP_CHANGED",function()
+    if frame and activeTab=="SETUP" and not RA.Setup:HasDraft() then SetTab("GENERAL")
+    elseif frame and frame:IsShown() then RefreshConfig() end
+end)
 local function RestoreAfterPlacement()
     if placementReturnPending and not InCombatLockdown() and not RA.InEncounter and not (IsEncounterInProgress and IsEncounterInProgress()) then
         placementReturnPending=nil;RA:OpenConfig(activeTab)

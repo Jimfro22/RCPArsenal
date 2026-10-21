@@ -72,113 +72,74 @@ local function event(name)
     for _, frame in ipairs(frames) do if frame.scripts.OnEvent then frame.scripts.OnEvent(frame, name) end end
 end
 fresh(false)
-check(setup:IsFirstRunPending(), 'New install must offer first run')
-local baseline = clone(db)
-check(setup:Begin('MYTOOLS'), 'Begin failed')
-check(not setup:IsFirstRunPending() and setup:HasDraft(), 'Begin did not mark presentation/draft')
-for key, value in pairs({role = 'LEADER', autoRes = true, reminder = true, threshold = 51, sound = false,
-    glow = false, quickBar = true, missing = false, hud = true, leftClick = 'WHISPER'}) do
-    check(setup:Set(key, value), 'Could not stage ' .. key)
-end
-local selected, summary = setup:GetSummary()
-check(selected == 4 and summary:find('sound off', 1, true) and summary:find('glow off', 1, true)
-    and summary:find('provider classes off', 1, true), 'Summary omitted reviewed choices')
-setup:Set('glow', true)
-local _, glowSummary=setup:GetSummary()
-check(glowSummary:find('icon glow at ≤35%',1,true)
-    and not glowSummary:find('Healthstone glow',1,true),'Welcome summary still limits glow to Healthstone')
-setup:Set('glow', false)
-check(equal(db, baseline), 'Begin/Set/Summary activated or changed live profile before Save')
+check(setup:IsFirstRunPending(),'Fresh introduction missing')
+setup:PresentIntroduction();check(not setup:IsFirstRunPending() and not setup:HasDraft(),'Introduction began review')
+local baseline=clone(db)
+check(setup:Begin('MYTOOLS') and setup:IsFirstUseDraft(),'First review failed')
+for key,value in pairs({role='LEADER',autoRes=true,reminder=true,quickBar=true,hud=true}) do check(setup:Set(key,value),'Could not stage '..key) end
+check(setup:GetSummary()==4 and equal(db,baseline),'Staging applied settings')
 quiet('Staging')
-local copy = setup:GetDraft(); copy.hud = false
-check(setup:Get('hud') == true, 'GetDraft exposed mutable internal draft')
-check(setup:Begin('ADDONS') and setup:Get('hud') == true and RaidArsenalDB.setup.returnTab == 'MYTOOLS', 'Begin/reopen silently restarted staged choices or return tab')
-check(setup:Save(), 'Save failed')
-check(not setup:HasDraft() and RaidArsenalDB.setup.completed and RaidArsenalDB.setup.role == 'LEADER', 'Save did not complete metadata')
-check(db.hudEnabled and db.personalTools.autoRes and db.personalTools.consumableReminder
-    and db.personalTools.healthThreshold == 51 and not db.personalTools.reminderSound and not db.personalTools.reminderStoneGlow,
-    'Save failed to apply reviewed personal/HUD values')
-check(db.leaderToolbox.enabled and db.leaderToolbox.showMissing == false, 'Reviewed missing=false was overwritten by Quick Bar default')
-check(db.actions.leftClickMode == 'WHISPER' and db.actions.whisperEnabled and not db.actions.sayEnabled, 'Callout mirrors do not match reviewed mode')
-check(count('quickSetter') == 1 and count('hudSetter') == 1 and count('scan') == 1 and count('personalRefresh') == 1, 'Save did not activate changed tools exactly once')
-for _, call in ipairs(calls) do
-    if call[1] == 'quickSetter' then check(call[2] == true and call[3] == false, 'Quick Bar did not receive reviewed missing preference') end
-    if call[1] == 'personalRefresh' then check(call[2] == true, 'Reminder enable did not request readiness refresh') end
-end
-local changed = options()
-for _, key in ipairs({'autoRes', 'consumableReminder', 'healthThreshold', 'reminderSound', 'reminderStoneGlow'}) do
-    check(changed[key] == 1, 'Changed option callback missing/duplicated: ' .. key)
-end
-fresh(true, function(profile)
-    profile.hudEnabled, profile.shown = true, true
-    profile.leaderToolbox.enabled, profile.leaderToolbox.showMissing = true, false
-    profile.personalTools.autoRes, profile.personalTools.consumableReminder = true, true
+local copy=setup:GetDraft();copy.hud=false;check(setup:Get('hud'),'Draft copy mutable')
+check(setup:Begin('ADDONS') and setup:Get('hud'),'Begin restarted draft')
+local ok,destination=setup:Save()
+check(ok and destination=='GENERAL' and not setup:HasDraft() and RaidArsenalDB.setup.role=='LEADER','First Save metadata/return failed')
+check(db.hudEnabled and db.personalTools.autoRes and db.personalTools.consumableReminder and db.leaderToolbox.enabled,'Four masters not applied')
+check(count('quickSetter')==1 and count('hudSetter')==1 and count('scan')==1 and count('personalRefresh')==1,'Activation not transition-only')
+check(db.personalTools.healthThreshold==baseline.personalTools.healthThreshold and db.personalTools.reminderSound==baseline.personalTools.reminderSound
+    and equal(db.personalTools.reminderGlow,baseline.personalTools.reminderGlow) and equal(db.actions,baseline.actions),'Save changed child settings')
+check(equal(options(),{autoRes=1,consumableReminder=1}),'Save callbacks changed detailed preferences')
+for _,call in ipairs(calls) do if call[1]=='quickSetter' then check(call[3]==nil,'Hidden child override passed to Quick Bar activation') end end
+fresh(true,function(profile)
+    profile.hudEnabled,profile.shown=true,true;profile.leaderToolbox.enabled,profile.leaderToolbox.showMissing=true,false
+    profile.personalTools.autoRes,profile.personalTools.consumableReminder=true,true
 end)
-check(not setup:IsFirstRunPending(), 'Existing install incorrectly offered first run')
-baseline = clone(db)
-check(setup:Begin('COOLDOWNS') and setup:Save(), 'Existing-enabled unchanged save failed')
-quiet('Unchanged enabled save')
-check(equal(db, baseline), 'Unchanged Save modified existing preferences')
-check(setup:Begin('COOLDOWNS'), 'Replay failed')
-setup:Set('autoRes', false); setup:Set('hud', false); setup:Set('missing', true); setup:Set('sound', false)
-local ok, destination = setup:Skip()
-check(ok and destination == 'COOLDOWNS' and equal(db, baseline), 'Skip changed live choices or lost return tab')
+baseline=clone(db)
+check(setup:Begin('HUD') and not setup:IsFirstUseDraft() and setup:Save(),'Existing unchanged save failed')
+quiet('Unchanged Save');check(equal(db,baseline),'Unchanged Save modified preferences')
+setup:Begin('MYTOOLS');setup:Set('role','LEADER');setup:Set('hud',false)
+ok,destination=setup:Cancel()
+check(ok and destination=='MYTOOLS' and equal(db,baseline) and RaidArsenalDB.setup.role=='RAIDER','Cancel wrote draft or role')
+quiet('Cancel')
+setup:Begin('MYTOOLS');setup:Set('role','LEADER');setup:Skip()
+check(RaidArsenalDB.setup.role=='RAIDER' and equal(db,baseline),'Skip wrote role/preferences')
 quiet('Skip')
-check(setup:Begin('ADDONS') and setup:Get('autoRes') and setup:Get('hud'), 'Replay reused skipped draft instead of current settings')
-check(setup:Begin('ADDONS', true) and setup:Get('autoRes'), 'Explicit restart did not use current profile')
-fresh(false)
-setup:Begin('ADDONS'); setup:Set('sound', false)
-check(setup:Save() and count('personalRefresh') == 0 and count('scan') == 0, 'Sound-only save refreshed personal tools/inspection')
-check(equal(options(), {reminderSound = 1}), 'Sound-only save did not use exact normal audio option callback')
-fresh(false)
-setup:Begin('ADDONS'); setup:Set('glow', false)
-check(setup:Save() and count('personalRefresh') == 1 and equal(options(), {reminderStoneGlow = 1}), 'Glow-only save missed normal refresh/callback or produced audio callback')
-for _, call in ipairs(calls) do if call[1] == 'personalRefresh' then check(call[2] == false, 'Glow-only save requested inventory readiness refresh') end end
-fresh(false)
-setup:Begin('ADDONS'); setup:Set('reminder', true)
-check(setup:Save() and equal(options(), {consumableReminder = 1}), 'Reminder-only save did not notify native reminder/audio path')
-fresh(true, function(profile) profile.hudEnabled, profile.shown, profile.leaderToolbox.enabled = true, true, true end)
-setup:Begin('ADDONS'); setup:Set('missing', false); setup:Set('leftClick', 'SAY')
-check(setup:Save() and count('quickSetter') == 0 and count('hudSetter') == 0 and count('scan') == 0
-    and count('quickRefresh') == 1 and count('rearm') == 1, 'Enabled tools were reactivated instead of refreshing changed local option')
-for _, blocked in ipairs({'combat', 'encounter'}) do
-    fresh(false); baseline = clone(db); setup:Begin('ADDONS'); setup:Set('hud', true); setup:Set('reminder', true)
-    if blocked == 'combat' then combat = true else encounter = true end
-    check(not setup:Save() and setup:HasDraft() and equal(db, baseline), blocked .. ' Save applied or discarded staged state')
-    quiet(blocked .. ' blocked Save')
-    combat, encounter = false, false
-    event('PLAYER_REGEN_ENABLED'); event('ENCOUNTER_END')
-    check(equal(db, baseline) and setup:HasDraft(), blocked .. ' Save resumed itself after context ended')
-    quiet(blocked .. ' context ended')
-    check(setup:Save() and db.hudEnabled, 'Deliberate retry failed after ' .. blocked)
+fresh(false);setup:Begin('ADDONS');setup:Set('role','LEADER');setup:Skip()
+check(RaidArsenalDB.setup.completed and RaidArsenalDB.setup.role=='RAIDER' and not setup:HasDraft(),'First Skip changed role or retained draft')
+quiet('First Skip')
+fresh(true,function(profile)profile.leaderToolbox.showMissing=false end)
+setup:Begin('HUD');setup:Set('quickBar',true)
+check(setup:Save() and db.leaderToolbox.showMissing,'Explicit Quick Bar enable lost provider default')
+fresh(true,function(profile)profile.leaderToolbox.enabled=true;profile.leaderToolbox.showMissing=false end)
+setup:Begin('HUD');setup:Set('role','LEADER')
+check(setup:Save() and not db.leaderToolbox.showMissing and count('quickSetter')==0,'Role-only save reactivated Quick Bar')
+for _,blocked in ipairs({'combat','encounter'}) do
+    fresh(false);baseline=clone(db);setup:Begin('ADDONS');setup:Set('hud',true);setup:Set('reminder',true)
+    if blocked=='combat' then combat=true else encounter=true end
+    check(not setup:Save() and setup:HasDraft() and equal(db,baseline),blocked..' applied/discarded draft')
+    quiet(blocked);combat,encounter=false,false;event('PLAYER_REGEN_ENABLED');event('ENCOUNTER_END')
+    check(equal(db,baseline) and setup:HasDraft(),blocked..' auto-saved');quiet('Context end')
+    check(setup:Save() and db.hudEnabled,'Deliberate retry failed')
 end
-fresh(false); setup:Begin('ADDONS'); setup:Set('hud', true); db.personalTools.reminderSound = false
-baseline = clone(db)
-check(not setup:Save() and equal(db, baseline) and setup:HasDraft(), 'External represented preference conflict was overwritten')
-quiet('Preference conflict')
-check(setup:Begin('ADDONS', true) and setup:Get('sound') == false and not setup:Get('hud'), 'Conflict restart did not review current live values')
-fresh(false); setup:Begin('ADDONS'); setup:Set('hud', true)
-RaidArsenalDB.profile = clone(db); db = RaidArsenalDB.profile; baseline = clone(db)
-check(not setup:Save() and equal(db, baseline) and setup:HasDraft(), 'Same-values replacement profile was not detected')
-quiet('Profile identity conflict')
-fresh(false); setup:Begin('ADDONS'); setup:Set('sound', false)
-db.personalTools.reminderSoundChoice, db.personalTools.reminderSoundChannel = 'custom', 'SFX'
-check(setup:Save() and db.personalTools.reminderSoundChoice == 'custom' and db.personalTools.reminderSoundChannel == 'SFX', 'Save overwrote an unrepresented audio preference')
-fresh(false); setup:Begin('ADDONS'); setup:Set('hud', true)
-RA:FireCallback('PROFILE_RESET')
-check(not setup:HasDraft() and not setup:Save(), 'Profile reset retained/replayed stale draft')
-quiet('Profile reset')
-fresh(false); check(not setup:Set('hud', true) and not setup:Save() and not setup:Skip(), 'Closed Setup accepted changes/save/skip')
-setup:Begin('ADDONS')
-for _, row in ipairs({{'unknown', true}, {'hud', 1}, {'role', 'TANK'}, {'leftClick', 'RAID'}, {'threshold', 0/0}, {'threshold', math.huge}, {'threshold', '50'}, {'hud', secret}}) do
-    check(not setup:Set(row[1], row[2]), 'Unsupported/secret staged value accepted')
-end
-check(not setup:Set(secret, true), 'Secret key accepted')
-setup:Set('threshold', -10); check(setup:Get('threshold') == 1, 'Threshold lower clamp failed')
-setup:Set('threshold', 110); check(setup:Get('threshold') == 99, 'Threshold upper clamp failed')
-setup:Set('threshold', 42.7); check(setup:Get('threshold') == 43, 'Threshold rounding failed')
-quiet('Validation and staging')
-if setup.Close or setup.Pause then
-    print('NOTE: New Close/Pause methods detected; add signature-specific checks before reporting their behavior.')
-else print('NOTE: This Setup snapshot has no Close/Pause methods.') end
-print('PASS: ' .. checks .. ' focused Setup/Core setter assertions; source paths: ' .. corePath .. ' | ' .. setupPath)
+fresh(true);setup:Begin('HUD');setup:Set('hud',true)
+db.personalTools.healthThreshold=29;db.personalTools.reminderSound=false;db.personalTools.reminderGlow.style='PIXEL'
+db.actions.leftClickMode='SAY';db.leaderToolbox.showMissing=false
+check(not setup:GetConflict() and setup:Save(),'Non-staged child edit invalidated review')
+check(db.personalTools.healthThreshold==29 and not db.personalTools.reminderSound and db.personalTools.reminderGlow.style=='PIXEL'
+    and db.actions.leftClickMode=='SAY' and not db.leaderToolbox.showMissing,'Save overwrote child-only edits')
+fresh(true);setup:Begin('HUD');setup:Set('hud',true);db.personalTools.autoRes=true;baseline=clone(db)
+check(setup:GetConflict() and not setup:Save() and equal(db,baseline) and setup:HasDraft(),'Master conflict overwritten')
+quiet('Conflict')
+check(setup:Reload() and setup:Get('autoRes') and not setup:Get('hud') and not setup:IsFirstUseDraft(),'Reload failed current values/mode')
+ok,destination=setup:Cancel();check(ok and destination=='HUD','Reload lost original return')
+fresh(false);setup:Begin('ADDONS');setup:Set('hud',true);RaidArsenalDB.profile=clone(db);db=RaidArsenalDB.profile;baseline=clone(db)
+check(not setup:Save() and equal(db,baseline) and setup:HasDraft(),'Same-values profile replacement not detected');quiet('Profile conflict')
+setup:Reload();check(setup:IsFirstUseDraft(),'Reload lost first-use mode')
+RA:FireCallback('PROFILE_IMPORTED');check(setup:GetConflict() and setup:HasDraft(),'Import callback failed invalidation')
+setup:Reload();check(not setup:GetConflict(),'Import reload remained blocked')
+RA:FireCallback('PROFILE_RESET');check(not setup:HasDraft() and not setup:Save(),'Profile reset retained draft');quiet('Profile reset')
+fresh(true);check(not setup:Set('hud',true) and not setup:Save() and not setup:Cancel(),'Closed review accepted staging')
+setup:Begin('HUD')
+for _,row in ipairs({{'threshold',50},{'sound',false},{'glow',false},{'missing',false},{'leftClick','SAY'},
+    {'unknown',true},{'hud',1},{'role','TANK'},{'hud',secret},{secret,true}}) do check(not setup:Set(row[1],row[2]),'Unsupported staged choice accepted') end
+quiet('Validation')
+print('PASS: '..checks..' focused Setup/Core setter assertions')

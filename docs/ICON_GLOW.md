@@ -1,5 +1,7 @@
 # Healthstone and potion icon glow — 0.15.3-alpha.11
 
+Current settings routing: alpha.17 places explicit Review choices under General, detailed reminder options under Personal Tools disclosures, and supply results under Quick Bar → Raid checks. See [the settings cleanup contract](SETTINGS_CLEANUP.md) for current navigation and draft behavior. The runtime behavior documented below is retained.
+
 Alpha.13 adds optional styles and color while retaining these visibility and sound gates. See [adjustable glow](ADJUSTABLE_GLOW.md) for current controls and native animation behavior.
 
 Both a visible Healthstone icon and a visible healing-potion icon can use the existing steady gold edge and restrained outer halo at or below 35% health. Above 35%, the glow clears. The main reminder's saved visual threshold, master, combat policy and life-state gates still apply to the entire icon and glow. A main threshold below 35% therefore keeps the whole prompt hidden until that lower threshold. OUT OF POTIONS! has no icon or glow.
