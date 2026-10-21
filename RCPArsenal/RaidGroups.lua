@@ -7,6 +7,7 @@ RA.RaidGroups = Groups
 local opened, live, liveError, draft, preview, job, uncertain = false
 local serial, entrySerial, previewSerial = 0, 0, 0
 local priorRequestMaySettle = false
+local savedBaseline
 local TIMEOUT, MAX_LAYOUTS, MAX_ENTRIES = 3, 50, 80
 local MAX_PASTE, MAX_LINE, MAX_SECTIONS = 65536, 16384, 32
 local applyState = {status="idle", confirmed=0, total=0, inFlight=false, unknownResult=false}
@@ -34,6 +35,12 @@ local function Boolean(func, ...)
     if not ok or Secret(value) or type(value)~="boolean" then return nil end
     return value
 end
+local function AssignedRole(unit)
+    if type(UnitGroupRolesAssigned)~="function" then return nil end
+    local ok,value=pcall(UnitGroupRolesAssigned,unit)
+    if not ok or Secret(value) or type(value)~="string" then return nil end
+    if value=="TANK" or value=="HEALER" or value=="DAMAGER" then return value end
+end
 local function Identity(value)
     value=Text(value,160)
     if not value or value=="" or value:find("[,;:]") then return nil end
@@ -49,6 +56,24 @@ local function Label(value)
     if not value then return nil end
     value=value:match("^%s*(.-)%s*$")
     return value~="" and value or nil
+end
+local function StoredName(value)
+    value=Text(value,160)
+    if not value or value=="" or value:find("[%s,;:]") then return nil end
+    local identity=Identity(value)
+    return identity and identity.fullName or value
+end
+-- Compare semantic local content, never live groups, GUIDs or edit counters.
+local function LayoutKey(model)
+    if not model then return nil end
+    local parts={}
+    local function Add(value) value=value or "";parts[#parts+1]=#value..":"..value end
+    for group=1,8 do for slot=1,5 do
+        local row=model.entries[model.groups[group][slot]];Add(row and row.fullName:lower())
+    end end
+    for _,id in ipairs(model.tray)do Add(model.entries[id].fullName:lower()) end
+    local boss=model.boss or {};Add(boss.label);Add(boss.encounterID and tostring(boss.encounterID));Add(boss.difficulty)
+    return table.concat(parts,";")
 end
 local function Emit() RA:FireCallback("RAID_GROUPS_CHANGED") end
 local function EmptySlots()
@@ -116,7 +141,7 @@ local function Capture()
         if snapshot.byGuid[guid] or snapshot.byKey[identity.key] then return nil,"Duplicate or ambiguous raid identity." end
         local combat=Boolean(UnitAffectingCombat,unit)
         local member={guid=guid,name=identity.name,realm=identity.realm,fullName=identity.fullName,key=identity.key,
-            group=group,index=index,online=online,class=Text(class,32),combatKnown=combat~=nil,inCombat=combat==true}
+            group=group,index=index,online=online,class=Text(class,32),role=AssignedRole(unit),combatKnown=combat~=nil,inCombat=combat==true}
         snapshot.members[#snapshot.members+1]=member; snapshot.byGuid[guid]=member; snapshot.byKey[member.key]=member
         snapshot.counts[group]=snapshot.counts[group]+1
         if snapshot.counts[group]>5 then return nil,"Live subgroup capacity is inconsistent." end
@@ -195,13 +220,13 @@ local function View()
         if member and member.key~=row.key then member=nil end
         local entry=Copy(row);entry.missing=member==nil;entry.unresolved=row.key==nil
         entry.guid=member and member.guid or nil;entry.liveGroup=member and member.group or nil
-        if member then entry.class=member.class;entry.online=member.online;entry.offline=not member.online end
+        if member then entry.class=member.class;entry.role=member.role;entry.online=member.online;entry.offline=not member.online end
         view.entries[id]=entry;if member then represented[member.guid]=true end
     end
     if live then for _,member in ipairs(live.members) do if not represented[member.guid] then
         local id="live:"..member.guid
         view.entries[id]={id=id,name=member.name,realm=member.realm,fullName=member.fullName,key=member.key,
-            guid=member.guid,liveGroup=member.group,class=member.class,online=member.online,offline=not member.online,missing=false,unresolved=false}
+            guid=member.guid,liveGroup=member.group,class=member.class,role=member.role,online=member.online,offline=not member.online,missing=false,unresolved=false}
         view.tray[#view.tray+1]=id
     end end end
     return view
@@ -226,6 +251,7 @@ function Groups:GetState()
     progress.canRecover=uncertain~=nil and live~=nil and liveError==nil and live.canApply==true
     progress.recoveryFingerprint=uncertain and live and live.fingerprint or nil
     return {open=opened,live=Copy(live),liveError=liveError,draft=Copy(draft),view=View(),preview=reviewed,
+        layout={savedName=savedBaseline and savedBaseline.name,contentDirty=draft~=nil and (not savedBaseline or savedBaseline.key~=LayoutKey(draft)) or false},
         apply=progress,layouts=layouts,storageError=storageError}
 end
 function Groups:RefreshRoster()
@@ -249,7 +275,7 @@ function Groups:FromCurrentRaid()
     if job then return false,"Stop Apply before replacing the draft." end
     local snapshot,reason=Capture();Record(snapshot,reason)
     if not snapshot then Emit();return false,reason end
-    draft=NewDraft();AddLive(draft);preview=nil;Emit();return true
+    draft=NewDraft();AddLive(draft);savedBaseline=nil;preview=nil;Emit();return true
 end
 function Groups:Move(id,group,slot)
     local ok,reason=Editable();if not ok then return false,reason end
@@ -318,6 +344,73 @@ function Groups:Reconcile()
     return true,"Matched "..matched.." exact full-name identities; group slots and edits were preserved."
 end
 
+function Groups:SortDraft(mode)
+    if self:IsApplying() then return false,"Review or cancel the outstanding Apply before sorting the draft." end
+    local ok,reason=Editable();if not ok then return false,reason end
+    if Secret(mode) or (mode~="ROLE_SORT" and mode~="SPLIT_ODD_EVEN" and mode~="SPLIT_ADJACENT") then return false,"Choose a local draft sort mode." end
+    local snapshot;snapshot,reason=Capture();Record(snapshot,reason)
+    if not snapshot then Emit();return false,reason end
+    local toolbox=RA.RaidLeaderToolbox
+    local classify=type(toolbox)=="table" and toolbox.GetDraftMemberKind
+    if type(classify)~="function" then Emit();return false,"Local role classification is unavailable." end
+    local priority={TANK=1,MELEE=2,RANGED=3,HEALER=4}
+    local model,eligible,unknown,cached=Copy(draft),{},0,0
+    for group=1,8 do for slot=1,5 do
+        local id=model.groups[group][slot];local entry=id and model.entries[id]
+        local member=entry and entry.guid and snapshot.byGuid[entry.guid]
+        if member and member.key==entry.key then
+            local good,kind,fromCache=pcall(classify,toolbox,Copy(member))
+            if not good or Secret(kind) or not priority[kind] then unknown=unknown+1
+            else
+                eligible[#eligible+1]={id=id,kind=kind,group=group,name=entry.fullName:lower()}
+                model.groups[group][slot]=false
+                if not Secret(fromCache) and fromCache==true then cached=cached+1 end
+            end
+        end
+    end end
+    if unknown>0 then Emit();return false,unknown.." current group cards have unknown role/spec. Draft unchanged; no inspection started." end
+    if #eligible==0 then Emit();return false,"No classified current raiders in group slots. Absent cards and tray are unchanged." end
+    table.sort(eligible,function(a,b)if priority[a.kind]~=priority[b.kind] then return priority[a.kind]<priority[b.kind] end;return a.name<b.name end)
+    local function Slots(groups)
+        local slots={};for _,group in ipairs(groups)do for slot=1,5 do
+            if not model.groups[group][slot] then slots[#slots+1]={group,slot} end
+        end end;return slots
+    end
+    local sides,label
+    if mode=="ROLE_SORT" then
+        sides={Slots({1,2,3,4,5,6,7,8})};label="Role sort: Tank > Melee > Ranged > Healer"
+    else
+        for count=2,8,2 do
+            local a,b={},{}
+            for group=1,count do
+                local first=mode=="SPLIT_ODD_EVEN" and group%2==1 or mode=="SPLIT_ADJACENT" and group<=count/2
+                local side=first and a or b;side[#side+1]=group
+            end
+            local sa,sb=Slots(a),Slots(b)
+            if #sa>=math.ceil(#eligible/2) and #sb>=math.ceil(#eligible/2) then
+                sides={sa,sb};label=mode=="SPLIT_ODD_EVEN" and "Odd/even split" or "Adjacent split";break
+            end
+        end
+        if not sides then Emit();return false,"Preserved absent/unresolved cards leave insufficient balanced split space. Draft unchanged." end
+    end
+    local counts,roles={0,0},{{},{}}
+    for _,entry in ipairs(eligible)do
+        local side=1
+        if #sides==2 then
+            local a,b=roles[1][entry.kind]or 0,roles[2][entry.kind]or 0
+            if a>b or (a==b and counts[1]>counts[2]) then side=2 end
+        end
+        counts[side]=counts[side]+1;roles[side][entry.kind]=(roles[side][entry.kind]or 0)+1
+        local position=sides[side][counts[side]]
+        if not position then Emit();return false,"Preserved cards leave insufficient group capacity. Draft unchanged." end
+        model.groups[position[1]][position[2]]=entry.id
+    end
+    local provenance=cached>0 and (" Uses "..cached.." cached specializations; they may have changed.")or""
+    if LayoutKey(model)==LayoutKey(draft) then Emit();return true,"Draft already matches this local sort."..provenance end
+    draft=model;Edited()
+    return true,label.." · draft only; absent cards and tray retained."..provenance
+end
+
 local function Store(write)
     if Secret(RaidArsenalDB) or type(RaidArsenalDB)~="table" then return nil,"Local saved layouts are unavailable." end
     local store=RaidArsenalDB.raidGroupLayouts
@@ -350,32 +443,41 @@ function Groups:ListLayouts()
     local list={};for name in pairs(store.items) do list[#list+1]={name=name} end
     table.sort(list,function(a,b)return a.name<b.name end);return list
 end
+local function SerializeLayout(view,boss,name)
+    local slots,tray,seen={},{},{}
+    local function Name(id)
+        local value=StoredName(view.entries[id].fullName)
+        if not value or seen[value:lower()] then return nil end
+        seen[value:lower()]=true;return value
+    end
+    for group=1,8 do for slot=1,5 do
+        local id=view.groups[group][slot]
+        local value=id and Name(id) or false
+        if id and not value then return nil,"Resolve or remove duplicate or invalid identities before saving." end
+        slots[#slots+1]=value
+    end end
+    for _,id in ipairs(view.tray) do
+        local value=Name(id);if not value then return nil,"Resolve or remove duplicate or invalid identities before saving." end
+        tray[#tray+1]=value
+    end
+    local entries=0;for _ in pairs(seen) do entries=entries+1 end
+    if entries>MAX_ENTRIES then return nil,"Layout has too many entries." end
+    return {name=name,slots=slots,tray=tray,boss=Copy(boss)}
+end
 function Groups:SaveLayout(name)
     local ok,reason=Editable();if not ok then return false,reason end
     name=Label(name);if not name then return false,"Use a plain layout name of at most 80 bytes." end
     local store;store,reason=Store(false);if not store then return false,reason end
     local count=0;for _ in pairs(store.items) do count=count+1 end
+    for existing in pairs(store.items)do
+        if existing:lower()==name:lower() and (existing~=name or not savedBaseline or savedBaseline.name~=name) then
+            return false,"That name already exists. Load it to edit, or choose a new name."
+        end
+    end
     if not store.items[name] and count>=MAX_LAYOUTS then return false,"At most 50 layouts can be saved." end
-    local view=View();local slots,tray,seen={},{},{}
-    local function Name(id)
-        local identity=Identity(view.entries[id].fullName)
-        if not identity or seen[identity.key] then return nil end
-        seen[identity.key]=true;return identity.fullName
-    end
-    for group=1,8 do for slot=1,5 do
-        local id=view.groups[group][slot]
-        local value=id and Name(id) or false
-        if id and not value then return false,"Resolve or remove ambiguous identities before saving." end
-        slots[#slots+1]=value
-    end end
-    for _,id in ipairs(view.tray) do
-        local value=Name(id);if not value then return false,"Resolve or remove ambiguous identities before saving." end
-        tray[#tray+1]=value
-    end
-    local entries=0;for _ in pairs(seen) do entries=entries+1 end
-    if entries>MAX_ENTRIES then return false,"Layout has too many entries." end
+    local saved;saved,reason=SerializeLayout(draft,draft.boss,name);if not saved then return false,reason end
     store,reason=Store(true);if not store then return false,reason end
-    store.items[name]={name=name,slots=slots,tray=tray,boss=Copy(draft.boss)}
+    store.items[name]=saved;savedBaseline={name=name,key=LayoutKey(draft)}
     Emit();return true
 end
 function Groups:DeleteLayout(name)
@@ -383,7 +485,7 @@ function Groups:DeleteLayout(name)
     name=Label(name);if not name then return false,"Invalid layout name." end
     local store,reason=Store(false);if not store then return false,reason end
     if not store.items[name] then return false,"Layout not found." end
-    store.items[name]=nil;Emit();return true
+    store.items[name]=nil;if savedBaseline and savedBaseline.name==name then savedBaseline=nil end;Emit();return true
 end
 local function BoundEntry(model,value)
     local identity=Identity(value)
@@ -409,9 +511,9 @@ function Groups:LoadLayout(name)
     end
     local model=NewDraft(boss);local seen={}
     local function Add(value)
-        local identity=Identity(value)
-        if not identity or seen[identity.key] then return nil end
-        seen[identity.key]=true;return BoundEntry(model,identity.fullName)
+        local full=StoredName(value)
+        if not full or seen[full:lower()] then return nil end
+        seen[full:lower()]=true;return BoundEntry(model,full)
     end
     for index=1,40 do
         local value=saved.slots[index]
@@ -425,10 +527,11 @@ function Groups:LoadLayout(name)
         local entry=Add(value);if not entry then return false,"Saved layout contains invalid or duplicate identities." end
         model.tray[#model.tray+1]=entry.id
     end
+    local baseline=LayoutKey(model)
     AddLive(model)
     local entries=0;for _ in pairs(model.entries) do entries=entries+1 end
     if entries>MAX_ENTRIES then return false,"Layout and current raid exceed the entry limit." end
-    draft=model;preview=nil;Emit();return true
+    draft=model;savedBaseline={name=name,key=baseline};preview=nil;Emit();return true
 end
 
 function Groups:ParseNote(text)
@@ -473,17 +576,50 @@ function Groups:ParseNote(text)
     if not found then return nil,"No invite list was exported; the draft is unchanged." end
     return sections
 end
-function Groups:ImportNote(text,sectionIndex)
-    if job then return false,"Stop Apply before importing." end
-    local sections,reason=self:ParseNote(text);if not sections then return false,reason end
-    if not Integer(sectionIndex,1,#sections) or not sections[sectionIndex].hasInvite then return false,"Choose a section with an exported invite list." end
+local function ImportedModel(text,sectionIndex)
+    local sections,reason=Groups:ParseNote(text);if not sections then return nil,reason end
+    if not Integer(sectionIndex,1,#sections) or not sections[sectionIndex].hasInvite then return nil,"Choose a section with an exported invite list." end
     local section=sections[sectionIndex]
     local model=NewDraft({label=section.label,encounterID=section.encounterID,difficulty=section.difficulty})
     for index,value in ipairs(section.slots) do if value~=false then
         local entry=BoundEntry(model,value)
         model.groups[math.floor((index-1)/5)+1][(index-1)%5+1]=entry.id
     end end
-    AddLive(model);draft=model;preview=nil;Emit();return true
+    AddLive(model);return model
+end
+function Groups:ImportNote(text,sectionIndex)
+    if job then return false,"Stop Apply before importing." end
+    local model,reason=ImportedModel(text,sectionIndex);if not model then return false,reason end
+    draft=model;savedBaseline=nil;preview=nil;Emit();return true
+end
+local function ImportName(section)
+    local store,reason=Store(false);if not store then return false,reason end
+    local count,used=0,{};for name in pairs(store.items)do count=count+1;used[name:lower()]=true end
+    if count>=MAX_LAYOUTS then return false,"At most 50 layouts can be saved. Remove a layout before importing." end
+    local base=section.label or "Imported layout"
+    local name=base;local index=1
+    while used[name:lower()] do
+        index=index+1;local suffix=" ("..index..")";local pieces,bytes={},0
+        for piece in base:gmatch("[^\128-\191][\128-\191]*")do
+            if bytes+#piece>80-#suffix then break end;pieces[#pieces+1]=piece;bytes=bytes+#piece
+        end
+        name=table.concat(pieces)..suffix
+    end
+    return name
+end
+function Groups:GetImportName(text,sectionIndex)
+    local sections,reason=self:ParseNote(text);if not sections then return false,reason end
+    if not Integer(sectionIndex,1,#sections) or not sections[sectionIndex].hasInvite then return false,"Choose an exported section." end
+    return ImportName(sections[sectionIndex])
+end
+function Groups:ImportAndSaveNote(text,sectionIndex)
+    if self:IsApplying() then return false,"Review or cancel the outstanding Apply before importing." end
+    local model,reason=ImportedModel(text,sectionIndex);if not model then return false,reason end
+    local name;name,reason=ImportName(model.boss);if not name then return false,reason end
+    local saved;saved,reason=SerializeLayout(model,model.boss,name);if not saved then return false,reason end
+    local store;store,reason=Store(true);if not store then return false,reason end
+    store.items[name]=saved;draft=model;savedBaseline={name=name,key=LayoutKey(model)};preview=nil;Emit()
+    return true,name
 end
 
 local function Targets(snapshot,view)
@@ -672,6 +808,7 @@ local function Interrupted(reason)
     if job then Finish("stopped",reason) else Emit() end
 end
 subscriptions[#subscriptions+1]=RA:RegisterOptionalEvent("GROUP_ROSTER_UPDATE",function()Observe()end)
+subscriptions[#subscriptions+1]=RA:RegisterOptionalEvent("PLAYER_ROLES_ASSIGNED",function()Observe()end)
 subscriptions[#subscriptions+1]=RA:RegisterOptionalEvent("PLAYER_REGEN_DISABLED",function()Interrupted("Combat started; Apply stopped.")end)
 subscriptions[#subscriptions+1]=RA:RegisterOptionalEvent("PLAYER_REGEN_ENABLED",function()Observe()end)
 subscriptions[#subscriptions+1]=RA:RegisterOptionalEvent("ENCOUNTER_START",function()Interrupted("Encounter started; Apply stopped.")end)

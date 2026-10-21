@@ -54,6 +54,7 @@ local function fresh(count,saved)
     api('UnitFullName',function(unit)local row=member(unit);if row then return row.name,row.realm end end)
     api('UnitGUID',function(unit)local row=member(unit);return row and row.guid end)
     api('UnitAffectingCombat',function(unit)local row=member(unit);return row and row.combat==true end)
+    api('UnitGroupRolesAssigned',function(unit)local row=member(unit);return row and row.role end)
     api('GetNormalizedRealmName',function()return 'TestRealm'end)
     env.CreateFrame=function()
         local f={scripts={},events={}}
@@ -465,7 +466,8 @@ check(h:start(),'New eligible review after authority recovery failed');h:complet
 h=fresh(6);g=h.groups;h:openDraft();beforeReads=h.reads
 for i=1,50 do check(g:SaveLayout('Boss '..i),'Bounded named layout save failed')end
 check(#g:ListLayouts()==50 and not g:SaveLayout('Boss 51'),'Named layout count unbounded')
-check(g:SaveLayout('Boss 1') and #g:ListLayouts()==50,'Explicit existing-name save did not replace locally')
+check(not g:SaveLayout('Boss 1'),'Save as silently replaced a different existing layout')
+check(g:LoadLayout('Boss 1') and g:SaveLayout('Boss 1') and #g:ListLayouts()==50,'Explicit active-name save did not replace locally')
 check(g:DeleteLayout('Boss 2') and g:SaveLayout('Boss 51') and h.reads==beforeReads and #h.calls==0,'Storage edits queried/acted or failed reuse')
 local many={};for i=1,33 do many[#many+1]='EncounterID:'..i..';Difficulty:Mythic;Name:Boss '..i..'\ninvitelist:Person-Realm;'end
 check(not g:ParseNote(table.concat(many,'\n')),'Section count limit absent')
@@ -492,4 +494,88 @@ h=fresh(10);g=h.groups;h:openDraft();g:Close();beforeReads=h.reads
 h:event('GROUP_ROSTER_UPDATE');for _=1,3 do g:GetState()end
 check(h.reads==beforeReads and #h.timers==0 and not h.frames[1].events.GROUP_ROSTER_UPDATE,'Hidden idle planner kept observing/polling')
 check(h.env.RaidArsenalDB.raidGroupLayouts==nil,'Observing/editing initialized persistent layouts')
+
+-- Unsaved content ignores live metadata/indices but follows real persisted
+-- slots, tray and boss fields. Save as never overwrites a different layout.
+h=fresh(2);g=h.groups;state=h:openDraft()
+check(state.layout.contentDirty and g:SaveLayout('Baseline'),'New draft/save baseline failed')
+check(not g:GetState().layout.contentDirty,'Successful save remained dirty')
+local first=g:GetState().view.groups[1][1]
+check(g:Move(first,2,1) and g:GetState().layout.contentDirty,'Local move did not become unsaved')
+check(g:Move(first,1,1) and not g:GetState().layout.contentDirty,'Returning to saved slots did not become clean')
+h.roster[1].role='HEALER';h.roster[1].online=false;h.roster[1].group=3
+h:event('PLAYER_ROLES_ASSIGNED');check(not g:GetState().layout.contentDirty,'Live role/offline/group change dirtied local layout')
+local r=table.remove(h.roster,1);h.roster[#h.roster+1]=r;h:event('GROUP_ROSTER_UPDATE')
+check(not g:GetState().layout.contentDirty,'Raid index reorder dirtied layout')
+check(g:SaveLayout('Copy') and not g:SaveLayout('Baseline'),'Save as overwrote a different saved entry')
+check(g:LoadLayout('Baseline') and g:SaveLayout('Baseline'),'Loading did not authorize explicit active-name update')
+local joined=roster(3)[3];h.roster[#h.roster+1]=joined;h:event('GROUP_ROSTER_UPDATE')
+check(not g:GetState().layout.contentDirty and #g:GetState().view.tray==1,'Synthetic live join changed local saved comparison')
+check(g:SaveLayout('Baseline'),'Saving staged content with synthetic card failed')
+check(h.env.RaidArsenalDB.raidGroupLayouts.items.Baseline.slots[3]==false,'Save silently adopted a synthetic live card')
+check(g:LoadLayout('Baseline') and g:GetState().layout.contentDirty,'Load hid adopted extra raiders behind a false saved baseline')
+check(g:SaveLayout('Baseline') and not g:GetState().layout.contentDirty,'Explicit adopted layout save did not establish clean content')
+check(g:DeleteLayout('Baseline') and g:GetState().layout.contentDirty,'Deleting active saved entry left a false saved state')
+
+-- Atomic import/save persists unresolved names without guessing a realm.
+h=fresh(0);h.inRaid=false;g=h.groups
+local note='EncounterID:99;Difficulty:Heroic;Name:Boss Import\ninvitelist:ShortName,,Absent-OtherRealm;'
+check(g:GetImportName(note,1)=='Boss Import' and h.env.RaidArsenalDB.raidGroupLayouts==nil and h.reads==0,'Import name preview wrote/read native state')
+local ok,name=g:ImportAndSaveNote(note,1)
+check(ok and name=='Boss Import' and not g:GetState().layout.contentDirty,'Atomic import was not saved cleanly')
+local original=copy(h.env.RaidArsenalDB.raidGroupLayouts.items[name])
+ok,name=g:ImportAndSaveNote(note,1)
+check(ok and name=='Boss Import (2)' and same(original,h.env.RaidArsenalDB.raidGroupLayouts.items['Boss Import']),'Collision import overwrote existing content')
+check(g:LoadLayout(name),'Imported unresolved layout not loadable')
+state=g:GetState();check(state.view.entries[state.view.groups[1][1]].unresolved and state.view.entries[state.view.groups[1][3]].missing,'Unresolved/absent import did not round trip')
+local snapshot,layout,items=copy(state.draft),copy(state.layout),copy(h.env.RaidArsenalDB.raidGroupLayouts.items)
+check(not g:ImportAndSaveNote('invitelist:A-Realm,A-Realm;',1) and same(snapshot,g:GetState().draft) and same(layout,g:GetState().layout) and same(items,h.env.RaidArsenalDB.raidGroupLayouts.items),'Malformed atomic import changed draft/store/baseline')
+for i=1,48 do h.env.RaidArsenalDB.raidGroupLayouts.items['Limit '..i]=copy(original) end
+items=copy(h.env.RaidArsenalDB.raidGroupLayouts.items)
+check(not g:ImportAndSaveNote(note,1) and same(snapshot,g:GetState().draft) and same(layout,g:GetState().layout) and same(items,h.env.RaidArsenalDB.raidGroupLayouts.items),'Full-store import was not atomic')
+check(h.reads==0 and #h.calls==0 and #h.timers==0,'Local import/save started native work')
+
+-- Local role ordering/splits preserve every staged ID, pinned ghost/unresolved
+-- slots and explicit tray entries. Unknown current roles refuse atomically.
+local function classifier(_,member)
+    if member.role=='TANK' or member.role=='HEALER' then return member.role end
+    if member.role=='DAMAGER' then return member.class=='MAGE' and 'RANGED' or 'MELEE' end
+end
+for _,mode in ipairs({'ROLE_SORT','SPLIT_ODD_EVEN','SPLIT_ADJACENT'})do
+ h=fresh(40);g=h.groups;h.RA.RaidLeaderToolbox.GetDraftMemberKind=classifier
+ for i,row in ipairs(h.roster)do row.role=({'TANK','DAMAGER','DAMAGER','HEALER'})[(i-1)%4+1] end
+ state=h:openDraft();check(g:SaveLayout('Before sort'),'Sort baseline failed')
+ local entries=copy(state.draft.entries)
+ check(g:SortDraft(mode),'Local sort failed: '..mode)
+ state=g:GetState();local seen,sideRoles={},{{},{}}
+ for group=1,8 do
+  local last=0
+  for slot=1,5 do
+   local id=state.draft.groups[group][slot];check(id and entries[id] and not seen[id],'Sort lost/duplicated card or exceeded capacity');seen[id]=true
+   local entry=state.view.entries[id];local kind=classifier(nil,{role=entry.role,class=entry.class})
+   local side=mode=='SPLIT_ODD_EVEN' and ((group-1)%2+1) or (group<=4 and 1 or 2)
+   sideRoles[side][kind]=(sideRoles[side][kind]or 0)+1
+   local rank=({TANK=1,MELEE=2,RANGED=3,HEALER=4})[kind];check(rank>=last,'Sort did not order roles within groups');last=rank
+  end
+ end
+ check(same(state.draft.entries,entries) and not state.preview and state.layout.contentDirty,'Sort mutated identities or failed dirty/preview invalidation')
+ if mode~='ROLE_SORT' then for _,kind in ipairs({'TANK','MELEE','RANGED','HEALER'})do check(math.abs((sideRoles[1][kind]or 0)-(sideRoles[2][kind]or 0))<=1,'Split did not balance known roles')end end
+ local sorted=copy(state.draft.groups);check(g:SortDraft(mode) and same(sorted,g:GetState().draft.groups),'Local sort not deterministic')
+ check(#h.calls==0 and #h.timers==0,'Local sort submitted native actions/timers')
+end
+h=fresh(10);g=h.groups;h.RA.RaidLeaderToolbox.GetDraftMemberKind=classifier
+for _,row in ipairs(h.roster)do row.role='DAMAGER'end
+g:Open();check(g:ImportNote('invitelist:Ghost,,Absent-Realm;',1),'Pinned-card setup failed');state=g:GetState()
+local pinned1,pinned3,tray=state.draft.groups[1][1],state.draft.groups[1][3],copy(state.draft.tray)
+local all=copy(state.draft.entries)
+for _,mode in ipairs({'ROLE_SORT','SPLIT_ODD_EVEN','SPLIT_ADJACENT'})do
+ check(g:SortDraft(mode),'Sort with pinned cards failed')
+ state=g:GetState();check(state.draft.groups[1][1]==pinned1 and state.draft.groups[1][3]==pinned3 and same(state.draft.tray,tray) and same(state.draft.entries,all),'Sort changed pinned/absent/unresolved/tray cards')
+end
+local before=copy(g:GetState().draft);h.roster[2].role=nil
+check(not g:SortDraft('ROLE_SORT') and same(before,g:GetState().draft),'Unknown role partially edited the draft')
+h.overrides.UnitGroupRolesAssigned=function()return h.secret end
+check(g:RefreshRoster() and g:GetState().live.members[1].role==nil,'Secret optional role broke ordinary roster capture')
+check(not g:SortDraft('ROLE_SORT') and same(before,g:GetState().draft),'Secret role was guessed or changed draft')
+g:Close();local reads=h.reads;h:event('PLAYER_ROLES_ASSIGNED');check(h.reads==reads,'Hidden planner observed role events')
 print(('PASS: %d raid-group actual-module assertions (fictional asynchronous roster; native APIs/taint pending)'):format(checks))

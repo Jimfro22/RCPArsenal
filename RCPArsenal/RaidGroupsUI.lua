@@ -34,6 +34,8 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local member=entry.guid and ui.members and ui.members[entry.guid]
         local class=member and member.class
         if class then GameTooltip:AddLine(Literal(class),0.8,0.8,0.85) end
+        local role=member and member.role
+        GameTooltip:AddLine(role=="TANK" and "Tank" or role=="HEALER" and "Healer" or role=="DAMAGER" and "Damage" or "Role unknown",0.8,0.8,0.85)
         GameTooltip:AddLine("Current: "..(entry.liveGroup and ("Group "..entry.liveGroup) or "Not in raid"),0.8,0.8,0.85)
         GameTooltip:AddLine("Draft: "..(target and ("Group "..target) or "Unassigned"),0.8,0.8,0.85)
         if entry.unresolved then GameTooltip:AddLine("Unresolved identity. Right-click to match a raider.",1,0.65,0.25,true)
@@ -43,6 +45,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
         GameTooltip:Show()
     end
     local Refresh, Prepare, Edit, ShowLoad, ShowImport, ShowResolve, ShowRecovery
+    local saveStatus,sortButton,sortMenu
     local nameBox, status, applyButton, cancelButton, reviewButton, fromButton, reconcileButton, loadButton, saveButton, importButton, trayTitle, trayScroll, trayChild
     local function Message(value) ui.message=value or "";if status then SetText(status,ui.message) end end
     local function ClearPointer()
@@ -68,10 +71,14 @@ function RA:CreateRaidGroupsPane(parent, kit)
         if ok then
             ui.message=reason or "Local draft updated."
             if method~="SaveLayout" and method~="DeleteLayout" then Prepare() end
+            if method=="ImportAndSaveNote" then nameBox:SetText(reason) end
+            if method=="FromCurrentRaid" then nameBox:SetText("") end
         else ui.message=reason or "Draft unchanged." end
         ui.feedback=nil
         if not ok then ui.feedback=ui.message elseif method=="SaveLayout" then ui.feedback="Layout saved locally." end
-        Refresh();return ok
+        if ok and method=="ImportAndSaveNote" then ui.feedback="Imported and saved locally as "..reason.."." end
+        if ok and method=="SortDraft" then ui.feedback=reason end
+        Refresh();return ok,reason
     end
     local function Move(group,slot)
         local id=ui.dragging or ui.selected
@@ -87,6 +94,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
             if not frame or not frame:IsVisible() or type(MouseIsOver)~="function" then return false end
             local ok,over=pcall(MouseIsOver,frame);return ok and over==true
         end
+        if Over(sortMenu) then return end
         for group=1,8 do for slot=1,5 do
             local target=ui.slots[group][slot];if Over(target) then return target end
         end end
@@ -110,7 +118,8 @@ function RA:CreateRaidGroupsPane(parent, kit)
     local function MakeSlot(owner,width,height)
         local button=kit.Button(owner,"",width,height,function()end)
         button.label:Hide()
-        button.name=Text(button,"",10.5,9,-3,width-18,C.text);button.name:SetWordWrap(false)
+        button.name=Text(button,"",10.5,9,-3,width-36,C.text);button.name:SetWordWrap(false)
+        button.roleIcon=button:CreateTexture(nil,"OVERLAY");Size(button.roleIcon,13,13);Point(button.roleIcon,"TOPRIGHT",button,"TOPRIGHT",-5,-2);button.roleIcon:Hide()
         button.detail=Text(button,"",8.8,9,-16,width-18,C.textSoft);button.detail:SetWordWrap(false)
         button.classStrip=button:CreateTexture(nil,"OVERLAY");Size(button.classStrip,2,height-6);Point(button.classStrip,"TOPLEFT",button,"TOPLEFT",2,-3)
         button:RegisterForClicks("LeftButtonUp","RightButtonUp");button:RegisterForDrag("LeftButton")
@@ -155,6 +164,8 @@ function RA:CreateRaidGroupsPane(parent, kit)
     nameBox:SetTextInsets(9,9,0,0);nameBox:SetAutoFocus(false);nameBox:SetMaxLetters(80)
     if nameBox.SetHyperlinksEnabled then nameBox:SetHyperlinksEnabled(false) end
     nameBox:SetScript("OnEscapePressed",function(self)self:ClearFocus()end)
+    nameBox:SetScript("OnTextChanged",function()if Refresh then Refresh() end end)
+    saveStatus=Text(parent,"New layout",9.5,290,-48,178,C.textSoft);ui.saveStatus=saveStatus
     loadButton=kit.Button(parent,"LOAD",84,32,function()ShowLoad()end);Point(loadButton,"TOPLEFT",parent,"TOPLEFT",290,-62)
     saveButton=kit.Button(parent,"SAVE",84,32,function()Edit("SaveLayout",nameBox:GetText())end);Point(saveButton,"TOPLEFT",parent,"TOPLEFT",384,-62)
     fromButton=kit.Button(parent,"FROM RAID",130,32,function()
@@ -175,7 +186,27 @@ function RA:CreateRaidGroupsPane(parent, kit)
             Point(button,"TOPLEFT",card,"TOPLEFT",8,-32-(slot-1)*30);ui.slots[group][slot]=button
         end
     end
-    trayTitle=Text(parent,"Unassigned",10,0,-508,918)
+    trayTitle=Text(parent,"Unassigned",10,0,-508,680)
+    sortButton=kit.Button(parent,"SORT DRAFT",170,20,function()
+        if Locked() then return end
+        if sortMenu then sortMenu:SetShown(not sortMenu:IsShown()) end
+    end);Point(sortButton,"TOPLEFT",parent,"TOPLEFT",748,-504);ui.sortButton=sortButton
+    sortMenu=CreateFrame("Frame",nil,parent,"BackdropTemplate");Size(sortMenu,250,148);Point(sortMenu,"BOTTOMRIGHT",sortButton,"TOPRIGHT",0,4)
+    sortMenu:SetFrameLevel(parent:GetFrameLevel()+30);sortMenu:EnableMouse(true);kit.Backdrop(sortMenu,C.surface,C.lineStrong,8,true)
+    Text(sortMenu,"Draft only · Apply to change raid",9.5,10,-8,230)
+    local sortOptions={{"Role sort","ROLE_SORT","Tank > Melee > Ranged > Healer; fills free slots from Group 1."},
+        {"Split odd / even","SPLIT_ODD_EVEN","Balances known roles across odd/even groups, using the first 2, 4, 6 or 8 groups that fit."},
+        {"Split adjacent groups","SPLIT_ADJACENT","Balances known roles across two adjacent group blocks, such as G1+2 / G3+4."}}
+    for index,option in ipairs(sortOptions)do
+        local mode,tip=option[2],option[3]
+        local button=kit.Button(sortMenu,option[1],230,28,function()
+            if Locked() then return end
+            ClearSelection();local ok=Edit("SortDraft",mode);if ok then sortMenu:Hide() end
+        end);Point(button,"TOPLEFT",sortMenu,"TOPLEFT",10,-30-(index-1)*34)
+        button:HookScript("OnEnter",function(self)if GameTooltip then GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText(tip);GameTooltip:AddLine("Absent/unresolved cards and tray stay put. Unknown current roles stop this local sort. No inspection.",0.8,0.8,0.85,true);GameTooltip:Show() end end)
+        button:HookScript("OnLeave",function()if GameTooltip then GameTooltip:Hide() end end)
+    end
+    sortMenu:Hide();ui.sortMenu=sortMenu
     trayScroll=CreateFrame("ScrollFrame",nil,parent,"UIPanelScrollFrameTemplate")
     Point(trayScroll,"TOPLEFT",parent,"TOPLEFT",0,-528);Size(trayScroll,922,72)
     trayChild=CreateFrame("Frame",nil,trayScroll);Size(trayChild,918,72);trayScroll:SetScrollChild(trayChild)
@@ -205,7 +236,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
     Point(applyButton,"TOPLEFT",parent,"TOPLEFT",750,-610)
 
     local function Modal(title)
-        ClearPointer()
+        ClearPointer();sortMenu:Hide();nameBox:ClearFocus()
         if not ui.modal then
             local host=RA.ConfigFrame or parent
             ui.modal=CreateFrame("Frame",nil,host,"BackdropTemplate");ui.modal:SetAllPoints(host)
@@ -259,7 +290,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
         Modal("Load a local layout");ui.modalMode="load"
         local rows={}
         for _,row in ipairs((ui.state and ui.state.layouts)or{})do rows[#rows+1]={label=row.name,name=row.name}end
-        if #rows==0 then SetText(ui.modalStatus,"No saved layouts yet. Enter a name and Save.") end
+        SetText(ui.modalStatus,#rows==0 and "No saved layouts yet. Enter a name and Save." or "Loading replaces the local draft, including unsaved edits. No raid action.")
         List(rows,function(item)if Edit("LoadLayout",item.name)then nameBox:SetText(item.name);HideModal();ClearSelection();Refresh()end end)
     end
     ShowResolve=function(id)
@@ -304,23 +335,26 @@ function RA:CreateRaidGroupsPane(parent, kit)
                     if ui.modalMode~="paste" or ui.sections~=sections or ui.parsedText~=text or ui.paste:GetText()~=text then
                         Enabled(ui.importConfirm,false);SetText(ui.modalStatus,"Paste changed. Read sections again.");return
                     end
-                    ui.sectionIndex=item.index;SetText(ui.modalStatus,"Selected: "..sections[item.index].label..". Import changes only this draft.");Enabled(ui.importConfirm,true)
+                    ui.sectionIndex=item.index
+                    local name,reason=Call("GetImportName",text,item.index)
+                    SetText(ui.modalStatus,name and ("Save as: "..name..". Local only; Apply changes the raid.")or reason)
+                    Enabled(ui.importConfirm,name~=false and name~=nil)
                 end)
-                SetText(ui.modalStatus,"Choose a section, then Import draft.")
+                SetText(ui.modalStatus,"Choose a section, then Import & save locally.")
             end);Point(ui.parseButton,"BOTTOMLEFT",ui.card,"BOTTOMLEFT",20,64)
-            ui.importConfirm=kit.Button(ui.card,"IMPORT DRAFT",160,32,function()
+            ui.importConfirm=kit.Button(ui.card,"IMPORT & SAVE",180,32,function()
                 local section=ui.sections and ui.sections[ui.sectionIndex]
                 if ui.modalMode~="paste" or not section or ui.parsedText~=ui.paste:GetText() then
                     Enabled(ui.importConfirm,false);SetText(ui.modalStatus,"Paste changed. Read sections again.");return
                 end
-                if Edit("ImportNote",ui.parsedText,ui.sectionIndex)then
-                    nameBox:SetText(section.label)
+                local ok,reason=Edit("ImportAndSaveNote",ui.parsedText,ui.sectionIndex)
+                if ok then
                     HideModal();ClearSelection();Refresh()
-                end
+                else SetText(ui.modalStatus,reason or "Import was not saved. Draft unchanged.") end
             end);Point(ui.importConfirm,"BOTTOMLEFT",ui.card,"BOTTOMLEFT",190,64)
         end
         ui.pasteScroll:Show();ui.parseButton:Show();ui.importConfirm:Show();Enabled(ui.importConfirm,false)
-        SetText(ui.modalStatus,"Paste exported text, then read and select a section. No raid action.");ui.paste:SetFocus()
+        SetText(ui.modalStatus,"Read and select a section. Import & save creates a local layout; Apply changes the raid.");ui.paste:SetFocus()
     end
     ShowRecovery=function()
         if Busy() or not Uncertain() then return end
@@ -357,11 +391,14 @@ function RA:CreateRaidGroupsPane(parent, kit)
     end
     local function Paint(button,id,target,entries)
         local entry=id and entries[id]
-        button.entryID=entry and id or nil
+        button.entryID=entry and id or nil;button.roleIcon:Hide()
         if not entry then
             SetText(button.name,"Empty slot");SetText(button.detail,"");button.classStrip:Hide();button:SetAlpha(0.45);button:SetSelected(false);return
         end
         local member=entry.guid and ui.members[entry.guid]
+        if member and (member.role=="TANK" or member.role=="HEALER") then
+            button.roleIcon:SetAtlas(member.role=="TANK" and "UI-LFG-RoleIcon-Tank-Micro-GroupFinder" or "UI-LFG-RoleIcon-Healer-Micro-GroupFinder");button.roleIcon:Show()
+        end
         local class=member and member.class or entry.class
         local color=class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
         button.classStrip:SetColorTexture(color and color.r or C.muted[1],color and color.g or C.muted[2],color and color.b or C.muted[3],1);button.classStrip:Show()
@@ -411,7 +448,15 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local current=trayScroll:GetVerticalScroll()or 0;if current>trayHeight-72 then trayScroll:SetVerticalScroll(math.max(0,trayHeight-72))end
         SetText(trayTitle,"Unassigned: "..unassigned.." present"..(absent>0 and (" · "..absent.." absent")or"")..(ui.selected and " · Click a slot to move selected player"or""))
         local busy=Busy();local preview=state.preview
-        for _,button in ipairs({loadButton,saveButton,importButton,reconcileButton})do Enabled(button,not Locked())end
+        for _,button in ipairs({loadButton,saveButton,importButton,reconcileButton,sortButton})do Enabled(button,not Locked())end
+        if Locked() then sortMenu:Hide() end
+        local savedName=state.layout and state.layout.savedName
+        local typed=(nameBox:GetText()or""):match("^%s*(.-)%s*$")
+        local saveAs=savedName and typed~=savedName
+        local dirty=state.draft and (not savedName or saveAs or state.layout.contentDirty)
+        ui.dirty=dirty==true;saveButton:SetSelected(ui.dirty)
+        SetText(saveButton.label,saveAs and "SAVE AS" or "SAVE")
+        SetText(saveStatus,not state.draft and "No layout" or not savedName and "New layout · unsaved" or dirty and "Unsaved changes" or "Saved")
         Enabled(fromButton,not busy);SetText(fromButton.label,Uncertain() and "REVIEW RAID" or "FROM RAID")
         Enabled(applyButton,not Locked() and preview and preview.canApply==true and (preview.operationCount or 0)>0 and not (state.draft and state.draft.stale))
         cancelButton:SetShown(busy);reviewButton:SetShown(not busy);Enabled(reviewButton,not Locked())
@@ -440,7 +485,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
     end
     function ui:Hide()
         self.active=false;ClearSelection();HideModal();self.prepareFailed=false;self.feedback=nil
-        Call("SetVisible",false)
+        nameBox:ClearFocus();sortMenu:Hide();Call("SetVisible",false)
     end
     parent:HookScript("OnShow",function()ui:Show()end)
     parent:HookScript("OnHide",function()ui:Hide()end)
