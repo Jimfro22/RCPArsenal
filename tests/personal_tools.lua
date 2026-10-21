@@ -120,12 +120,17 @@ C_Item = { GetItemCount = function() error("No separate counts") end,
         local item = items[id] or {}; return item.start, item.duration, item.enabled
     end }
 local nativeGroups, nativeTracks, nativeTextures = 0,0,0
-local function GlowAnimationGroup()
+local function GlowAnimationGroup(owner)
     nativeGroups=nativeGroups+1
-    local group={animations={},plays=0,stops=0}
+    local group={animations={},plays=0,stops=0,owner=owner}
     function group:SetLooping(value) check(value=="REPEAT","Glow must loop natively") end
     function group:SetAnimationSpeedMultiplier(value) self.speed=value end
-    function group:Play(reverse,offset) self.plays=self.plays+1;self.playing=true;self.offset=offset or 0 end
+    function group:Play(reverse,offset)
+        check(reverse==nil or reverse==false,"Glow reversed unexpectedly")
+        check(offset==nil or (type(offset)=="number" and offset>=0),"Invalid native phase offset")
+        self.plays=self.plays+1;self.playing=true;self.offset=offset or 0
+        self.ownerShownAtPlay=owner.shown==true and owner.parent.shown==true
+    end
     function group:Stop() self.stops=self.stops+1;self.playing=false end
     function group:CreateAnimation(kind)
         check(kind=="Translation" or kind=="Rotation" or kind=="FlipBook","Unexpected glow animation")
@@ -142,7 +147,7 @@ local function GlowAnimationGroup()
 end
 function CreateFrame(kind, name, parent, template)
     check(kind == "Frame" and template == nil, "Visual must be nonsecure and noninteractive")
-    local frame = { name = name, parent = parent, shown = true, scripts = {} }
+    local frame = { name = name, parent = parent, shown = true, clipsChildren=false, scripts = {} }
     local sample = name == "RCPArsenalConsumableReminderPreview"
     function frame:Hide() local changed=self.shown; self.shown=false; if changed and self.scripts.OnHide then self.scripts.OnHide(self) end end
     function frame:Show()
@@ -162,7 +167,9 @@ function CreateFrame(kind, name, parent, template)
     function frame:SetPoint(...) self.point = { ... } end
     function frame:ClearAllPoints() self.point = nil end
     function frame:EnableMouse(value) check(value == false or sample, "Live visual cannot capture clicks"); self.mouse = value end
+    function frame:GetFrameLevel() return self.frameLevel or (self.parent and self.parent.GetFrameLevel and self.parent:GetFrameLevel()+1) or 0 end
     function frame:SetFrameLevel(value) self.frameLevel = value end
+    function frame:SetClipsChildren(value) self.clipsChildren=value end
     function frame:SetFrameStrata(value) end
     function frame:SetMovable(value) check(sample and value == true, "Only explicit sample can move") end
     function frame:SetClampedToScreen(value) self.clamped=value end
@@ -176,27 +183,28 @@ function CreateFrame(kind, name, parent, template)
         check((sample and (name == "OnDragStart" or name == "OnDragStop")) or (name == "OnShow" and self.name == "RCPArsenalConsumableReminder") or (name == "OnHide" and self.name == nil), "No frame timers/action scripts allowed")
         self.scripts[name] = fn
     end
-    function frame:CreateTexture()
+    function frame:CreateTexture(name,layer,template,sublevel)
         nativeTextures=nativeTextures+1
-        local texture = {}
+        local texture = {parent=self,layer=layer,sublevel=sublevel or 0,alpha=1}
         function texture:Hide() self.shown = false end
         function texture:Show() self.shown = true end
         function texture:SetAllPoints() end
-        function texture:ClearAllPoints() end
+        function texture:ClearAllPoints() self.point=nil end
         function texture:SetSize(w,h) self.width,self.height=w,h end
         function texture:SetVertexColor(...) self.vertex={...} end
         function texture:SetBlendMode(value) self.blend=value end
         function texture:SetAtlas(value) self.atlas=value end
         function texture:SetDesaturated(value) self.desaturated=value end
-        function texture:CreateAnimationGroup() self.group=GlowAnimationGroup();return self.group end
-        function texture:SetPoint(...) end
-        function texture:SetColorTexture(...) end
+        function texture:CreateAnimationGroup() self.group=GlowAnimationGroup(self);return self.group end
+        function texture:SetAlpha(value) check(type(value)=="number" and value>=0 and value<=1,"Glow texture alpha must be a public constant");self.alpha=value end
+        function texture:SetPoint(...) self.point={...} end
+        function texture:SetColorTexture(...) self.color={...} end
         function texture:SetTexCoord(...) end
         function texture:SetTexture(value) self.texture = value end
         return texture
     end
     function frame:CreateFontString()
-        local text = { SetPoint = function() end, SetText = function(self, text) self.text = text end,
+        local text = { SetPoint = function(self,...) self.point={...} end, ClearAllPoints=function(self)self.point=nil end, SetText = function(self, text) self.text = text end,
             SetTextHeight = function(self, size) self.textHeight = size end,
             SetWidth = function(self, width) self.width = width end, SetWordWrap = function(self, value) self.wrap = value end }
         self.strings = self.strings or {}; self.strings[#self.strings+1] = text

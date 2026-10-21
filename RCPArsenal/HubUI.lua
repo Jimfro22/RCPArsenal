@@ -665,7 +665,7 @@ function RA:CreateHubPanes(panes, kit)
         PersonalLayout(); kit.Refresh()
     end)
     Point(glowDisclosure,"TOPLEFT",tools,"TOPLEFT",232,-333)
-    local iconGlow = kit.Toggle(tools, "Icon glow at ≤35%", "Healthstone or potion, while the reminder is visible.",
+    local iconGlow = kit.Toggle(tools, "Icon glow at 35% or lower", "Healthstone or potion, while the reminder is visible.",
         function() return RA.PersonalTools:GetState().reminderStoneGlow end,
         function(value) RA.PersonalTools:SetOption("reminderStoneGlow", value) end)
     Width(iconGlow, 522); iconGlow:SetHeight(38); Point(iconGlow, "TOPLEFT", tools, "TOPLEFT", 412, -329)

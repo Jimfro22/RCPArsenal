@@ -1,4 +1,6 @@
-# Adjustable reminder glow — alpha.13
+# Adjustable reminder glow — alpha.16
+
+Alpha.16 repairs outside geometry, preview contrast, spark phases/sizing and label clearance. See the [visibility repair and native acceptance](GLOW_VISIBILITY.md).
 
 Personal Tools has one initially collapsed **Glow settings** disclosure alongside Text & Sound. Opening either closes the other to fit the existing panel. The everyday **Icon glow at ≤35%** switch remains visible. Steady border and the existing warm gold remain the default; existing users gain no animated cost until choosing an animated style. No media or branding changes, library dependency, or broader UI redesign.
 
@@ -8,8 +10,8 @@ All styles share a native RGB color picker. Only the selected style's controls a
 | --- | --- | --- |
 | Steady border | Shared color: gold `(1, .72, .18)` | Original eight static edge/halo textures |
 | Pixel Glow | Lines 1–12 (8); Speed .5×–2× (1×); Line length 4–16 UI units (10); Thickness 1–4 (2) | One rectangular texture per line; four native translations and four brief corner rotations; phase offsets distribute lines |
-| Action Button Glow | Speed .5×–2× (1×) | Blizzard's current proc-loop atlas: native 30-frame, 6-row/5-column FlipBook, 1.4× icon footprint, desaturated then tinted |
-| Autocast Shine | Particle groups 1–8 (4); Speed .5×–2× (1×); Size 50–150% (100%) | Four sparks per group, in four size/rate tiers, using built-in `Interface\Cooldown\star4` and native square translations |
+| Action Button Glow | Speed .5×–2× (1×) | Blizzard's current proc-loop atlas: native 30-frame, 6-row/5-column FlipBook, 1.6× icon footprint, desaturated then tinted |
+| Autocast Shine | Particle groups 1–8 (4); Speed .5×–2× (1×); Size 50–150% (100%) | Four sparks per group, distinct starting phases and four size/rate tiers; bounded icon-size scaling, built-in `Interface\Cooldown\star4` and native square translations |
 
 Speed is the native animation rate multiplier, so larger means faster. Autocast size affects sparks, not icon size. Pixel and Autocast are independently authored renderings of those styles; native corner motion, particle appearance and atlas tint require client acceptance.
 

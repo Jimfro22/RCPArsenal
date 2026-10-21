@@ -115,6 +115,10 @@ local function Metric(object, method)
     local ok, value = pcall(function() return object[method](object) end)
     return ok and Number(value) or nil
 end
+local function GlowExtent(kind)
+    if not IsItemIcon(kind) or (Settings() or {}).reminderStoneGlow == false then return 0 end
+    return RA.ReminderGlow:GetExtent(RA:NormalizeReminderGlow((Settings() or {}).reminderGlow),IconSize())
+end
 local function FitAndClamp(frame, label, kind, requestedSize)
     if not label then return end
     local width = Metric(label, "GetStringWidth")
@@ -151,11 +155,13 @@ local function FitAndClamp(frame, label, kind, requestedSize)
     local clamped = kind == "empty" or itemIcon or frame.isPreview == true
     if frame.SetClampedToScreen then pcall(frame.SetClampedToScreen, frame, clamped) end
     if frame.SetClampRectInsets then
-        local appearance = RA:NormalizeReminderGlow((Settings() or {}).reminderGlow)
-        local extent = RA.ReminderGlow:GetExtent(appearance,IconSize())
+        local extent = GlowExtent(kind)
         local side = clamped and math.max(itemIcon and extent or 0, (width - IconSize()) / 2) or 0
-        local top = clamped and math.max(frame.isPreview and 20 or 7, itemIcon and extent+7 or 7) or 0
-        local bottom = clamped and -(math.max(4, itemIcon and extent or 0) + height + 7) or 0
+        local headingHeight=Metric(frame.label,"GetStringHeight")
+        if not headingHeight or headingHeight<=0 then headingHeight=12 end
+        local heading = frame.isPreview and itemIcon and (headingHeight+5) or 0
+        local top = clamped and math.max(frame.isPreview and 20 or 7, itemIcon and extent+7+heading or 7) or 0
+        local bottom = clamped and -(4 + extent + height + 7) or 0
         -- Native offset signs match Blizzard EditMode's selection-bound clamp.
         -- Include the entire caption and +/-7 animation, without saving a move.
         pcall(frame.SetClampRectInsets, frame, -side, side, top, bottom)
@@ -166,6 +172,13 @@ local function ApplyAppearance(frame, label, kind)
     if not frame then return end
     frame:SetSize(IconSize(), IconSize())
     if label then
+        local extent=GlowExtent(kind)
+        label:ClearAllPoints()
+        label:SetPoint("TOP",frame.body or frame,"BOTTOM",0,-4-extent)
+        if frame.isPreview and frame.label then
+            frame.label:ClearAllPoints()
+            frame.label:SetPoint("BOTTOM",frame,"TOP",0,IsItemIcon(kind) and extent+7+5 or 5)
+        end
         local size = kind == "empty" and EmptyTextSize() or TextSize()
         if RA.ApplyFont then RA:ApplyFont(label, size, "REGULAR", false)
         elseif label.SetTextHeight then label:SetTextHeight(size) end
@@ -303,6 +316,7 @@ local function CreateReminder()
     reminder:EnableMouse(false)
     reminder:SetFrameStrata("HIGH")
     local child = CreateFrame("Frame", nil, reminder)
+    reminder.body = child
     child:SetAllPoints()
     child:EnableMouse(false)
     local border = child:CreateTexture(nil, "BACKGROUND")
@@ -728,13 +742,14 @@ local function CreatePreview()
     preview:EnableMouse(false)
     preview:RegisterForDrag("LeftButton")
     local body = CreateFrame("Frame", nil, preview)
+    preview.body = body
     body:SetAllPoints()
     body:SetAlpha(1)
     body:EnableMouse(false)
     local border = body:CreateTexture(nil, "BACKGROUND")
     preview.border = border
     border:SetAllPoints()
-    border:SetColorTexture(0.95, 0.65, 0.20, 1)
+    border:SetColorTexture(0.05, 0.04, 0.06, 0.94) -- Match the live backing; glow supplies the gold.
     local icon = body:CreateTexture(nil, "ARTWORK")
     preview.icon = icon
     icon:SetPoint("TOPLEFT", 3, -3)

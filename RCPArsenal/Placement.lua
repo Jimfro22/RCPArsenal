@@ -91,6 +91,8 @@ local function RenderReminder()
     if not frame or not session then return end
     local personal=RA:GetDB().personalTools
     local kind=session.kind
+    local extent=kind~="empty" and personal.reminderStoneGlow~=false
+        and RA.ReminderGlow:GetExtent(RA:NormalizeReminderGlow(personal.reminderGlow),personal.reminderIconSize or 56) or 0
     frame.icon:SetShown(kind~="empty")
     if (kind=="stone" or kind=="potion") and personal.reminderStoneGlow~=false then
         frame.glow:Configure(RA:NormalizeReminderGlow(personal.reminderGlow),personal.reminderIconSize or 56)
@@ -102,13 +104,22 @@ local function RenderReminder()
     local width=math.max(1,UIParent:GetWidth()-32)
     if kind=="empty" then size=math.min(size,width/(#"OUT OF POTIONS!"+1)) end
     RA:ApplyFont(frame.caption,math.max(6,size),"REGULAR",false)
-    frame.caption:ClearAllPoints();frame.caption:SetPoint("TOP",frame,"BOTTOM",0,-4)
-    frame.caption:SetWidth(math.min(width,kind=="empty" and (#"OUT OF POTIONS!"+1)*size or math.max(260,frame:GetWidth())))
+    frame.caption:ClearAllPoints();frame.caption:SetPoint("TOP",frame,"BOTTOM",0,-4-extent)
+    frame.title:ClearAllPoints();frame.title:SetPoint("BOTTOMLEFT",frame,"TOPLEFT",0,5+extent)
+    local captionWidth=math.min(width,kind=="empty" and (#"OUT OF POTIONS!"+1)*size or math.max(260,frame:GetWidth()))
+    frame.caption:SetWidth(captionWidth)
     RA:SetVisualText(frame.caption,(text or ""):gsub("|","||"))
     if frame.SetClampRectInsets then
-        local extent=kind~="empty" and RA.ReminderGlow:GetExtent(RA:NormalizeReminderGlow(personal.reminderGlow),personal.reminderIconSize or 56) or 0
         local side=math.max(extent,(frame.caption:GetWidth()-frame:GetWidth())/2)
-        frame:SetClampRectInsets(-side,side,math.max(24,extent),-math.max(24,size*2,extent))
+        local titleHeight=frame.title:GetStringHeight()
+        if not Number(titleHeight) or titleHeight<=0 then titleHeight=12 end
+        local captionHeight=frame.caption:GetStringHeight()
+        if not Number(captionHeight) or captionHeight<=0 then
+            -- Saved captions have at most 60 codepoints. A full em per glyph
+            -- is a bounded conservative fallback when native metrics are absent.
+            captionHeight=math.ceil(math.max(1,math.min(60,#(text or "")))*size/math.max(1,captionWidth))*size*1.2
+        end
+        frame:SetClampRectInsets(-side,side,math.max(24,extent+5+titleHeight),-math.max(24,extent+4+captionHeight))
     end
 end
 local function CreateSamples()
@@ -134,7 +145,7 @@ local function CreateSamples()
         local key=id
         local frame=CreateFrame("Frame","RCPArsenalPlacement"..id,UIParent,"BackdropTemplate")
         frame:Hide();frame:SetFrameStrata("HIGH");frame:SetMovable(true);frame:SetClampedToScreen(true);frame:EnableMouse(true);frame:RegisterForDrag("LeftButton")
-        Backdrop(frame,C.surface,C.orange)
+        Backdrop(frame,C.surface,id=="REMINDER" and C.line or C.orange)
         frame.title=Font(frame,"",10,C.orange);frame.title:SetPoint("BOTTOMLEFT",frame,"TOPLEFT",0,5)
         frame:SetScript("OnDragStart",function(self)if session and session.mode=="MOVE" and not Restricted() then self:StartMoving() end end)
         frame:SetScript("OnDragStop",function(self)

@@ -382,7 +382,7 @@ end
 do
     local glow, disclosure, sizeControl, masterControl
     for _,obj in ipairs(objects) do
-        if obj.title and obj.title.text=='Icon glow at ≤35%' then glow=obj end
+        if obj.title and obj.title.text=='Icon glow at 35% or lower' then glow=obj end
         if obj.label and obj.label.text=='REMINDER TEXT & SOUND +' then disclosure=obj end
         if obj.title and obj.title.text=='EMPTY WARNING SIZE' then sizeControl=obj end
         if obj.title and obj.title.text=='Enable Healthstone / healing potion reminder' then masterControl=obj end
