@@ -162,7 +162,7 @@ local function loadAddon()
     assert(loadfile('RCPArsenal/ProfileIO.lua'))('RCPArsenal', RA)
     RA.Categories, RA.CatalogByKey = {}, {}
     assert(loadfile('RCPArsenal/WorldMarkers.lua'))('RCPArsenal', RA)
-    assert(loadfile('RCPArsenal/MarkerRadial.lua'))('RCPArsenal', RA)
+    assert(loadfile(arg[1] or 'RCPArsenal/MarkerRadial.lua'))('RCPArsenal', RA)
     local eventFrame
     for _, frame in ipairs(frames) do if frame.scripts.OnEvent then eventFrame = frame end end
     eventFrame.scripts.OnEvent(eventFrame, 'ADDON_LOADED', 'RCPArsenal')
@@ -222,21 +222,29 @@ check(cycle:GetAttribute('rcp-radial-held'), 'Unchanged/transient binding event 
 check(cycle.overrides.F9 and cycle.overrides['ALT-CTRL-SHIFT-F9'] and cycle.overrides.F10, 'Modifier release routes missing')
 check(cycle.overrides.ESCAPE[1] == cancel.name and cycle.overrides.BUTTON2[1] == cancel.name, 'Cancel overrides missing')
 local tapTimer = timers[#timers]
-up(); check(#actions == previous and cycle:GetAttribute('macrotext')==nil, 'Center tap placed or retained a marker')
+up(); check(#actions == previous+1 and actions[#actions][2]=='/wm [@cursor] 8' and cycle:GetAttribute('index')==2, 'Center tap failed next configured marker/advance')
+previous=#actions
 check(not root:IsShown() and empty(cycle.overrides) and tapTimer.cancelled, 'Tap left hold UI/overrides/timer')
 fireTimer(tapTimer, true); check(activePolling() == 0 and #actions == previous, 'Stale display timer rearmed or placed')
-up(); check(#actions == previous, 'Repeated key-up placed twice')
+up(); check(#actions == previous and cycle:GetAttribute('index')==2, 'Repeated key-up placed or advanced twice')
 resetCursor(); down(); local heldTimer = timers[#timers]
 down(); check(timers[#timers] == heldTimer, 'Repeated down restarted hold')
 combat = true
 fireTimer(heldTimer)
+local centerHint,cancelHelp=false,false
+for _,frame in ipairs(frames)do
+    if frame:IsVisible() and frame.text=='Center release places next' then centerHint=true end
+    if frame:IsVisible() and frame.text=='Right-click / Escape cancels' then cancelHelp=true end
+end
+check(centerHint and cancelHelp,'Center visual still claims cancel or ground-click placement')
 check(activePolling() == 1 and #actions == previous, 'Display timer placed a marker or failed to display')
-up(); check(#actions==previous and activePolling()==0 and cycle:GetAttribute('macrotext')==nil, 'Stationary displayed hold placed or retained a marker')
+up(); check(#actions==previous+1 and actions[#actions][2]=='/wm [@cursor] 4' and cycle:GetAttribute('index')==1 and activePolling()==0, 'Stationary displayed center hold did not use same next-marker rule')
+previous=#actions
 for marker = 1, 8 do
     resetCursor(); down()
     local angle = (marker - 1) * math.pi / 4
     move(960 + math.sin(angle) * 120, 540 + math.cos(angle) * 120)
-    local before = #actions
+    local before,index = #actions,cycle:GetAttribute('index')
     local pending=timers[#timers]
     if marker==1 then
         fireTimer(pending)
@@ -249,6 +257,7 @@ for marker = 1, 8 do
     end
     up()
     check(#actions == before + 1 and actions[#actions][2] == '/wm ' .. marker, 'Wrong radial ground-targeting command ' .. marker)
+    check(cycle:GetAttribute('index')==index,'Sector selection advanced configured sequence')
     local boundary=actions[#actions][5]
     check(not boundary.held and not boundary.catcherShown and not boundary.overrides,
         'Wheel failed to reset BEFORE the protected targeting action')
@@ -260,12 +269,13 @@ for marker = 1, 8 do
 end
 resetCursor(); down(); move(1100, 540); move(960, 540)
 previous = #actions; up()
-check(#actions == previous and not cycle:GetAttribute('rcp-radial-held'), 'Return to center failed to cancel')
+check(#actions == previous+1 and actions[#actions][2]=='/wm [@cursor] 8' and cycle:GetAttribute('index')==2 and not cycle:GetAttribute('rcp-radial-held'), 'Return to center did not place the configured next marker')
+previous=#actions
 for _, input in ipairs({'ESCAPE', 'BUTTON2'}) do
     resetCursor(); down(); move(960, 660)
     local target = cycle.overrides[input]
     dispatch(named[target[1]], true); dispatch(cancel, false); up()
-    check(#actions == previous and empty(cycle.overrides) and not root:IsShown(), 'Cancel then release placed: ' .. input)
+    check(#actions == previous and cycle:GetAttribute('index')==2 and empty(cycle.overrides) and not root:IsShown(), 'Cancel then release placed/advanced: ' .. input)
 end
 -- Test all cancel modifier chords independently of the full-screen pointer
 -- path; CTRL-F9 commonly leaves Ctrl held during the right-click.
@@ -280,7 +290,7 @@ for mask=0,7 do
         check(target and target[1]==cancel.name,'Missing modified cancel override: '..prefix..input)
         local pending=timers[#timers]
         dispatch(named[target[1]],true);up();dispatch(cancel,false);up()
-        check(#actions==previous and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+        check(#actions==previous and cycle:GetAttribute('index')==2 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
             and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and pending.cancelled and activePolling()==0,
             'Modified cancel left a release action/state: '..prefix..input)
     end
@@ -294,23 +304,39 @@ for _,entry in ipairs(pointerCases) do
     move(entry[1],entry[2])
     for _,frame in ipairs(frames)do if frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame,0.05) end end
     dispatch(root,true,'RightButton')
-    check(#actions==previous and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+    check(#actions==previous and cycle:GetAttribute('index')==2 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
         and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and activePolling()==0,'Full-screen right-click failed center/sector/outside cancellation')
     dispatch(root,false,'RightButton');up();up();fireTimer(pending,true)
     check(#actions==previous and not root:IsShown() and activePolling()==0,'Right-click or stale timer rearmed a later release')
 end
--- Every no-sector release has identical protected behavior, independent of
+-- Every valid center release uses the sequence once, independent of
 -- visual delay, long hold, prior sector and exactly-on-boundary cursor jitter.
 for _,offset in ipairs({{0,0},{22,22},{-22,-22},{-22,22}}) do
     for _,displayed in ipairs({false,true}) do
         resetCursor();down();local pending=timers[#timers]
         if displayed then fireTimer(pending) end
+        local index=cycle:GetAttribute('index');local expected=cycle:GetAttribute('marker'..index)
         move(960+offset[1],540+offset[2]);up()
-        check(#actions==previous and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and not root:IsShown(),
-            'Center/deadzone release placed a random marker or stranded state')
+        check(#actions==previous+1 and actions[#actions][2]=='/wm [@cursor] '..expected and cycle:GetAttribute('index')==(index==1 and 2 or 1) and empty(cycle.overrides) and not root:IsShown(),
+            'Center/deadzone release failed configured sequence or stranded state')
+        local boundary=actions[#actions][5]
+        check(not boundary.held and not boundary.catcherShown and not boundary.overrides,'Center failed cleanup before protected action')
+        previous=#actions
     end
 end
 check(randomCalls==0,'Wheel center path still invokes random placement')
+-- Missing pointer coordinates are not a center gesture. No fallback/advance.
+for _,point in ipairs({{-1,540},{1921,540},{960,-1},{960,1081}}) do
+    resetCursor();down();local index=cycle:GetAttribute('index');move(point[1],point[2]);up()
+    check(#actions==previous and cycle:GetAttribute('index')==index and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and not root:IsShown(),'Outside pointer became a sequence fallback')
+end
+local mousePosition=root.GetMousePosition
+for _,point in ipairs({{false,0.5},{0.5,false}})do
+    resetCursor();down();local index=cycle:GetAttribute('index')
+    root.GetMousePosition=function()return point[1] or nil,point[2] or nil end
+    up();check(#actions==previous and cycle:GetAttribute('index')==index and cycle:GetAttribute('macrotext')==nil,'Partial pointer coordinates placed/advanced')
+    root.GetMousePosition=mousePosition
+end
 resetCursor(); down(); restricted = true; root:Hide(); restricted = false; up()
 check(#actions == previous and empty(cycle.overrides), 'Native overlay/UI hide did not reset protected hold')
 resetCursor(); down(); local secure = restricted; restricted = true
@@ -327,13 +353,13 @@ for _, frame in ipairs(frames) do if frame.scripts.OnUpdate then frame.scripts.O
 check(activePolling() == 0 and #actions == previous, 'Lost-release preview did not stop or placed automatically')
 local recovery
 for _, frame in ipairs(frames) do
-    if frame.text == 'Release the marker key or press Escape' and frame:IsVisible() then recovery = true end
+    if frame.text == 'Cancel before releasing the marker key' and frame:IsVisible() then recovery = true end
 end
 check(recovery and cycle:GetAttribute('rcp-radial-held') and not empty(cycle.overrides), 'Stopped preview hid the active-hold recovery cue')
 event('PLAYER_LEAVING_WORLD'); event('PLAYER_ENTERING_WORLD')
 recovery = false
 for _, frame in ipairs(frames) do
-    if frame.text == 'Release the marker key or press Escape' and frame:IsVisible() then recovery = true end
+    if frame.text == 'Cancel before releasing the marker key' and frame:IsVisible() then recovery = true end
 end
 check(recovery and activePolling() == 0, 'Combat world return left invisible active overrides or restarted polling')
 dispatch(cancel, true); up(); check(empty(cycle.overrides) and #actions == previous, 'Lost-release Escape recovery placed')
@@ -374,6 +400,9 @@ down(); up(); check(#actions == previous and cycle:GetAttribute('rcp-input-suppr
 combat = false; event('PLAYER_REGEN_ENABLED')
 check(not cycle:GetAttribute('rcp-input-suppressed'), 'Deferred editor guard failed to recover')
 RA.WorldMarkers:SetOrder({})
+resetCursor();down();local emptyCount=#actions;fireTimer(timers[#timers]);up()
+check(#actions==emptyCount and cycle:GetAttribute('index')==1 and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and not root:IsShown(),'Empty center sequence placed, advanced or retained state')
+check(RA.WorldMarkers:GetModeHelp():find('Marker order empty: center release does nothing.',1,true),'Empty sequence status promises center placement')
 resetCursor(); down(); move(960, 660); up()
 check(actions[#actions][2] == '/wm 1', 'Wheel incorrectly depended on ordinary sequence order')
 local settings = RA:GetDB().worldMarkers

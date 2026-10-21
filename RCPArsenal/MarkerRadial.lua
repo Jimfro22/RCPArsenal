@@ -11,7 +11,7 @@ local status = "Marker wheel is off."
 local DEADZONE, RADIUS, DISPLAY_DELAY, VISUAL_LIMIT = 22, 92, 0.18, 10
 
 -- Only the hardware CLICK handler selects/arms an action. Timing is entirely
--- presentation; every center/no-sector release ends without placing a marker.
+-- presentation; a valid center release uses the configured sequence, at any hold duration.
 local RESET = [[
     self:SetAttribute("rcp-radial-held", nil)
     self:SetAttribute("macrotext", nil)
@@ -61,18 +61,33 @@ local CLICK = [[
     local root = self:GetFrameRef("rcp-radial-root")
     local center = self:GetFrameRef("rcp-radial-center")
     local x, y = root:GetMousePosition()
-    local marker
+    local marker, centerRelease
     if x and y then
         local left, bottom, width, height = root:GetRect()
         local cl, cb = center:GetRect()
         local dx, dy = left + x * width - cl - 22, bottom + y * height - cb - 22
         if math.abs(dx) > 22 or math.abs(dy) > 22 then
             marker = (math.floor((math.atan2(dx, dy) + math.pi / 8) / (math.pi / 4)) % 8) + 1
+        else
+            centerRelease = true
         end
     end
     self:RunAttribute("rcp-radial-reset")
-    if not marker then return false end
-    self:SetAttribute("macrotext", "/wm " .. marker)
+    if marker then
+        self:SetAttribute("macrotext", "/wm " .. marker)
+    elseif centerRelease then
+        local count = self:GetAttribute("count") or 0
+        if count == 0 then return false end
+        local index = self:GetAttribute("index") or 1
+        local macro = self:GetAttribute("rcp-sequence-macro-" .. index)
+        if not macro then return false end
+        self:SetAttribute("macrotext", macro)
+        index = index + 1
+        if index > count then index = 1 end
+        self:SetAttribute("index", index)
+    else
+        return false
+    end
 ]]
 
 local CANCEL = [[
@@ -113,9 +128,9 @@ local function RecoveryCue()
     if not visual then return end
     visual:SetScript("OnUpdate", nil)
     for _, slot in ipairs(visual.slots) do slot.icon:SetAlpha(0.35); slot.highlight:SetAlpha(0) end
-    Text(visual.choice, "RELEASE KEY")
-    Text(visual.hint, "or press Escape")
-    Text(visual.help, "Release the marker key or press Escape")
+    Text(visual.choice, "CANCEL WHEEL")
+    Text(visual.hint, "Right-click or Escape")
+    Text(visual.help, "Cancel before releasing the marker key")
     visual:Show()
 end
 
@@ -139,8 +154,10 @@ local function UpdateVisual(_, elapsed)
         slot.icon:SetAlpha(selected and selected ~= i and 0.45 or 1)
         slot.highlight:SetAlpha(selected == i and 1 or 0)
     end
-    Text(visual.choice, selected and RA.WorldMarkers.Definitions[selected].name or "CHOOSE A MARKER")
-    Text(visual.hint, selected and "Release to aim" or "Center release places nothing")
+    local hasSequence = #RA.WorldMarkers:GetSettings().order > 0
+    Text(visual.choice, selected and RA.WorldMarkers.Definitions[selected].name or (hasSequence and "NEXT IN SEQUENCE" or "SEQUENCE EMPTY"))
+    Text(visual.hint, selected and "Release to aim" or (hasSequence and "Center release places next" or "Choose an outer marker"))
+    Text(visual.help, selected and "Then left-click ground · Right-click / Escape cancels" or "Right-click / Escape cancels")
 end
 
 local function CreateVisual()
@@ -172,7 +189,7 @@ local function CreateVisual()
     visual.choice:SetPoint("CENTER", visual, "CENTER", 0, 8)
     visual.hint:SetPoint("CENTER", visual, "CENTER", 0, -10)
     visual.help:SetPoint("BOTTOM", visual, "BOTTOM", 0, 8)
-    Text(visual.help, "Then left-click ground · Right-click / Escape cancels")
+    Text(visual.help, "Right-click / Escape cancels")
     visual:Hide()
 end
 
@@ -188,7 +205,7 @@ local function BeginVisual(_, x, y)
     visualHeld, visualAge, originX, originY = true, 0, x, y
     visual:ClearAllPoints()
     visual:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
-    Text(visual.help, "Then left-click ground · Right-click / Escape cancels")
+    Text(visual.help, "Right-click / Escape cancels")
     local token = generation
     timer = C_Timer.NewTimer(DISPLAY_DELAY, function()
         timer = nil
