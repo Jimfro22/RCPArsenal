@@ -87,6 +87,8 @@ local function HandleSlash(raw)
 
     if command == "" or command == "config" then
         RA:OpenConfig()
+    elseif command == "general" then
+        RA:OpenConfig("GENERAL")
     elseif command == "setup" then
         RA:OpenSetup()
     elseif command == "addons" then

@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.16"
+RA.VERSION = "0.15.3-alpha.17"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -939,7 +939,7 @@ function RA:ApplyImportedProfile(profile)
     if self.Theme and self.Theme.SetAccentPreset then
         self.Theme:SetAccentPreset(profile.accentPreset, false)
     end
-    self:FireCallback("PROFILE_RESET")
+    self:FireCallback("PROFILE_RESET", "IMPORT")
     self:FireCallback("PROFILE_IMPORTED")
     return true
 end

@@ -97,7 +97,7 @@ RA.Theme={Colors=colors,SetPoint=function(frame,...) frame:SetPoint(...) end,Set
 RA.Theme.Assets={Checkmark='Interface\\AddOns\\RCPArsenal\\Media\\RCPCheckmark'}
 RA.Theme.RegisterAssetTexture=function(_,texture,path) texture:SetTexture(path) end
 RA.ConfigFrame=Object('Frame')
-local panes={ADDONS=Object('Frame',RA.ConfigFrame),MYTOOLS=Object('Frame',RA.ConfigFrame),SETTINGS=Object('Frame',RA.ConfigFrame),NORTHERNSKY=Object('Frame',RA.ConfigFrame)}
+local panes={QUICKBAR=Object('Frame',RA.ConfigFrame),ADDONS=Object('Frame',RA.ConfigFrame),MYTOOLS=Object('Frame',RA.ConfigFrame),SETTINGS=Object('Frame',RA.ConfigFrame),NORTHERNSKY=Object('Frame',RA.ConfigFrame)}
 for _,pane in pairs(panes) do pane:Hide() end
 GameTooltip={lines={},SetOwner=noop,SetText=function(self,value) self.lines={value} end,AddLine=function(self,value) self.lines[#self.lines+1]=value end,Show=noop,Hide=noop}
 for _,name in ipairs({'Assets','AddonCatalog','Readiness','HubUI'}) do assert(loadfile('RCPArsenal/'..name..'.lua'))('RCPArsenal',RA) end

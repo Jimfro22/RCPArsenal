@@ -1,5 +1,7 @@
 # Setup, global placement and optional marker wheel — alpha.9
 
+Current settings routing: alpha.17 places explicit Review choices under General, detailed reminder options under Personal Tools disclosures, and supply results under Quick Bar → Raid checks. See [the settings cleanup contract](SETTINGS_CLEANUP.md) for current navigation and draft behavior. The runtime behavior documented below is retained.
+
 This update combines the accepted Setup, Preview all / Move all and marker-wheel work. Announcements, note sharing, defensive push and roster-planner implementation are outside this release. Keep the existing single-folder Windows junction; update with **Fetch origin → Pull origin**, then fully restart WoW. No setup script rerun, reinstall or profile reset is needed. No CurseForge publication is authorized.
 
 ## Setup

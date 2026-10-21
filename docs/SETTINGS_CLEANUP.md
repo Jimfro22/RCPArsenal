@@ -1,0 +1,15 @@
+# General and Personal Tools
+
+General is a quiet saved-settings overview. Opening it never creates a review draft, queries the group, inspects talents, or enables a tool. New installations see a brief introduction on their first neutral `/rcp` open; existing valid last pages and Available Cooldowns subtabs still reopen. Legacy saved `SETUP` routes become General. `/rcp setup` explicitly begins or resumes review; `/rcp general` opens the overview.
+
+Review choices stages four masters (normal resurrection, consumable reminder, Quick Bar, Available Cooldowns) and presentation role. Role changes visibility only. Save commits these choices; detailed preferences stay on their owning pages. Only changed masters call their normal activation setters. Explicit Quick Bar OFF → ON retains the existing provider-coverage default; unchanged ON saves preserve a later provider-coverage OFF choice. Available Cooldowns activation retains its normal inspection default.
+
+First-use Skip dismisses onboarding and discards a draft, without saving the role. Replay Cancel discards the draft and returns to the ordinary page captured when review began. Navigation pauses a draft; General shows current saved values and Resume / Discard. Placement and context hides retain drafts. User close or native Escape discards even a paused draft; the last ordinary destination remains saved. No editor route is persisted as lastTab.
+
+Profile replacement or a change to one of the four represented masters blocks Save. Reload choices deliberately replaces the stale draft while retaining its original return destination and first-use/replay mode. Child-only edits (sound, captions, threshold, glow, callouts, provider coverage) do not conflict or get overwritten. An imported-profile reset notification keeps and invalidates the draft; full profile reset discards it and returns an open review to General. Combat and encounters never queue a Save.
+
+Personal Tools saves changes immediately. A reminder that is ON exposes Health threshold and When to show; an OFF reminder offers Settings without opting in. Sound, Appearance, Messages, and Item behavior start closed, with only one open at a time. Appearance contains the single glow switch and nested Advanced glow controls. Existing sound choices, ranges, captions, readiness policy, glow renderer, and runtime gates are retained. One native scroll body grows for expanded controls and clamps when folded. Owned picker/menu sessions close on scroll, collapse, navigation, context exit and profile replacement.
+
+Preview all and Move all remain in the fixed shelf. A contextual Resume review appears only with a paused draft. Shared placement retains stone/potion/empty samples. Raid checks on Quick Bar opens cached supplies results; Check supplies / Check again is the only query action. The puck can remain OFF.
+
+Offline harnesses verify actual-module state, routing, control access and layout contracts. Native WoW fit, visual polish, protected input and glow motion remain owner acceptance checks. This change publishes no CurseForge release or tag.

@@ -11,6 +11,7 @@ function RA:CreateHubPanes(panes, kit)
     local feedback, targetBox, matrixMeta, matrixScroll, matrixChild, showDetails
     local lastTargetID, lastTargetValue
     local linkOverlay, linkBox, linkTitle, resetOverlay, supplyOverlay, soundOverlay
+    local closePersonalPopups
     local function SetText(region, value) RA:SetVisualText(region, value or "") end
     local function Text(parent, value, size, x, y, width, color)
         local text = Font(parent, size or 11, color or C.textSoft, "REGULAR")
@@ -32,6 +33,7 @@ function RA:CreateHubPanes(panes, kit)
         if feedback then SetText(feedback, message or (ok and "Saved." or "Unavailable.")) end
     end
     function RA:HideHubTransientDialogs()
+        if closePersonalPopups then closePersonalPopups() end
         if linkOverlay then linkOverlay:Hide() end
         if resetOverlay then resetOverlay:Hide() end
         if supplyOverlay then supplyOverlay:Hide() end
@@ -346,218 +348,126 @@ function RA:CreateHubPanes(panes, kit)
     RA:RegisterEvent("ADDON_LOADED",function() if addons:IsVisible() then refreshers.ADDONS() end end)
 
     local tools = panes.MYTOOLS
-    kit.Heading(tools, "Personal tools", "Optional resurrection and consumable reminders. Available Cooldowns, Quick Bar, and World Markers have their own settings.")
-    local function Tool(label, description, getter, setter, y)
-        local toggle = kit.Toggle(tools, label, description, getter, function(value)
-            local ok, reason = setter(value)
-            if ok == false and reason then RA:Print(reason) end
-        end)
-        Point(toggle, "TOPLEFT", tools, "TOPLEFT", 0, y); Width(toggle, 950)
-    end
-    Tool("Accept normal resurrection", "Accepts ordinary resurrection offers. Battle resurrection stays manual while encounter or group combat is active.",
-        function() return RA:GetDB().personalTools.autoRes == true end, function(v) return RA.PersonalTools:SetOption("autoRes", v) end, -68)
-    Tool("Enable Healthstone / healing potion reminder", "Prefers a ready Healthstone, then a ready healing potion. Use your own item/macro key.",
-        function() return RA:GetDB().personalTools.consumableReminder == true end, function(v) return RA.PersonalTools:SetOption("consumableReminder", v) end, -134)
-    local threshold = kit.Slider(tools, "HEALTH THRESHOLD — AT OR BELOW", 1, 99, 1,
-        function() return RA:GetDB().personalTools.healthThreshold end,
-        function(v) RA.PersonalTools:SetOption("healthThreshold", v) end,
-        function(v) return string.format("%d%%", v) end)
-    Width(threshold, 440); Point(threshold, "TOPLEFT", tools, "TOPLEFT", 16, -205)
-    local combatMode = kit.Segmented(tools, "SHOW REMINDER", {
-        {label="BOTH", value="BOTH"}, {label="IN COMBAT", value="IN_COMBAT"}, {label="OUT OF COMBAT", value="OUT_OF_COMBAT"},
-    }, function() return RA.PersonalTools:GetState().reminderCombat end,
-        function(v) RA.PersonalTools:SetOption("reminderCombat", v) end)
-    Width(combatMode, 440); Point(combatMode, "TOPLEFT", tools, "TOPLEFT", 494, -205); combatMode:Layout(440)
-    local iconSize = kit.Slider(tools, "ICON SIZE", 24, 128, 1,
-        function() return RA.PersonalTools:GetState().reminderIconSize end,
-        function(v) RA.PersonalTools:SetOption("reminderIconSize", v) end,
-        function(v) return tostring(v) .. " px" end)
-    Width(iconSize, 280); Point(iconSize, "TOPLEFT", tools, "TOPLEFT", 16, -269)
-    local textSize = kit.Slider(tools, "TEXT SIZE", 8, 32, 1,
-        function() return RA.PersonalTools:GetState().reminderTextSize end,
-        function(v) RA.PersonalTools:SetOption("reminderTextSize", v) end,
-        function(v) return tostring(v) .. " px" end)
-    Width(textSize, 280); Point(textSize, "TOPLEFT", tools, "TOPLEFT", 335, -269)
-    local emptySize = kit.Slider(tools, "EMPTY WARNING SIZE", 16, 96, 1,
-        function() return RA.PersonalTools:GetState().reminderEmptyTextSize end,
-        function(v) RA.PersonalTools:SetOption("reminderEmptyTextSize", v) end,
-        function(v) return tostring(v) .. " px" end)
-    Width(emptySize, 280); Point(emptySize, "TOPLEFT", tools, "TOPLEFT", 654, -269)
-    local details = CreateFrame("Frame", nil, tools)
-    Size(details, 918, 209); Point(details, "TOPLEFT", tools, "TOPLEFT", 16, -377); details:Hide()
-    for index, entry in ipairs({ {"HEALTHSTONE TEXT", "reminderStoneText"}, {"HEALING POTION TEXT", "reminderPotionText"} }) do
-        local key = entry[2]
-        local field = kit.EditBox(details, entry[1], "Blank hides text; 60 characters.",
-            function() return RA.PersonalTools:GetState()[key] end,
-            function(v) RA.PersonalTools:SetOption(key, v) end)
-        if field.SetHeight then field:SetHeight(54) end
-        Width(field, 440); Point(field, "TOPLEFT", details, "TOPLEFT", (index - 1) * 478, 0)
-        if field.box then field.box:SetMaxLetters(60) end
-    end
-    local sampleKind = "stone"
-    local sampleChoice = kit.Segmented(details, "PREVIEW SAMPLE", {
-        {label="HEALTHSTONE", value="stone"}, {label="HEALING POTION", value="potion"}, {label="EMPTY WARNING", value="empty"},
-    }, function() return sampleKind end, function(v) sampleKind = v end)
-    Width(sampleChoice, 440); Point(sampleChoice, "TOPLEFT", details, "TOPLEFT", 0, -64); sampleChoice:Layout(440)
-    local showCooling = kit.Toggle(details, "Show while on cooldown", "Also allows carried items with unusable or unknown readiness.",
-        function() return RA.PersonalTools:GetState().reminderShowOnCooldown end,
-        function(value) RA.PersonalTools:SetOption("reminderShowOnCooldown", value) end)
-    Width(showCooling, 440); Point(showCooling, "TOPLEFT", details, "TOPLEFT", 0, -128)
-    Text(details, "Empty bags: large OUT OF POTIONS! text, with the icon hidden.", 9, 0, -184, 440)
-    local soundToggle = kit.Toggle(details, "Low-health sound", "Native warning ~35%",
-        function() return RA.PersonalTools:GetState().reminderSound end,
-        function(value) RA.PersonalTools:SetOption("reminderSound", value) end)
-    Width(soundToggle, 180); Point(soundToggle, "TOPLEFT", details, "TOPLEFT", 478, -64)
-    soundToggle:SetHeight(42)
-    local channel = kit.Segmented(details, "CHANNEL", {{label="SFX",value="SFX"},{label="MASTER",value="Master"}},
-        function() return RA.PersonalTools:GetState().reminderSoundChannel end,
-        function(value) RA.PersonalTools:SetOption("reminderSoundChannel", value) end)
-    Width(channel,112); Point(channel,"TOPLEFT",details,"TOPLEFT",666,-64); channel:Layout(112)
-    channel:SetHeight(42)
-    local soundStatus = Text(details, "", 9, 478, -184, 440)
-    local soundPreview = Button(details, "PREVIEW SOUND", 132, 30, function()
-        local _, reason = RA.PersonalTools:PreviewReminderSound()
-        SetText(soundStatus, reason)
-    end)
-    Point(soundPreview, "TOPLEFT", details, "TOPLEFT", 786, -76)
-    local mutedPermission = Button(details, "Play when game effects are muted", 440, 16, function()
-        RA.PersonalTools:SetOption("reminderSoundWhenEffectsMuted", not RA.PersonalTools:GetState().reminderSoundWhenEffectsMuted)
-    end)
-    Point(mutedPermission, "TOPLEFT", details, "TOPLEFT", 478, -110)
-    mutedPermission.label:ClearAllPoints(); Point(mutedPermission.label, "LEFT", mutedPermission, "LEFT", 23, 0)
-    RA:ApplyFont(mutedPermission.label, 9, "REGULAR", false)
-    local mutedCheck = mutedPermission:CreateTexture(nil, "OVERLAY")
-    T:RegisterAssetTexture(mutedCheck, T.Assets.Checkmark)
-    Size(mutedCheck, 12, 12); Point(mutedCheck, "LEFT", mutedPermission, "LEFT", 5, 0)
-    Text(details, "Requires Master. Does not override global sound or master volume.", 8.5, 478, -198, 440)
-    Text(details, "SOUND", 10, 478, -129, 440, C.text)
-    local soundChoice
-    local soundRows = {}
-    local function RefreshSoundChoice()
-        local entry = RA.ReminderSounds and RA.ReminderSounds:Get(RA.PersonalTools:GetState().reminderSoundChoice)
-        SetText(soundChoice.label, (entry and entry.label or "Built-in alert") .. "  v")
-    end
-    local function ChooseSound()
-        if not soundOverlay then
-            soundOverlay = CreateFrame("Button", nil, RA.ConfigFrame)
-            soundOverlay:SetAllPoints(RA.ConfigFrame); soundOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel() + 150)
-            soundOverlay:EnableMouse(true); soundOverlay:SetScript("OnClick", function() soundOverlay:Hide() end)
-            local menu = CreateFrame("Frame", nil, soundOverlay, "BackdropTemplate")
-            local options = RA.ReminderSounds:GetOptions()
-            Size(menu, 440, #options * 34 + 12); Point(menu, "BOTTOMLEFT", soundChoice, "TOPLEFT", 0, 4)
-            menu:EnableMouse(true); kit.Backdrop(menu, C.surface, C.lineStrong, 10, true)
-            for index, option in ipairs(options) do
-                local value = option.value
-                local row = Button(menu, option.label, 428, 30, function()
-                    RA.PersonalTools:SetOption("reminderSoundChoice", value)
-                    soundOverlay:Hide(); RefreshSoundChoice()
-                end)
-                Point(row, "TOPLEFT", menu, "TOPLEFT", 6, -6 - (index - 1) * 34)
-                soundRows[index] = {frame=row,value=value,label=option.label}
-            end
-        end
-        local selected = RA.PersonalTools:GetState().reminderSoundChoice
-        for _, row in ipairs(soundRows) do SetText(row.frame.label, (row.value == selected and "* " or "") .. row.label) end
-        soundOverlay:Show()
-    end
-    soundChoice = Button(details, "Built-in alert  v", 440, 34, ChooseSound)
-    Point(soundChoice, "TOPLEFT", details, "TOPLEFT", 478, -148)
-    local preview = Button(tools, "PREVIEW", 100, 34, function() RA.PersonalTools:PreviewReminder(sampleKind) end)
-    local move = Button(tools, "MOVE", 100, 34, function() RA.PersonalTools:MoveReminder(sampleKind) end)
-    Point(move, "LEFT", preview, "RIGHT", 8, 0)
-    local stop = Button(tools, "STOP PREVIEW", 132, 34, function() RA.PersonalTools:StopReminderPreview() end)
-    Point(stop, "LEFT", move, "RIGHT", 8, 0)
-    local resetReminder = Button(tools, "RESET POSITION", 154, 34, function() RA.PersonalTools:ResetReminderPosition() end)
-    Point(resetReminder, "LEFT", stop, "RIGHT", 8, 0)
-    local helper = Text(tools, "Automatic ~35% sound needs a ready stone/potion. Preview sound is independent. Routes obey game mute.", 9.5, 16, -435, 914)
-    local personalStatus = Text(tools, "", 10, 16, -479, 914)
-    personalStatus:SetSpacing(4)
-    local supplyLabel = Text(tools, "RAID SUPPLIES", 9, 600, -369, 334)
-    local supplyAction, supplyView, supplySummary, supplyState, supplyRows, supplyAgain
-    local function SupplyValue(value)
-        return value == true and "Carried" or value == false and "None carried" or "Unknown"
-    end
-    local function RenderSupply()
-        local state = RA.SupplyCheck:GetSnapshot()
-        if supplyAction then
-            supplyAction:SetEnabled(state.status ~= "checking")
-            SetText(supplyAction.label, state.status == "checking" and "CHECKING…" or "CHECK RAID SUPPLIES")
-        end
-        if not supplyOverlay or not supplyOverlay:IsShown() then return end
-        local summaries = {}
-        for _, kind in ipairs({"stone", "potion"}) do
-            local yes, no, unknown, offline = 0, 0, 0, 0
-            for _, row in ipairs(state.rows) do
-                if row.status == "offline" then offline = offline + 1
-                elseif row[kind] == true then yes = yes + 1
-                elseif row[kind] == false then no = no + 1 else unknown = unknown + 1 end
-            end
-            summaries[#summaries+1] = (kind == "stone" and "Healthstone" or "Healing potion") .. " — Players: " .. yes .. " carried · " .. no .. " none · " .. unknown .. " unknown · " .. offline .. " offline"
-        end
-        SetText(supplySummary, table.concat(summaries, "\n"))
-        local age = state.queriedAt and math.max(0, math.floor(GetTime() - state.queriedAt))
-        SetText(supplyState, (state.status == "checking" and "Checking…" or state.reason or "No manual check yet.") ..
-            (age and (" Last manual check " .. age .. "s ago; bags may have changed.") or ""))
-        supplyAgain:SetEnabled(state.status ~= "checking")
-        for i, view in ipairs(supplyRows) do
-            local row = state.rows[i]
-            view.frame:SetShown(row ~= nil)
-            if row then
-                SetText(view.name, Literal(row.name))
-                SetText(view.stone, row.status == "offline" and "Offline" or SupplyValue(row.stone))
-                SetText(view.potion, row.status == "offline" and "Offline" or SupplyValue(row.potion))
-                SetText(view.state, row.status == "no_reply" and "No reply" or row.status == "offline" and "Offline" or
-                    ("Reported " .. math.max(0, math.floor(GetTime() - row.respondedAt)) .. "s ago"))
-            end
-        end
-    end
-    local function ShowSupply()
-        if not supplyOverlay then
-            supplyOverlay = CreateFrame("Frame", nil, RA.ConfigFrame, "BackdropTemplate")
-            supplyOverlay:SetAllPoints(RA.ConfigFrame); supplyOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel() + 100)
-            supplyOverlay:EnableMouse(true); kit.Backdrop(supplyOverlay, {0,0,0,0.68}, C.line, 14, false)
-            local dialog = CreateFrame("Frame", nil, supplyOverlay, "BackdropTemplate")
-            Size(dialog, 920, 550); Point(dialog, "CENTER", supplyOverlay, "CENTER", 0, 0)
-            dialog:EnableMouse(true); kit.Backdrop(dialog, C.surface, C.lineStrong, 14, true)
-            Text(dialog, "Carried healing supplies", 18, 20, -18, 880, C.text)
-            Text(dialog, "One manual request. Players with Arsenal report their own bags. No talent inspection or background polling. Carried supplies don't confirm cooldown readiness.", 10, 20, -50, 880)
-            supplySummary = Text(dialog, "", 10, 20, -88, 880); supplySummary:SetSpacing(4)
-            supplyState = Text(dialog, "", 10, 20, -126, 880)
-            for _, field in ipairs({{"PLAYER", 0}, {"HEALTHSTONE", 320}, {"HEALING POTION", 500}, {"REPORT", 680}}) do
-                Text(dialog, field[1], 10, 20 + field[2], -164, 170, C.text)
-            end
-            local scroll = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
-            Size(scroll, 854, 270); Point(scroll, "TOPLEFT", dialog, "TOPLEFT", 20, -186)
-            local child = CreateFrame("Frame", nil, scroll); Size(child, 854, 40 * 28); scroll:SetScrollChild(child)
-            supplyRows = {}
-            for i = 1, 40 do
-                local frame = CreateFrame("Frame", nil, child); Size(frame, 854, 28); Point(frame, "TOPLEFT", child, "TOPLEFT", 0, -(i-1)*28)
-                supplyRows[i] = { frame = frame, name = Text(frame, "", 10, 0, -5, 306), stone = Text(frame, "", 10, 320, -5, 170),
-                    potion = Text(frame, "", 10, 500, -5, 170), state = Text(frame, "", 9, 680, -5, 170) }
-            end
-            supplyAgain = Button(dialog, "CHECK AGAIN", 170, 34, function()
-                local ok, reason = RA.SupplyCheck:Query()
-                RenderSupply(); if not ok then SetText(supplyState, reason) end
-            end)
-            Point(supplyAgain, "BOTTOMLEFT", dialog, "BOTTOMLEFT", 20, 20)
-            local close = Button(dialog, "CLOSE", 120, 34, function() supplyOverlay:Hide() end)
-            Point(close, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 20)
-        end
-        supplyOverlay:Show(); RenderSupply()
-    end
-    supplyAction = Button(tools, "CHECK RAID SUPPLIES", 180, 34, function()
-        local ok, reason = RA.SupplyCheck:Query()
-        ShowSupply(); if not ok then SetText(supplyState, reason) end
-    end)
-    supplyView = Button(tools, "VIEW RESULTS", 146, 34, ShowSupply)
-    Point(supplyView, "LEFT", supplyAction, "RIGHT", 8, 0)
-    local glowDetails = CreateFrame("Frame", nil, tools)
-    Size(glowDetails,918,184); Point(glowDetails,"TOPLEFT",tools,"TOPLEFT",16,-377); glowDetails:Hide()
-    local PersonalLayout, disclosure, glowDisclosure, styleOverlay, pickerSession
+    kit.Heading(tools, "Personal Tools", "Changes save immediately.")
+    local scroll=CreateFrame("ScrollFrame",nil,tools,"UIPanelScrollFrameTemplate")
+    Point(scroll,"TOPLEFT",tools,"TOPLEFT",0,-62);Point(scroll,"BOTTOMRIGHT",tools,"BOTTOMRIGHT",-28,0)
+    local body=CreateFrame("Frame",nil,scroll);Size(body,918,500);scroll:SetScrollChild(body)
+    local PersonalLayout, expanded, configureOff, advancedGlow, styleOverlay, pickerSession
+    local sections, disclosures = {}, {}
     local function CloseGlowPicker()
-        local session=pickerSession; pickerSession=nil
+        local session=pickerSession;pickerSession=nil
         if session and ColorPickerFrame and ColorPickerFrame.swatchFunc==session.swatch then ColorPickerFrame:Hide() end
     end
+    local function ClosePersonalPopups()
+        CloseGlowPicker()
+        if styleOverlay then styleOverlay:Hide() end
+        if soundOverlay then soundOverlay:Hide() end
+    end
+    scroll:HookScript("OnVerticalScroll",ClosePersonalPopups)
+    closePersonalPopups=ClosePersonalPopups
+    local function Edit(key,value)
+        if key=="consumableReminder" and not value then ClosePersonalPopups() end
+        local ok,reason=RA.PersonalTools:SetOption(key,value)
+        if ok==false and reason then RA:Print(reason) end
+        kit.Refresh()
+    end
+    local function State() return RA.PersonalTools:GetState() end
+    local function Toggle(owner,label,detail,key,x,y,width)
+        local control=kit.Toggle(owner,label,detail,function()return State()[key]end,function(value)Edit(key,value)end)
+        Width(control,width or 918);Point(control,"TOPLEFT",owner,"TOPLEFT",x or 0,y or 0)
+        return control
+    end
+    Toggle(body,"Normal resurrection","Accept ordinary offers outside detected combat.","autoRes",0,0)
+    local resHelp=Text(body,"Offers stay manual during an encounter, group combat, or unknown combat state.",9,0,-58,918)
+    local resStatus=Text(body,"",9,0,-78,918)
+    local reminderMaster=Toggle(body,"Consumable reminder","Ready Healthstone first, then healing potion. You use the item.","consumableReminder",0,-108)
+    local reminderStatus=Text(body,"",9,0,-166,918)
+    local settingsAction=Button(body,"SETTINGS",130,30,function()configureOff=not configureOff;PersonalLayout();kit.Refresh()end)
+    Point(settingsAction,"TOPLEFT",body,"TOPLEFT",0,-194)
+    local configuration=CreateFrame("Frame",nil,body);Size(configuration,918,400)
+    Point(configuration,"TOPLEFT",body,"TOPLEFT",0,-204)
+    local threshold=kit.Slider(configuration,"HEALTH THRESHOLD",1,99,1,function()return State().healthThreshold end,
+        function(value)Edit("healthThreshold",value)end,function(value)return tostring(value).."%"end)
+    Width(threshold,451);Point(threshold,"TOPLEFT",configuration,"TOPLEFT",0,0)
+    local when=kit.Segmented(configuration,"WHEN TO SHOW",{
+        {label="In combat",value="IN_COMBAT"},{label="Out of combat",value="OUT_OF_COMBAT"},{label="In and out of combat",value="BOTH"},
+    },function()return State().reminderCombat end,function(value)Edit("reminderCombat",value)end)
+    Width(when,451);Point(when,"TOPLEFT",configuration,"TOPLEFT",467,0);when:Layout(451)
+    for _,name in ipairs({"Sound","Appearance","Messages","Item behavior"}) do
+        local key=name
+        local section=CreateFrame("Frame",nil,configuration);Size(section,918,230);section:Hide();sections[name]=section
+        local disclosure=Button(configuration,name.." +",918,32,function()
+            ClosePersonalPopups()
+            if expanded==key then expanded=nil else expanded=key end
+            if key~="Appearance" or not expanded then advancedGlow=false end
+            PersonalLayout();kit.Refresh()
+        end)
+        disclosures[name]=disclosure
+    end
+    local sound=sections.Sound
+    Toggle(sound,"Warning sound","Normally around 35%, with a supported item ready.","reminderSound",0,0,451)
+    local channel=kit.Segmented(sound,"CHANNEL",{{label="SFX",value="SFX"},{label="MASTER",value="Master"}},
+        function()return State().reminderSoundChannel end,function(value)Edit("reminderSoundChannel",value)end)
+    Width(channel,220);Point(channel,"TOPLEFT",sound,"TOPLEFT",467,0);channel:Layout(220)
+    local soundStatus=Text(sound,"",9,0,-182,918)
+    local soundPreview=Button(sound,"PLAY SAMPLE",200,32,function()
+        local _,reason=RA.PersonalTools:PreviewReminderSound();SetText(soundStatus,reason)
+    end)
+    Point(soundPreview,"TOPLEFT",sound,"TOPLEFT",467,-80)
+    local mutedPermission=Button(sound,"Play when game effects are muted",451,26,function()
+        Edit("reminderSoundWhenEffectsMuted",not State().reminderSoundWhenEffectsMuted)
+    end)
+    Point(mutedPermission,"TOPLEFT",sound,"TOPLEFT",467,-122)
+    mutedPermission.label:ClearAllPoints();Point(mutedPermission.label,"LEFT",mutedPermission,"LEFT",23,0)
+    RA:ApplyFont(mutedPermission.label,9,"REGULAR",false)
+    local mutedCheck=mutedPermission:CreateTexture(nil,"OVERLAY");T:RegisterAssetTexture(mutedCheck,T.Assets.Checkmark)
+    Size(mutedCheck,12,12);Point(mutedCheck,"LEFT",mutedPermission,"LEFT",5,0)
+    local mutedHelp=Text(sound,"",9,467,-154,451)
+    local soundChoice,soundRows=nil,{}
+    local function RefreshSoundChoice()
+        local entry=RA.ReminderSounds:Get(State().reminderSoundChoice)
+        SetText(soundChoice.label,(entry and entry.label or "Built-in alert").."  v")
+    end
+    Text(sound,"SOUND",10,0,-64,451,C.text)
+    soundChoice=Button(sound,"Built-in alert  v",451,34,function()
+        if not soundOverlay then
+            soundOverlay=CreateFrame("Button",nil,RA.ConfigFrame)
+            soundOverlay:SetAllPoints(RA.ConfigFrame);soundOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel()+150)
+            soundOverlay:EnableMouse(true);soundOverlay:SetScript("OnClick",function()soundOverlay:Hide()end)
+            local menu=CreateFrame("Frame",nil,soundOverlay,"BackdropTemplate")
+            local options=RA.ReminderSounds:GetOptions()
+            Size(menu,451,#options*34+12);Point(menu,"BOTTOMLEFT",soundChoice,"TOPLEFT",0,4)
+            menu:SetClampedToScreen(true);menu:EnableMouse(true);kit.Backdrop(menu,C.surface,C.lineStrong,10,true)
+            for index,option in ipairs(options) do
+                local value=option.value
+                local row=Button(menu,option.label,439,30,function()Edit("reminderSoundChoice",value);soundOverlay:Hide();RefreshSoundChoice()end)
+                Point(row,"TOPLEFT",menu,"TOPLEFT",6,-6-(index-1)*34)
+                soundRows[index]={frame=row,value=value,label=option.label}
+            end
+        end
+        local selected=State().reminderSoundChoice
+        for _,row in ipairs(soundRows) do SetText(row.frame.label,(row.value==selected and "* " or "")..row.label) end
+        soundOverlay:Show()
+    end)
+    Point(soundChoice,"TOPLEFT",sound,"TOPLEFT",0,-82)
+    local appearance=sections.Appearance
+    local function SizeSlider(label,key,min,max,x,y)
+        local slider=kit.Slider(appearance,label,min,max,1,function()return State()[key]end,function(value)Edit(key,value)end,function(value)return tostring(value).." px"end)
+        Width(slider,451);Point(slider,"TOPLEFT",appearance,"TOPLEFT",x,y)
+    end
+    SizeSlider("ICON SIZE","reminderIconSize",24,128,0,0)
+    SizeSlider("TEXT SIZE","reminderTextSize",8,32,467,0)
+    SizeSlider("EMPTY WARNING SIZE","reminderEmptyTextSize",16,96,0,-64)
+    Text(appearance,"Size of the OUT OF POTIONS! text.",10,467,-82,451)
+    Toggle(appearance,"Glow at 35% or lower","While the reminder is visible.","reminderStoneGlow",0,-128)
+    local resetReminder=Button(appearance,"RESET REMINDER POSITION",230,30,function()RA.PersonalTools:ResetReminderPosition()end)
+    Point(resetReminder,"TOPLEFT",appearance,"TOPLEFT",0,-190)
+    local glowDetails=CreateFrame("Frame",nil,appearance);Size(glowDetails,918,184)
+    Point(glowDetails,"TOPLEFT",appearance,"TOPLEFT",0,-270);glowDetails:Hide()
+    local glowDisclosure=Button(appearance,"Advanced glow +",918,32,function()
+        ClosePersonalPopups();advancedGlow=not advancedGlow;PersonalLayout();kit.Refresh()
+    end)
+    Point(glowDisclosure,"TOPLEFT",appearance,"TOPLEFT",0,-230)
     local styleLabels = {STEADY="Steady border",PIXEL="Pixel Glow",BUTTON="Action Button Glow",AUTOCAST="Autocast Shine"}
     local function GlowState() return RA:NormalizeReminderGlow(RA:GetDB().personalTools.reminderGlow) end
     local function GlowEdit(key,value)
@@ -574,6 +484,7 @@ function RA:CreateHubPanes(panes, kit)
             styleOverlay:EnableMouse(true); styleOverlay:SetScript("OnClick",function() styleOverlay:Hide() end)
             local menu=CreateFrame("Frame",nil,styleOverlay,"BackdropTemplate")
             Size(menu,440,148); Point(menu,"TOPLEFT",styleChoice,"BOTTOMLEFT",0,-4)
+            menu:SetClampedToScreen(true)
             menu:EnableMouse(true); kit.Backdrop(menu,C.surface,C.lineStrong,10,true)
             for index,value in ipairs({"STEADY","PIXEL","BUTTON","AUTOCAST"}) do
                 local key=value
@@ -615,7 +526,7 @@ function RA:CreateHubPanes(panes, kit)
         glowControls[key]=control
     end
     local function Speed(value) return string.format("%.1f×",value) end
-    local function Units(value) return tostring(value).." UI units" end
+    local function Units(value) return tostring(value) end
     GlowSlider("pixelLines","LINES",1,12,1,0,-64)
     GlowSlider("pixelSpeed","SPEED",0.5,2,0.1,478,-64,Speed)
     GlowSlider("pixelLength","LINE LENGTH",4,16,1,0,-128,Units)
@@ -636,59 +547,152 @@ function RA:CreateHubPanes(panes, kit)
         sparkHelp:SetShown(state.style=="AUTOCAST")
         glowDetails:SetHeight(state.style=="STEADY" and 58 or state.style=="BUTTON" and 120 or 184)
     end
-    PersonalLayout = function()
-        if glowDetails:IsShown() then RefreshGlow() end
-        local expanded = details:IsShown() or glowDetails:IsShown()
-        supplyLabel:SetShown(not expanded)
-        personalStatus:SetWordWrap(not expanded)
-        if personalStatus.SetTextHeight then personalStatus:SetTextHeight(expanded and 9 or 10) end
-        local y = details:IsShown() and -591 or glowDetails:IsShown() and -(377+glowDetails:GetHeight()+5) or -389
-        preview:ClearAllPoints(); Point(preview, "TOPLEFT", tools, "TOPLEFT", 16, y)
-        supplyAction:ClearAllPoints(); Point(supplyAction, "TOPLEFT", tools, "TOPLEFT", 600, y)
-        supplyLabel:ClearAllPoints(); Point(supplyLabel, "TOPLEFT", tools, "TOPLEFT", 600, y + 20)
-        helper:ClearAllPoints(); Point(helper, "TOPLEFT", tools, "TOPLEFT", 16, y - (expanded and 41 or 44))
-        personalStatus:ClearAllPoints(); Point(personalStatus, "TOPLEFT", tools, "TOPLEFT", 16, y - (expanded and 56 or 79))
+    local messages=sections.Messages
+    for index,entry in ipairs({{"Healthstone message","reminderStoneText"},{"Potion message","reminderPotionText"}}) do
+        local key=entry[2]
+        local field=kit.EditBox(messages,entry[1],"",function()return State()[key]end,function(value)Edit(key,value)end)
+        Width(field,451);Point(field,"TOPLEFT",messages,"TOPLEFT",(index-1)*467,0)
+        if field.box then field.box:SetMaxLetters(60) end
     end
-    disclosure = Button(tools, "REMINDER TEXT & SOUND +", 200, 30, function(self)
-        details:SetShown(not details:IsShown())
-        CloseGlowPicker(); glowDetails:Hide(); SetText(glowDisclosure.label,"GLOW SETTINGS +")
-        SetText(self.label, details:IsShown() and "HIDE REMINDER TEXT & SOUND" or "REMINDER TEXT & SOUND +")
-        PersonalLayout()
-        kit.Refresh()
-    end)
-    Point(disclosure, "TOPLEFT", tools, "TOPLEFT", 16, -333)
-    glowDisclosure=Button(tools,"GLOW SETTINGS +",164,30,function(self)
-        if glowDetails:IsShown() then CloseGlowPicker() end
-        glowDetails:SetShown(not glowDetails:IsShown())
-        details:Hide(); SetText(disclosure.label,"REMINDER TEXT & SOUND +")
-        SetText(self.label,glowDetails:IsShown() and "HIDE GLOW SETTINGS" or "GLOW SETTINGS +")
-        PersonalLayout(); kit.Refresh()
-    end)
-    Point(glowDisclosure,"TOPLEFT",tools,"TOPLEFT",232,-333)
-    local iconGlow = kit.Toggle(tools, "Icon glow at 35% or lower", "Healthstone or potion, while the reminder is visible.",
-        function() return RA.PersonalTools:GetState().reminderStoneGlow end,
-        function(value) RA.PersonalTools:SetOption("reminderStoneGlow", value) end)
-    Width(iconGlow, 522); iconGlow:SetHeight(38); Point(iconGlow, "TOPLEFT", tools, "TOPLEFT", 412, -329)
-    PersonalLayout()
-    RA:RegisterCallback("SUPPLIES_UPDATED", RenderSupply)
-    RA:RegisterCallback("PROFILE_RESET",CloseGlowPicker)
-    RA:RegisterCallback("PROFILE_IMPORTED",CloseGlowPicker)
-    RA:RegisterCallback("PERSONAL_TOOLS_CHANGED",function(option) if option=="reminderGlowReset" then CloseGlowPicker() end end)
-    tools:HookScript("OnHide", function() CloseGlowPicker(); if styleOverlay then styleOverlay:Hide() end; if supplyOverlay then supplyOverlay:Hide() end; if soundOverlay then soundOverlay:Hide() end end)
-    refreshers.MYTOOLS = function()
-        local state = RA.PersonalTools:GetState()
-        PersonalLayout()
-        SetText(soundStatus, RA.NativeWarningAudio and RA.NativeWarningAudio:GetStatusText() or "Native warning unavailable.")
-        RefreshSoundChoice()
-        mutedPermission:SetEnabled(state.reminderSoundChannel == "Master")
-        mutedPermission:SetAlpha(state.reminderSoundChannel == "Master" and 1 or 0.45)
-        mutedPermission:SetSelected(state.reminderSoundWhenEffectsMuted)
-        mutedCheck:SetShown(state.reminderSoundWhenEffectsMuted)
-        local combatLabel = ({BOTH="Both",IN_COMBAT="In combat",OUT_OF_COMBAT="Out of combat"})[state.reminderCombat] or "In combat"
-        SetText(personalStatus, ((details:IsShown() or glowDetails:IsShown()) and ("Normal res: " .. (state.autoRes and "On" or "Off") .. " ; Reminder: ")
-            or ("Resurrection: " .. RA.PersonalTools:GetStatusText("autoRes") .. "\nReminder: ")) ..
-            (state.consumableReminder and ("Enabled · At/below " .. state.healthThreshold .. "% · " .. combatLabel .. " · ") or "") .. RA.PersonalTools:GetStatusText("consumableReminder"))
+    Text(messages,"Blank hides text. Up to 60 characters.",10,0,-90,918)
+    local items=sections["Item behavior"]
+    local itemChoice=kit.Segmented(items,"SHOW ITEMS",{{label="Ready only",value=false},{label="Any carried",value=true}},
+        function()return State().reminderShowOnCooldown end,function(value)Edit("reminderShowOnCooldown",value)end)
+    Width(itemChoice,451);Point(itemChoice,"TOPLEFT",items,"TOPLEFT",0,0);itemChoice:Layout(451)
+    Text(items,"Any carried includes cooldown, unusable and unknown readiness.",10,467,-20,451)
+    Text(items,"Empty bags: OUT OF POTIONS! text, with the icon hidden.",10,0,-74,918)
+    PersonalLayout=function()
+        local state=State()
+        local show=state.consumableReminder or configureOff
+        settingsAction:SetShown(not state.consumableReminder)
+        SetText(settingsAction.label,configureOff and "HIDE SETTINGS" or "SETTINGS")
+        configuration:SetShown(show)
+        local function Height(label) local value=label:GetStringHeight();return type(value)=="number" and value>0 and value or 12 end
+        local resStatusY=58+Height(resHelp)+8
+        resStatus:ClearAllPoints();Point(resStatus,"TOPLEFT",body,"TOPLEFT",0,-resStatusY)
+        local reminderY=resStatusY+Height(resStatus)+20
+        reminderMaster:ClearAllPoints();Point(reminderMaster,"TOPLEFT",body,"TOPLEFT",0,-reminderY)
+        local statusY=reminderY+58
+        reminderStatus:ClearAllPoints();Point(reminderStatus,"TOPLEFT",body,"TOPLEFT",0,-statusY)
+        local configY=statusY+Height(reminderStatus)+26
+        settingsAction:ClearAllPoints();Point(settingsAction,"TOPLEFT",body,"TOPLEFT",0,-configY)
+        if not state.consumableReminder then configY=configY+40 end
+        configuration:ClearAllPoints();Point(configuration,"TOPLEFT",body,"TOPLEFT",0,-configY)
+        if glowDetails:IsShown() or advancedGlow then RefreshGlow() end
+        glowDetails:SetShown(expanded=="Appearance" and advancedGlow==true)
+        SetText(glowDisclosure.label,"Advanced glow "..(advancedGlow and "-" or "+"))
+        local heights={Sound=218,Appearance=advancedGlow and 270+glowDetails:GetHeight() or 270,Messages=118,["Item behavior"]=106}
+        local summaries={Sound=state.reminderSound and "On" or "Off",Appearance=tostring(state.reminderIconSize).." px",Messages="Healthstone / potion",["Item behavior"]=state.reminderShowOnCooldown and "Any carried" or "Ready only"}
+        local y=72
+        for _,name in ipairs({"Sound","Appearance","Messages","Item behavior"}) do
+            local disclosure,section=disclosures[name],sections[name]
+            disclosure:ClearAllPoints();Point(disclosure,"TOPLEFT",configuration,"TOPLEFT",0,-y)
+            SetText(disclosure.label,name.." · "..summaries[name].." "..(expanded==name and "-" or "+"))
+            y=y+36
+            section:ClearAllPoints();Point(section,"TOPLEFT",configuration,"TOPLEFT",0,-y)
+            section:SetShown(expanded==name);section:SetHeight(heights[name])
+            if expanded==name then y=y+heights[name]+10 end
+        end
+        configuration:SetHeight(y)
+        local total=show and configY+y+14 or configY+14
+        body:SetHeight(total)
+        local viewport=scroll:GetHeight();if not viewport or viewport<=0 then viewport=598 end
+        local current=scroll:GetVerticalScroll() or 0
+        local maximum=math.max(0,total-viewport)
+        if current>maximum then scroll:SetVerticalScroll(maximum) end
     end
+    RA:RegisterCallback("PROFILE_RESET",ClosePersonalPopups)
+    RA:RegisterCallback("PROFILE_IMPORTED",ClosePersonalPopups)
+    RA:RegisterCallback("PERSONAL_TOOLS_CHANGED",function(option)if option=="reminderGlowReset" then CloseGlowPicker() end end)
+    tools:HookScript("OnHide",ClosePersonalPopups)
+    refreshers.MYTOOLS=function()
+        local state=State()
+        SetText(resStatus,RA.PersonalTools:GetStatusText("autoRes"))
+        SetText(reminderStatus,state.consumableReminder and RA.PersonalTools:GetStatusText("consumableReminder") or "Off. Your settings are kept.")
+        PersonalLayout()
+        if expanded=="Sound" then
+            SetText(soundStatus,RA.NativeWarningAudio and RA.NativeWarningAudio:GetStatusText() or "Warning sound unavailable.")
+            RefreshSoundChoice()
+            local master=state.reminderSoundChannel=="Master"
+            mutedPermission:SetEnabled(master);mutedPermission:SetAlpha(master and 1 or 0.45)
+            mutedPermission:SetSelected(state.reminderSoundWhenEffectsMuted);mutedCheck:SetShown(state.reminderSoundWhenEffectsMuted)
+            SetText(mutedHelp,master and "Obeys global sound and master volume." or "Requires Master")
+        end
+    end
+
+    local supplySummary, supplyState, supplyRows, supplyAgain
+    local function SupplyValue(value)
+        return value == true and "Carried" or value == false and "None carried" or "Unknown"
+    end
+    local function RenderSupply()
+        local state = RA.SupplyCheck:GetSnapshot()
+        if not supplyOverlay or not supplyOverlay:IsShown() then return end
+        local summaries = {}
+        for _, kind in ipairs({"stone", "potion"}) do
+            local yes, no, unknown, offline = 0, 0, 0, 0
+            for _, row in ipairs(state.rows) do
+                if row.status == "offline" then offline = offline + 1
+                elseif row[kind] == true then yes = yes + 1
+                elseif row[kind] == false then no = no + 1 else unknown = unknown + 1 end
+            end
+            summaries[#summaries+1] = (kind == "stone" and "Healthstone" or "Healing potion") .. " — Players: " .. yes .. " carried · " .. no .. " none · " .. unknown .. " unknown · " .. offline .. " offline"
+        end
+        SetText(supplySummary, table.concat(summaries, "\n"))
+        local age = state.queriedAt and math.max(0, math.floor(GetTime() - state.queriedAt))
+        SetText(supplyState, (state.status == "checking" and "Checking…" or state.reason or "No manual check yet.") ..
+            (age and (" Last manual check " .. age .. "s ago; bags may have changed.") or ""))
+        supplyAgain:SetEnabled(state.status ~= "checking")
+        SetText(supplyAgain.label,state.queriedAt and "CHECK AGAIN" or "CHECK SUPPLIES")
+        for i, view in ipairs(supplyRows) do
+            local row = state.rows[i]
+            view.frame:SetShown(row ~= nil)
+            if row then
+                SetText(view.name, Literal(row.name))
+                SetText(view.stone, row.status == "offline" and "Offline" or SupplyValue(row.stone))
+                SetText(view.potion, row.status == "offline" and "Offline" or SupplyValue(row.potion))
+                SetText(view.state, row.status == "no_reply" and "No reply" or row.status == "offline" and "Offline" or
+                    ("Reported " .. math.max(0, math.floor(GetTime() - row.respondedAt)) .. "s ago"))
+            end
+        end
+    end
+    local function ShowSupply()
+        if not supplyOverlay then
+            supplyOverlay = CreateFrame("Frame", nil, RA.ConfigFrame, "BackdropTemplate")
+            supplyOverlay:SetAllPoints(RA.ConfigFrame); supplyOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel() + 100)
+            supplyOverlay:EnableMouse(true); kit.Backdrop(supplyOverlay, {0,0,0,0.68}, C.line, 14, false)
+            local dialog = CreateFrame("Frame", nil, supplyOverlay, "BackdropTemplate")
+            Size(dialog, 920, 550); Point(dialog, "CENTER", supplyOverlay, "CENTER", 0, 0)
+            dialog:EnableMouse(true); kit.Backdrop(dialog, C.surface, C.lineStrong, 14, true)
+            Text(dialog, "Carried healing supplies", 18, 20, -18, 880, C.text)
+            Text(dialog, "One manual request. Players with Arsenal report their own bags. No talent inspection or background polling. Carried supplies don't confirm cooldown readiness.", 10, 20, -50, 880)
+            supplySummary = Text(dialog, "", 10, 20, -88, 880); supplySummary:SetSpacing(4)
+            supplyState = Text(dialog, "", 10, 20, -126, 880)
+            for _, field in ipairs({{"PLAYER", 0}, {"HEALTHSTONE", 320}, {"HEALING POTION", 500}, {"REPORT", 680}}) do
+                Text(dialog, field[1], 10, 20 + field[2], -164, 170, C.text)
+            end
+            local scroll = CreateFrame("ScrollFrame", nil, dialog, "UIPanelScrollFrameTemplate")
+            Size(scroll, 854, 270); Point(scroll, "TOPLEFT", dialog, "TOPLEFT", 20, -186)
+            local child = CreateFrame("Frame", nil, scroll); Size(child, 854, 40 * 28); scroll:SetScrollChild(child)
+            supplyRows = {}
+            for i = 1, 40 do
+                local frame = CreateFrame("Frame", nil, child); Size(frame, 854, 28); Point(frame, "TOPLEFT", child, "TOPLEFT", 0, -(i-1)*28)
+                supplyRows[i] = { frame = frame, name = Text(frame, "", 10, 0, -5, 306), stone = Text(frame, "", 10, 320, -5, 170),
+                    potion = Text(frame, "", 10, 500, -5, 170), state = Text(frame, "", 9, 680, -5, 170) }
+            end
+            supplyAgain = Button(dialog, "CHECK SUPPLIES", 170, 34, function()
+                local ok, reason = RA.SupplyCheck:Query()
+                RenderSupply(); if not ok then SetText(supplyState, reason) end
+            end)
+            Point(supplyAgain, "BOTTOMLEFT", dialog, "BOTTOMLEFT", 20, 20)
+            local close = Button(dialog, "CLOSE", 120, 34, function() supplyOverlay:Hide() end)
+            Point(close, "BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -20, 20)
+        end
+        supplyOverlay:Show(); RenderSupply()
+    end
+    local raidChecks=Button(panes.QUICKBAR,"RAID CHECKS",150,30,ShowSupply)
+    Point(raidChecks,"TOPRIGHT",panes.QUICKBAR,"TOPRIGHT",-64,0)
+    panes.QUICKBAR:HookScript("OnHide",function()if supplyOverlay then supplyOverlay:Hide()end end)
+    RA:RegisterCallback("SUPPLIES_UPDATED",RenderSupply)
 
     local settings = panes.SETTINGS
     kit.Heading(settings, "Profiles & Recovery", "Import or export portable preferences. Appearance and content controls are in Available Cooldowns; tool switches stay on their own pages.")
