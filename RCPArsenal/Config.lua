@@ -43,6 +43,7 @@ local RefreshHub
 local RefreshFooter
 local RefreshSetup
 local RefreshGeneral
+local RefreshRaidGroups
 local placementReturnPending
 local advancedBack
 local cooldownScroll
@@ -77,6 +78,7 @@ local TAB_DEFS = {
     { key = "MYTOOLS", label = "PERSONAL TOOLS", group = "PERSONAL", icon = Theme.Assets.NavHUD },
     { key = "ADDONS", label = "ADDONS & VERSIONS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavContent },
     { key = "QUICKBAR", label = "QUICK BAR", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavHUD },
+    { key = "RAIDGROUPS", label = "RAID GROUPS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavContent },
     { key = "COOLDOWNS", label = "AVAILABLE COOLDOWNS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavHUD },
     { key = "WORLDMARKERS", label = "WORLD MARKERS", group = "RAID LEADER TOOLS", icon = Theme.Assets.NavActions },
     { key = "SETTINGS", label = "PROFILES & RECOVERY", group = "SYSTEM", icon = Theme.Assets.NavActions },
@@ -2063,6 +2065,7 @@ RefreshConfig = function()
     end
     if RefreshGeneral and panes.GENERAL and panes.GENERAL:IsVisible() then RefreshGeneral() end
     if RefreshSetup and panes.SETUP and panes.SETUP:IsVisible() then RefreshSetup() end
+    if RefreshRaidGroups and panes.RAIDGROUPS and panes.RAIDGROUPS:IsVisible() then RefreshRaidGroups() end
     RefreshVisibleControls()
     if panes.CONTENT and panes.CONTENT:IsVisible() then RefreshCategoryRows(); RefreshAbilityList(false) end
     if panes.SCANNING and panes.SCANNING:IsVisible() then RefreshScanPane() end
@@ -2367,6 +2370,10 @@ local function CreateConfig()
     RefreshSetup = RA:CreateSetupPane(panes.SETUP, {
         Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
         Toggle = CreateToggle, Slider = CreateSlider, Segmented = CreateSegmented, Refresh = function() RefreshConfig() end,
+    })
+
+    RefreshRaidGroups = RA:CreateRaidGroupsPane(panes.RAIDGROUPS, {
+        Font = Font, Button = CreateButton, Heading = CreateHeading, Backdrop = Backdrop,
     })
 
     CreateHUDPane(panes.HUD)

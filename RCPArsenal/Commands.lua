@@ -5,6 +5,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp setup|r - replay Setup; Preview all and Move all are on every Arsenal page")
     print("  |cff3aa7ff/rcp hud|r, |cff3aa7ff/rcp quickbar|r, |cff3aa7ff/rcp content|r, |cff3aa7ff/rcp scanning|r - open Arsenal settings")
     print("  |cff3aa7ff/rcp callouts|r, |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp profiles|r - callouts, personal tools, or profiles")
+    print("  |cff3aa7ff/rcp groups|r - draft and save raid groups; Apply to raid remains explicit")
     print("  |cff3aa7ff/rcp versions|r - request group addon versions as leader or assistant")
     print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open Addons & Versions")
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
@@ -97,6 +98,8 @@ local function HandleSlash(raw)
         RA:OpenConfig("COOLDOWNS")
     elseif command == "hud" then
         RA:OpenConfig("HUD")
+    elseif command == "groups" then
+        RA:OpenConfig("RAIDGROUPS")
     elseif command == "quickbar" then
         RA:OpenConfig("QUICKBAR")
     elseif command == "content" then

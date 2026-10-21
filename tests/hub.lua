@@ -36,7 +36,13 @@ function methods:SetPropagateKeyboardInput(value) check(not combat,'Restricted k
 function methods:SetPropagateMouseClicks(value) check(not combat,'Restricted mouse propagation changed in combat');self.mousePropagate=value end
 function methods:SetPropagateMouseMotion(value) check(not combat,'Restricted mouse motion changed in combat');self.mouseMotion=value end
 function methods:GetParent() return self.parent end
-function methods:SetParent(parent) self.parent = parent end
+function methods:SetParent(parent)
+    if self.parent and self.parent._fixtureChildren then
+        for i=#self.parent._fixtureChildren,1,-1 do if self.parent._fixtureChildren[i]==self then table.remove(self.parent._fixtureChildren,i)end end
+    end
+    self.parent=parent
+    if parent then parent._fixtureChildren=parent._fixtureChildren or {};table.insert(parent._fixtureChildren,self)end
+end
 function methods:IsShown() return self.shown end
 function methods:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function methods:SetScript(event, fn) self.scripts[event] = fn end
@@ -45,11 +51,30 @@ function methods:HookScript(event, fn)
     table.insert(self.hooks[event], fn)
 end
 function methods:Fire(event, ...)
+    if event=="OnShow" then self._fixtureVisibleEvent=true elseif event=="OnHide" then self._fixtureVisibleEvent=false end
     if self.scripts[event] then self.scripts[event](self, ...) end
     for _, fn in ipairs(self.hooks[event] or {}) do fn(self, ...) end
 end
-function methods:Show() local changed = not self.shown; self.shown = true; if changed then self:Fire('OnShow') end end
-function methods:Hide() local changed = self.shown; self.shown = false; if changed then self:Fire('OnHide') end end
+-- Native parent visibility also delivers show/hide to descendants. Retain the
+-- fixture's direct Show/Hide behavior while modeling those ancestor signals.
+local function descendants(frame,visible,out)
+    out=out or {}
+    for _,child in ipairs(frame._fixtureChildren or {})do
+        if child:IsVisible()==visible then out[#out+1]=child end
+        descendants(child,visible,out)
+    end
+    return out
+end
+function methods:Show()
+    local hidden=descendants(self,false)
+    local changed=not self.shown;self.shown=true;if changed then self:Fire('OnShow')end
+    for _,child in ipairs(hidden)do if child:IsVisible() and child._fixtureVisibleEvent~=true then child:Fire('OnShow')end end
+end
+function methods:Hide()
+    local visible=descendants(self,true)
+    local changed=self.shown;self.shown=false;if changed then self:Fire('OnHide')end
+    for _,child in ipairs(visible)do if not child:IsVisible() and child._fixtureVisibleEvent~=false then child:Fire('OnHide')end end
+end
 function methods:SetShown(value) if value then self:Show() else self:Hide() end end
 function methods:SetSize(w, h) geometryWrites = geometryWrites + 1; self.width, self.height = w, h end
 function methods:SetWidth(w) geometryWrites = geometryWrites + 1; self.width = w end
@@ -102,6 +127,7 @@ end}
 local function object(kind, name, parent)
     local frame = setmetatable({kind = kind, name = name, parent = parent, shown = true, scripts = {}, hooks = {}, attrs = {}, points = {}}, objectMeta)
     objects[#objects + 1] = frame
+    if parent then parent._fixtureChildren=parent._fixtureChildren or {};table.insert(parent._fixtureChildren,frame)end
     if name then named[name] = frame; _G[name] = frame end
     return frame
 end
@@ -506,7 +532,7 @@ local navReads, navInspects, navSent = talentReads, inspectCalls, sent
 local navPosition, navPuckPosition = db.position, db.leaderToolbox.position
 local navX, navY, navPuckX, navPuckY, navScale = db.position.x, db.position.y, db.leaderToolbox.position.x, db.leaderToolbox.position.y, db.scale
 local routes = {{'GENERAL','General'},{'PERSONAL TOOLS','Personal Tools'},{'ADDONS & VERSIONS','Addons & versions'},
-    {'QUICK BAR','Quick Bar'},{'AVAILABLE COOLDOWNS','Available Cooldowns'},{'WORLD MARKERS','World marker cycler'},
+    {'QUICK BAR','Quick Bar'},{'RAID GROUPS','Raid Groups'},{'AVAILABLE COOLDOWNS','Available Cooldowns'},{'WORLD MARKERS','World marker cycler'},
     {'PROFILES & RECOVERY','Profiles & Recovery'}}
 local previousBottom = 0
 for _, route in ipairs(routes) do

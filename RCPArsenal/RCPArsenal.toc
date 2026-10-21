@@ -2,7 +2,7 @@
 ## Title: RCP Arsenal
 ## Notes: Quiet raid addon hub, team version checks, and optional personal and raid leader tools.
 ## Author: Jimfro / Ready Check Pull
-## Version: 0.15.3-alpha.18
+## Version: 0.15.3-alpha.19
 ## SavedVariables: RaidArsenalDB
 ## IconTexture: Interface\AddOns\RCPArsenal\Media\RCPAddonIcon
 ## Category-enUS: Raid
@@ -29,11 +29,13 @@ NativeWarningAudio.lua
 InspectionCache.lua
 Inspect.lua
 RaidLeader.lua
+RaidGroups.lua
 UI.lua
 Setup.lua
 Placement.lua
 HubUI.lua
 NSRTUI.lua
 SetupUI.lua
+RaidGroupsUI.lua
 Config.lua
 Commands.lua
