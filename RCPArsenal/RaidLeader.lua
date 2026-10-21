@@ -76,6 +76,11 @@ local sortState = {
     sideLabels = nil,
 }
 
+local function PlannerApplying()
+    local groups = RA.RaidGroups
+    return type(groups) == "table" and type(groups.IsApplying) == "function" and groups:IsApplying() == true
+end
+
 -- Complete 12.1 specialization classification. Devourer (1480) is treated
 -- as ranged for group-layout purposes.
 local SPEC_KIND = {
@@ -1342,9 +1347,27 @@ local function ResetActionButtonSoon(button, delay)
     CancelTimer(statusResetTimer)
     statusResetTimer = C_Timer.NewTimer(delay or 3.0, function()
         statusResetTimer = nil
-        local locked = (button == sortButton or button == splitButton) and (InCombatLockdown() or not IsLeaderOrAssistant())
+        local locked = (button == sortButton or button == splitButton) and (PlannerApplying() or InCombatLockdown() or not IsLeaderOrAssistant())
         SetActionButtonState(button, nil, locked and "LOCKED" or "DEFAULT")
     end)
+end
+
+local function ClearPendingSort()
+    local wasPending = pendingMode ~= nil
+    pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
+    if wasPending then RA:FireCallback("RAID_GROUP_OPERATION_CHANGED") end
+    return wasPending
+end
+
+local function PlannerBlocksSort(sourceButton)
+    if not PlannerApplying() then return false end
+    ClearPendingSort()
+    if sourceButton then
+        SetActionButtonState(sourceButton, "BUSY", "WARNING")
+        ResetActionButtonSoon(sourceButton, 2.5)
+    end
+    RA:Print("Raid Groups has an active or unresolved move. Open Raid Groups to review it before sorting.")
+    return true
 end
 
 local function ClearSortTimer()
@@ -1422,6 +1445,7 @@ local function StopSort(message, state)
     sortState.initialSideByName = {}
     sortState.assignedSideByName = {}
     sortState.sideLabels = nil
+    RA:FireCallback("RAID_GROUP_OPERATION_CHANGED")
 
     if message then RA:Print(message) end
     if source then
@@ -1434,7 +1458,7 @@ local function StopSort(message, state)
         if modeLabel == "UNDO LAST RAID SORT" then lastLayoutSnapshot = nil end
     end
     if sortOptionsPanel and sortOptionsPanel.undo then
-        sortOptionsPanel.undo:SetShown(lastLayoutSnapshot ~= nil and not sortState.active)
+        sortOptionsPanel.undo:SetShown(lastLayoutSnapshot ~= nil and not sortState.active and pendingMode == nil and not PlannerApplying())
     end
 end
 
@@ -1487,6 +1511,7 @@ end
 
 ProcessSortStep = function()
     if not sortState.active then return end
+    if PlannerApplying() then StopSort("Raid sorting stopped: Raid Groups Apply is active.", "WARNING"); return end
     if InCombatLockdown() then StopSort("Raid sorting stopped: combat started.", "WARNING"); return end
     if not IsLeaderOrAssistant() then StopSort("Raid sorting stopped: raid lead or assist required.", "WARNING"); return end
     if sortState.steps >= MAX_SORT_STEPS then StopSort("Raid sorting timed out.", "WARNING"); return end
@@ -1574,7 +1599,8 @@ local function BuildUndoPlan()
 end
 
 local function StartUndoLastSort(sourceButton)
-    if sortState.active then
+    if PlannerBlocksSort(sourceButton) then return end
+    if sortState.active or pendingMode ~= nil then
         SetActionButtonState(sourceButton, "BUSY", "WARNING")
         ResetActionButtonSoon(sourceButton, 2.0)
         return
@@ -1595,7 +1621,8 @@ local function StartUndoLastSort(sourceButton)
 end
 
 StartSortFromPlan = function(plan, sourceButton)
-    pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
+    if PlannerBlocksSort(sourceButton) then return end
+    ClearPendingSort()
     if (plan.cachedSpecCount or 0) > 0 then
         RA:Print(string.format("Using %d saved specializations for this layout. They may have changed; /rcp rescan updates them.", plan.cachedSpecCount))
     end
@@ -1627,10 +1654,12 @@ StartSortFromPlan = function(plan, sourceButton)
     sortState.sideLabels = plan.sideLabels
 
     SetActionButtonState(sourceButton, "WORKING", "WORKING")
+    RA:FireCallback("RAID_GROUP_OPERATION_CHANGED")
     ProcessSortStep("start")
 end
 
 local function TryStartMode(mode, allowScan, sourceButton)
+    if PlannerBlocksSort(sourceButton) then return end
     OpenDock()
     if sortState.active then
         SetActionButtonState(sourceButton, "BUSY", "WARNING")
@@ -1668,6 +1697,7 @@ local function TryStartMode(mode, allowScan, sourceButton)
         pendingMode = mode
         pendingSourceButton = sourceButton
         pendingUnknownCount = #unknown
+        RA:FireCallback("RAID_GROUP_OPERATION_CHANGED")
         if allowScan and RA.RequestInspectionScan then
             SetActionButtonState(sourceButton, "SCANNING", "WORKING")
             RA:RequestInspectionScan("raid leader layout", false)
@@ -1695,15 +1725,16 @@ local function RefreshSortOptions()
     local groups = {}
     for group = 1, 8 do if not RA:IsRaidGroupIgnored(group) then groups[#groups + 1] = tostring(group) end end
     RA:SetVisualText(sortOptionsPanel.groups, "TRACKED GROUPS: " .. table.concat(groups, ", "))
-    sortOptionsPanel.cancel:SetShown(sortState.active)
+    sortOptionsPanel.cancel:SetShown(sortState.active or pendingMode ~= nil)
     if sortOptionsPanel.undo then
-        sortOptionsPanel.undo:SetShown(lastLayoutSnapshot ~= nil and not sortState.active)
+        sortOptionsPanel.undo:SetShown(lastLayoutSnapshot ~= nil and not sortState.active and pendingMode == nil and not PlannerApplying())
     end
+    sortOptionsPanel.run:SetEnabled(not PlannerApplying())
 end
 
 local function RefreshAccessAppearance()
     if not sortButton or not splitButton then return end
-    local locked = InCombatLockdown() or not IsLeaderOrAssistant()
+    local locked = PlannerApplying() or InCombatLockdown() or not IsLeaderOrAssistant()
 
     SetActionButtonState(readyCheckButton, nil, GetReadyCheckUnavailableReason() and "LOCKED" or "DEFAULT")
     if sortState.active then
@@ -1713,6 +1744,8 @@ local function RefreshAccessAppearance()
     end
     SetActionButtonState(splitButton, nil, locked and "LOCKED" or "DEFAULT")
 
+    sortButton:SetEnabled(not PlannerApplying())
+    splitButton:SetEnabled(not PlannerApplying())
     if not IsLeaderOrAssistant() and sortOptionsPanel then
         sortOptionsPanel:Hide()
     end
@@ -1800,7 +1833,7 @@ local function UpdateVisibility()
         RefreshPanicButton()
     else
         if sortState.active then StopSort("Raid sorting stopped.", "WARNING") end
-        pendingMode, pendingSourceButton, pendingUnknownCount = nil, nil, 0
+        ClearPendingSort()
         CloseDock(true)
         dockPinned = false
         if puck.pinDot then puck.pinDot:Hide() end
@@ -2111,7 +2144,7 @@ CreateToolbox = function()
         TryStartMode("ROLE_SORT", true, sortButton)
     end)
     sortOptionsPanel.cancel:SetScript("OnClick", function()
-        if sortState.active then StopSort("Raid sorting cancelled.", "WARNING") end
+        Toolbox:CancelGroupOperation()
         sortOptionsPanel:Hide()
     end)
 
@@ -2205,6 +2238,19 @@ CreateToolbox = function()
 end
 
 function Toolbox:IsSorting() return sortState.active end
+-- Excludes the planner itself; RaidGroups uses this to reject a competing job.
+function Toolbox:IsGroupOperationPending() return sortState.active or pendingMode ~= nil end
+function Toolbox:CancelGroupOperation()
+    local source = pendingSourceButton
+    local pending = ClearPendingSort()
+    if sortState.active then StopSort("Raid sorting cancelled.", "WARNING")
+    elseif pending then
+        RA:Print("Pending raid sorting cancelled.")
+        if source then SetActionButtonState(source, "CANCELLED", "WARNING"); ResetActionButtonSoon(source, 2.5) end
+    else return false, "No raid sorting operation is pending." end
+    if sortOptionsPanel and sortOptionsPanel:IsShown() then RefreshSortOptions() end
+    return true
+end
 function Toolbox:SortByRole() TryStartMode("ROLE_SORT", true, sortButton) end
 function Toolbox:SplitOddEven() TryStartMode("SPLIT_ODD_EVEN", true, splitButton) end
 function Toolbox:SplitAdjacent() TryStartMode("SPLIT_ADJACENT", true, splitButton) end
@@ -2301,6 +2347,7 @@ RA:RegisterCallback("REPORTS_UPDATED", function()
     RefreshMissingData()
     if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end
 
+    if pendingMode and PlannerBlocksSort(pendingSourceButton or sortButton) then return end
     if pendingMode and RA:IsInspectionEnabled() and not sortState.active and not InCombatLockdown() then
         local plan, err, unknown = BuildSortPlan(pendingMode)
         if plan then
@@ -2313,18 +2360,24 @@ RA:RegisterCallback("REPORTS_UPDATED", function()
 end)
 
 RA:RegisterCallback("INSPECTION_STATE_CHANGED", function()
+    if pendingMode and PlannerBlocksSort(pendingSourceButton or sortButton) then return end
     if pendingMode and not sortState.active and RA.IsInspectionRunning and not RA:IsInspectionRunning() then
         local plan, err, unknown = BuildSortPlan(pendingMode)
         if plan then
             StartSortFromPlan(plan, pendingSourceButton or sortButton)
         else
             local source = pendingSourceButton or sortButton
-            pendingMode, pendingSourceButton = nil, nil
-            pendingUnknownCount = unknown and #unknown or pendingUnknownCount
+            ClearPendingSort()
+            pendingUnknownCount = unknown and #unknown or 0
             SetActionButtonState(source, err == "unknown roles" and "NEED SPEC" or "UNAVAILABLE", "WARNING")
             ResetActionButtonSoon(source, 3.5)
         end
     end
+end)
+
+RA:RegisterCallback("RAID_GROUPS_CHANGED", function()
+    RefreshAccessAppearance()
+    if sortOptionsPanel and sortOptionsPanel:IsShown() then RefreshSortOptions() end
 end)
 
 RA:RegisterCallback("DEMO_MODE_CHANGED", function()
@@ -2333,6 +2386,8 @@ RA:RegisterCallback("DEMO_MODE_CHANGED", function()
 end)
 
 RA:RegisterCallback("PROFILE_RESET", function()
+    ClearPendingSort()
+    if sortState.active then StopSort("Raid sorting stopped: profile context changed.", "WARNING") end
     if not puck and GetToolboxDB().enabled ~= true then puckPositionNormalized = false; return end
     C_Timer.After(0, function()
         puckPositionNormalized = false
@@ -2367,7 +2422,7 @@ RA:RegisterCallback("ACCENT_THEME_CHANGED", function()
     -- state colors and any currently visible composition panel.
     SetSurface(puck, TC.canvasDeep, CopyColor(TC.lineStrong, 0.68), "puck")
     SetSurface(dock, CopyColor(TC.canvasDeep, 0.99), CopyColor(TC.lineStrong, 0.72), "dock")
-    local locked = InCombatLockdown() or not IsLeaderOrAssistant()
+    local locked = PlannerApplying() or InCombatLockdown() or not IsLeaderOrAssistant()
     SetActionButtonState(readyCheckButton, nil, GetReadyCheckUnavailableReason() and "LOCKED" or "DEFAULT")
     SetActionButtonState(sortButton, nil, sortState.active and "WORKING" or (locked and "LOCKED" or "DEFAULT"))
     SetActionButtonState(splitButton, nil, locked and "LOCKED" or "DEFAULT")

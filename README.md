@@ -1,6 +1,8 @@
 # RCP Arsenal engineering checkout
 
-This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.18**. With the optional marker wheel enabled, a center release now places the next configured sequence marker at the current cursor, including after a long hold. An outer-sector release still opens the native reticle; right-click/Escape cancels. See the [center-release contract](docs/MARKER_CENTER_RELEASE.md). General now provides a quiet saved-settings overview with an explicit four-tool review. Personal Tools keeps threshold and visibility close at hand, with Sound, Appearance, Messages and Item behavior in collapsed sections. Preview all / Move all remain in the fixed shelf; cached Raid checks are available from Quick Bar while the puck is off. The [settings cleanup contract](docs/SETTINGS_CLEANUP.md) explains navigation, draft cancellation, conflicts and preserved preferences. The alpha.16 [glow visibility repair](docs/GLOW_VISIBILITY.md), [adjustable glow](docs/ADJUSTABLE_GLOW.md), [marker cancellation and native targeting](docs/RADIAL_CANCELLATION.md), [Rogue provider coverage](docs/ROGUE_PROVIDER_COVERAGE.md) and [ready-item audio](docs/READY_CONSUMABLE_AUDIO.md) remain intact. Profile schema stays 19. Native WoW visual and protected-input acceptance remains separate from offline source verification.
+This is the editable source checkout for RCP Arsenal. Current source is **0.15.3-alpha.19**. Raid Groups adds an eight-group local draft with drag/drop, named boss layouts and plain WowUtils note import. Review the complete current-to-target mapping, then explicitly Apply to raid; saving or loading a layout never moves players. See the [planner contract and Windows checks](docs/RAID_GROUPS.md).
+
+The alpha.18 [marker center-release behavior](docs/MARKER_CENTER_RELEASE.md), [General and Personal Tools settings](docs/SETTINGS_CLEANUP.md), alpha.16 [glow visibility repair](docs/GLOW_VISIBILITY.md), [adjustable glow](docs/ADJUSTABLE_GLOW.md), [marker cancellation and native targeting](docs/RADIAL_CANCELLATION.md), [Rogue provider coverage](docs/ROGUE_PROVIDER_COVERAGE.md) and [ready-item audio](docs/READY_CONSUMABLE_AUDIO.md) remain intact. Profile schema stays 19. Native WoW visual and protected-input acceptance remains separate from offline source verification.
 
 The first commit imports all 49 original files. `provenance/baseline-0.14.1.json` records the original archive checksum and every payload file hash. The original archives and extracted handoff remain outside this checkout and unchanged.
 
@@ -26,6 +28,7 @@ Packaging checks validate versions, manifest references, and ZIP contents. CI al
 ## Delivery documents
 
 - [Optimization and native profiling acceptance](docs/OPTIMIZATION.md)
+- [Raid Groups planner and Windows checks](docs/RAID_GROUPS.md)
 - [Native rendering and feature grouping repair](docs/NATIVE_RENDERING_REPAIR.md)
 - [Inspection cache Windows tests](docs/INSPECTION_CACHE_WINDOWS_TESTS.md)
 - [Delivery plan](docs/DELIVERY_PLAN.md)

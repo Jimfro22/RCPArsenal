@@ -36,7 +36,7 @@ check(h:click('SKIP FOR NOW') and not RA.Setup:HasDraft() and h.env.RaidArsenalD
 check(h.env.RaidArsenalDB.setup.role=='RAIDER' and not RA:IsHUDEnabled(),'Overview Skip changed role or HUD')
 RA:OpenConfig('MYTOOLS');check(h:click('RESUME REVIEW')==nil,'Permanent Setup/review shelf action remains')
 -- Every saved ordinary route reopens; a saved legacy editor is overview only.
-for _,tab in ipairs({'GENERAL','MYTOOLS','ADDONS','QUICKBAR','CONTENT','HUD','SCANNING','ACTIONS','WORLDMARKERS','SETTINGS','NORTHERNSKY','SETUP','invalid'}) do
+for _,tab in ipairs({'GENERAL','MYTOOLS','ADDONS','QUICKBAR','RAIDGROUPS','CONTENT','HUD','SCANNING','ACTIONS','WORLDMARKERS','SETTINGS','NORTHERNSKY','SETUP','invalid'}) do
     h,RA=prepared({profile={schemaVersion=19},navigation={lastTab=tab,cooldownTab='HUD'}})
     RA:OpenConfig()
     local expected=(tab=='SETUP' or tab=='invalid') and 'GENERAL' or tab
