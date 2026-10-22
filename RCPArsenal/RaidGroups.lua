@@ -211,6 +211,51 @@ local function Remove(model,id)
     if group then model.groups[group][slot]=false elseif slot then table.remove(model.tray,slot) end
     model.entries[id]=nil
 end
+local function PlainShortName(value)
+    value=Text(value,80)
+    if not value or value=="" or value:find("[%s%p]") then return nil end
+    local position=1
+    while position<=#value do
+        local first=value:byte(position)
+        local width=first<128 and 1 or (first>=194 and first<=223 and 2)
+            or (first>=224 and first<=239 and 3) or (first>=240 and first<=244 and 4)
+        if not width then return nil end
+        for offset=1,width-1 do local byte=value:byte(position+offset);if not byte or byte<128 or byte>191 then return nil end end
+        local second=value:byte(position+1)
+        if (first==224 and second<160) or (first==237 and second>159)
+            or (first==240 and second<144) or (first==244 and second>143) then return nil end
+        position=position+width
+    end
+    return value
+end
+local function SameShortName(a,b)
+    if a:lower()==b:lower() then return true end
+    if not a:find("[\128-\255]") and not b:find("[\128-\255]") then return false end
+    -- Pure UTF-8 string comparison, as used by Blizzard's SortUtil. If that
+    -- comparison is unavailable, uncertain name equality cannot prove absence.
+    if type(strcmputf8i)~="function" then return nil end
+    local ok,result=pcall(strcmputf8i,a,b)
+    if not ok or Secret(result) or type(result)~="number" or result~=result or math.abs(result)==math.huge then return nil end
+    return result==0
+end
+local function AbsentPlaceholder(entry,snapshot)
+    local name=entry.fullName
+    if not snapshot then return false,"Refresh the raid before checking "..name.."." end
+    if entry.key then
+        if snapshot.byKey[entry.key] then return false,"Match "..name.." with Update raid or right-click before Apply.",1 end
+        return true,nil,0
+    end
+    local short=PlainShortName(name)
+    if not short then return false,"Resolve the incomplete name "..name.." by right-clicking its card before Apply." end
+    local matches,unknown=0,false
+    for _,member in ipairs(snapshot.members)do
+        local same=SameShortName(short,member.name)
+        if same==nil then unknown=true elseif same then matches=matches+1 end
+    end
+    if matches>0 then return false,"Match "..name.." by right-clicking its card: "..matches.." current raider"..(matches==1 and " has" or "s have").." that short name.",matches end
+    if unknown then return false,"Cannot verify absence of "..name..". Right-click to match a full name before Apply." end
+    return true,nil,0
+end
 local function View()
     if not draft then return nil end
     local view={groups=Copy(draft.groups),tray=Copy(draft.tray),entries={}}
@@ -219,6 +264,7 @@ local function View()
         local member=live and row.guid and live.byGuid[row.guid]
         if member and member.key~=row.key then member=nil end
         local entry=Copy(row);entry.missing=member==nil;entry.unresolved=row.key==nil
+        if not member then entry.absentPlaceholder,entry.identityReason,entry.matchCount=AbsentPlaceholder(row,not liveError and live or nil) end
         entry.guid=member and member.guid or nil;entry.liveGroup=member and member.group or nil
         if member then entry.class=member.class;entry.role=member.role;entry.online=member.online;entry.offline=not member.online end
         view.entries[id]=entry;if member then represented[member.guid]=true end
@@ -630,11 +676,14 @@ local function Targets(snapshot,view)
             if used[id] or not view.entries[id] then return nil,"Duplicate or invalid draft card." end
             used[id]=true
             local entry=view.entries[id]
-            if entry.unresolved then return nil,"Resolve or remove incomplete imported identities before Apply." end
             if entry.guid then
                 if targets[entry.guid] then return nil,"A current raider has multiple targets." end
                 targets[entry.guid]=group
-            else missing[#missing+1]=entry.fullName end
+            else
+                local absent,reason=AbsentPlaceholder(entry,snapshot)
+                if not absent then return nil,reason end
+                missing[#missing+1]=entry.fullName
+            end
         end
     end end
     for _,id in ipairs(view.tray) do
@@ -642,7 +691,8 @@ local function Targets(snapshot,view)
         if not entry or used[id] then return nil,"Duplicate or invalid tray card." end
         used[id]=true
         if entry.guid then return nil,"Every current raider needs a group target; the tray is not a bench action." end
-        if entry.unresolved then return nil,"Resolve or remove incomplete imported identities before Apply." end
+        local absent,reason=AbsentPlaceholder(entry,snapshot)
+        if not absent then return nil,reason end
         missing[#missing+1]=entry.fullName
     end
     for _,member in ipairs(snapshot.members) do if not targets[member.guid] then return nil,"A current raider is missing a reviewed target." end end

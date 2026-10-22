@@ -578,4 +578,55 @@ h.overrides.UnitGroupRolesAssigned=function()return h.secret end
 check(g:RefreshRoster() and g:GetState().live.members[1].role==nil,'Secret optional role broke ordinary roster capture')
 check(not g:SortDraft('ROLE_SORT') and same(before,g:GetState().draft),'Secret role was guessed or changed draft')
 g:Close();local reads=h.reads;h:event('PLAYER_ROLES_ASSIGNED');check(h.reads==reads,'Hidden planner observed role events')
+-- Absent saved placeholders are not native targets. The entire fresh roster,
+-- including offline/already-targeted members, decides short-name ambiguity.
+for _,name in ipairs({'Absent','Absent-OtherRealm','Raider01-OtherRealm','Éloise'})do for _,inTray in ipairs({false,true})do
+ h=fresh(2);g=h.groups;g:Open()
+ if name=='Éloise'then h.env.strcmputf8i=function(a,b)return a:gsub('É','é'):lower()==b:gsub('É','é'):lower()and 0 or 1 end end
+ local ok,savedName=g:ImportAndSaveNote('EncounterID:42;Difficulty:Heroic;Name:Placeholder\ninvitelist:'..name..';',1)
+ check(ok,'Placeholder import/save failed');state=g:GetState();local ghost=state.view.groups[1][1]
+ check(g:Move(idFor(state,h.roster[1].guid),2,1),'Explicit present target failed')
+ if inTray then check(g:Move(ghost,nil,nil),'Ghost tray move failed')end
+ check(g:SaveLayout(savedName),'Placeholder layout save failed')
+ local before=copy(g:GetState().draft);local stored=copy(h.env.RaidArsenalDB.raidGroupLayouts.items[savedName])
+ local p,why=g:PrepareApply();check(p and p.canApply,'Absent placeholder blocked complete current targets: '..tostring(why))
+ check(#p.missing==1 and p.missing[1]==name and p.targets[h.roster[1].guid]==2 and p.targets[h.roster[2].guid]==1,'Placeholder became a target or lost missing disclosure')
+ check(g:GetState().view.entries[ghost].absentPlaceholder==true and same(before,g:GetState().draft) and not g:GetState().layout.contentDirty,'Review rewrote placeholder, draft or saved baseline')
+ check(same(stored,h.env.RaidArsenalDB.raidGroupLayouts.items[savedName]) and #h.calls==0 and #h.timers==0,'Review changed saved content or made native calls')
+ check(g:LoadLayout(savedName),'Placeholder round trip failed');state=g:GetState();local reloaded=inTray and state.view.tray[1]or state.view.groups[1][1]
+ check(state.view.entries[reloaded].fullName==name and state.view.entries[reloaded].absentPlaceholder and not state.layout.contentDirty,'Load lost/rebound placeholder or dirtied saved content')
+ check(h:start(),'Explicit Apply with placeholders failed');h:complete()
+ for _,call in ipairs(h.calls)do check(call.guid~=nil and call.guid:match('^Player%-') and call.targetGroup==2,'Apply submitted a placeholder or wrong native target')end
+ check(g:GetState().view.entries[reloaded].fullName==name and same(stored,h.env.RaidArsenalDB.raidGroupLayouts.items[savedName]),'Apply removed placeholder or changed saved layout')
+end end
+for _,case in ipairs({'present','offline','case','ambiguous','unicode','unknownCompare','secretCompare','partial','malformedUtf8'})do
+ h=fresh(2);g=h.groups;local name='Raider01'
+ if case=='offline'then h.roster[1].online=false end
+ if case=='case'then name='raider01' end
+ if case=='ambiguous'then h.roster[2].name='Raider01';h.roster[2].realm='OtherRealm'end
+ if case=='unicode'then
+  name='élan';h.roster[1].name='Élan'
+  h.env.strcmputf8i=function(a,b)local function fold(s)return s:gsub('É','é'):lower()end;return fold(a)==fold(b)and 0 or 1 end
+ end
+ if case=='unknownCompare'then name='AbsentÉ';h.env.strcmputf8i=nil end
+ if case=='secretCompare'then name='AbsentÉ';h.env.strcmputf8i=function()return h.secret end end
+ if case=='partial'then name='Absent-' end
+ if case=='malformedUtf8' then name='Bad\255' end
+ g:Open();check(g:ImportAndSaveNote('invitelist:'..name..';',1),'Unresolved fixture import failed');state=g:GetState();local ghost=state.view.groups[1][1]
+ check(g:Move(idFor(state,h.roster[1].guid),2,1),'Present target assignment failed')
+ local before=copy(g:GetState().draft);local p,why=g:PrepareApply()
+ check(not p and type(why)=='string' and why:find(name,1,true),'Current/ambiguous/unknown short name was ignored or had no actionable identity: '..case)
+ check(not g:GetState().view.entries[ghost].absentPlaceholder and same(before,g:GetState().draft) and #h.calls==0,'Failed identity check rebound/edited/submitted: '..case)
+end
+h=fresh(2);g=h.groups;g:Open();check(g:ImportAndSaveNote('invitelist:Absent;',1),'Join fixture failed')
+state=g:GetState();local ghost=state.view.groups[1][1];g:Move(idFor(state,h.roster[1].guid),2,1);local p=assert(g:PrepareApply())
+h.roster[#h.roster+1]={guid='Player-1-0000ff',name='Absent',realm='NewRealm',group=3,online=false}
+h.explicitSession=true;check(not g:Apply(p.id) and #h.calls==0,'A matching join after review submitted stale targets')
+state=g:GetState();check(g:Move(idFor(state,'Player-1-0000ff'),3,1),'Explicit joined target failed')
+check(not g:PrepareApply() and not g:GetState().view.entries[ghost].absentPlaceholder,'Already-targeted/offline matching join was ignored as absent')
+check(g:ResolveEntry(ghost,'Player-1-0000ff') and g:PrepareApply() and #h.calls==0,'Explicit full identity resolution failed or auto-applied')
+h=fresh(2);g=h.groups;g:Open();g:ImportAndSaveNote('invitelist:Absent;',1);state=g:GetState();local ghost=state.view.groups[1][1]
+g:Move(idFor(state,h.roster[1].guid),2,1);check(g:PrepareApply(),'Unknown-capture fixture failed')
+h.overrides.UnitGUID=function()return h.secret end
+check(not g:PrepareApply() and not g:GetState().view.entries[ghost].absentPlaceholder and #h.calls==0,'Cached absence authorized secret/incomplete fresh roster')
 print(('PASS: %d raid-group actual-module assertions (fictional asynchronous roster; native APIs/taint pending)'):format(checks))
