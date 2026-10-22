@@ -36,9 +36,11 @@ function RA:CreateRaidGroupsPane(parent, kit)
         if class then GameTooltip:AddLine(Literal(class),0.8,0.8,0.85) end
         local role=member and member.role
         GameTooltip:AddLine(role=="TANK" and "Tank" or role=="HEALER" and "Healer" or role=="DAMAGER" and "Damage" or "Role unknown",0.8,0.8,0.85)
-        GameTooltip:AddLine("Current: "..(entry.liveGroup and ("Group "..entry.liveGroup) or "Not in raid"),0.8,0.8,0.85)
+        GameTooltip:AddLine("Current: "..(entry.liveGroup and ("Group "..entry.liveGroup) or entry.absentPlaceholder and "Not in current raid" or "Identity not verified"),0.8,0.8,0.85)
         GameTooltip:AddLine("Draft: "..(target and ("Group "..target) or "Unassigned"),0.8,0.8,0.85)
-        if entry.unresolved then GameTooltip:AddLine("Unresolved identity. Right-click to match a raider.",1,0.65,0.25,true)
+        if entry.absentPlaceholder then GameTooltip:AddLine("Absent placeholder. Kept in this layout; skipped by Apply.",0.8,0.8,0.85,true)
+        elseif entry.identityReason then GameTooltip:AddLine(Literal(entry.identityReason),1,0.65,0.25,true)
+        elseif entry.unresolved then GameTooltip:AddLine("Unresolved identity. Right-click to match a raider.",1,0.65,0.25,true)
         elseif entry.missing then GameTooltip:AddLine("Absent from this raid. Right-click for local options.",0.8,0.8,0.85,true)
         elseif member and member.online==false then GameTooltip:AddLine("Offline",0.8,0.8,0.85) end
         GameTooltip:AddLine("Slots plan groups; raid frames may sort players differently.",0.7,0.7,0.8,true)
@@ -57,11 +59,18 @@ function RA:CreateRaidGroupsPane(parent, kit)
         ui.modalMode=nil;ui.resolveID=nil
     end
     local function ClearSelection() ui.selected=nil;ClearPointer() end
+    local function ReviewContext(state)
+        local model=state and state.draft;local live=state and state.live
+        return table.concat({tostring(model and model.revision),live and live.fingerprint or "",state and state.liveError or "",
+            tostring(live and live.canApply),live and live.reason or ""},"\n")
+    end
     Prepare=function()
         ui.preparing=true
         local preview,reason=Call("PrepareApply")
         ui.preparing=false
         ui.prepareFailed=not preview or preview==false
+        ui.prepareReason=ui.prepareFailed and (reason or "Review the draft before applying.") or nil
+        ui.prepareContext=ui.prepareFailed and ReviewContext(ui.state) or nil
         if ui.prepareFailed then ui.message=reason or "Review the draft before applying." end
         return preview,reason
     end
@@ -216,7 +225,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
     trayChild:SetScript("OnMouseDown",PointerDown)
     trayChild:SetScript("OnMouseUp",function()if ui.selected and not ui.consumed then Move(nil,nil)end end)
     trayScroll:HookScript("OnVerticalScroll",function()ui.hover=nil;if GameTooltip then GameTooltip:Hide()end end)
-    status=Text(parent,"",10,0,-610,590)
+    status=Text(parent,"",10,0,-610,590);status:SetHeight(48);ui.applyStatus=status
     cancelButton=kit.Button(parent,"CANCEL APPLY",128,34,function()Call("CancelApply");ClearSelection();Refresh()end)
     Point(cancelButton,"TOPLEFT",parent,"TOPLEFT",610,-610);cancelButton:Hide()
     reviewButton=kit.Button(parent,"REVIEW CHANGES",128,34,function()
@@ -303,6 +312,8 @@ function RA:CreateRaidGroupsPane(parent, kit)
         if not ui.removeEntry then ui.removeEntry=kit.Button(ui.card,"REMOVE ABSENT CARD",210,30,function()
             if ui.resolveID and Edit("RemoveEntry",ui.resolveID)then HideModal();ClearSelection();Refresh()end
         end);Point(ui.removeEntry,"BOTTOMLEFT",ui.card,"BOTTOMLEFT",20,66) end
+        local entry=ui.state and ui.state.view and ui.state.view.entries[id]
+        SetText(ui.removeEntry.label,entry and entry.absentPlaceholder and "REMOVE ABSENT CARD" or "REMOVE UNMATCHED CARD")
         ui.removeEntry:Show();SetText(ui.modalStatus,"Choose the exact current raider. This edits only the draft.")
     end
     ShowImport=function()
@@ -403,7 +414,9 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local color=class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
         button.classStrip:SetColorTexture(color and color.r or C.muted[1],color and color.g or C.muted[2],color and color.b or C.muted[3],1);button.classStrip:Show()
         local detail=class or ""
-        if entry.unresolved then detail="Unresolved"
+        if entry.absentPlaceholder then detail=entry.unresolved and "Absent · short name" or "Absent"
+        elseif entry.identityReason then detail="Needs matching"
+        elseif entry.unresolved then detail="Unresolved"
         elseif entry.missing then detail=(detail~="" and detail.." · " or "").."Absent"
         else
             if entry.liveGroup~=target then detail=detail..(detail~="" and " · " or "").."G"..tostring(entry.liveGroup).." > "..(target and ("G"..target) or "Unassigned") end
@@ -421,8 +434,9 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local state,reason=Call("GetState")
         if not state or state==false then Message(reason or "Raid Groups is unavailable.");Enabled(applyButton,false);return end
         ui.state=state;ui.members={};ui.nameCounts={}
+        if ui.prepareFailed and ui.prepareContext~=ReviewContext(state) then ui.prepareFailed=false;ui.prepareReason=nil;ui.prepareContext=nil end
         for _,member in ipairs((state.live and state.live.members)or{})do ui.members[member.guid]=member end
-        local view=state.view or {groups={},entries={},tray={}};local targets={};local changes,unassigned,absent=0,0,0
+        local view=state.view or {groups={},entries={},tray={}};local targets={};local changes,unassigned,absent,unmatched=0,0,0,0
         for _,entry in pairs(view.entries)do
             local short=(entry.name or ""):lower();ui.nameCounts[short]=(ui.nameCounts[short]or 0)+1
         end
@@ -440,13 +454,15 @@ function RA:CreateRaidGroupsPane(parent, kit)
             if not button then button=MakeSlot(trayChild,222,28);ui.tray[index]=button end
             Point(button,"TOPLEFT",trayChild,"TOPLEFT",((index-1)%4)*232,-math.floor((index-1)/4)*32)
             Paint(button,id,nil,view.entries);button:Show()
-            local entry=view.entries[id];if entry and entry.missing then absent=absent+1 else unassigned=unassigned+1 end
+            local entry=view.entries[id]
+            if entry and entry.guid then unassigned=unassigned+1
+            elseif entry and entry.absentPlaceholder then absent=absent+1 else unmatched=unmatched+1 end
         end
         for index=#(view.tray or {})+1,#ui.tray do ui.tray[index]:Hide()end
         local trayHeight=math.max(72,math.ceil(#(view.tray or {})/4)*32)
         trayChild:SetHeight(trayHeight)
         local current=trayScroll:GetVerticalScroll()or 0;if current>trayHeight-72 then trayScroll:SetVerticalScroll(math.max(0,trayHeight-72))end
-        SetText(trayTitle,"Unassigned: "..unassigned.." present"..(absent>0 and (" · "..absent.." absent")or"")..(ui.selected and " · Click a slot to move selected player"or""))
+        SetText(trayTitle,"Unassigned: "..unassigned.." present"..(absent>0 and (" · "..absent.." absent")or"")..(unmatched>0 and (" · "..unmatched.." unmatched")or"")..(ui.selected and " · Click a slot to move selected player"or""))
         local busy=Busy();local preview=state.preview
         for _,button in ipairs({loadButton,saveButton,importButton,reconcileButton,sortButton})do Enabled(button,not Locked())end
         if Locked() then sortMenu:Hide() end
@@ -463,35 +479,42 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local applying=state.apply or {}
         local message
         if busy then message="Applying "..tostring(applying.confirmed or 0).." / "..tostring(applying.total or 0).." confirmed."
-        elseif ui.feedback then message=ui.feedback.." · "..changes.." group changes"..(Uncertain() and ". A prior move may still settle; review raid again."or"")
-        elseif Uncertain() then message=(applying.reason or "Apply stopped.").." Review raid to acknowledge current groups."
-        elseif ui.selected then message=ui.message
-        elseif state.liveError then message=state.liveError
-        elseif preview and preview.canApply~=true then message=preview.reason or "Apply unavailable. Drafting remains local."
-        elseif unassigned>0 then message=unassigned.." present raiders need a target group."
-        elseif ui.prepareFailed then message=ui.message
-        elseif not preview and applying.status=="stopped" then message=(applying.reason or "Apply stopped.").." · "..changes.." group changes; review again."
-        elseif not preview and applying.status=="complete" then message=(applying.reason or "Group changes confirmed.").." · "..changes.." group changes"
-        else message="Local draft · "..changes.." group changes"..(preview and (" · "..tostring(preview.operationCount or 0).." moves/swaps")or". Review before applying.") end
-        if applying.priorRequestMaySettle and not Uncertain() and not ui.feedback and not busy then message=(message or "").." · A prior move may still settle." end
+        elseif Uncertain() then message=(applying.reason or "Apply stopped.").." Review raid to acknowledge current groups; a prior move may still settle."
+        elseif state.liveError then message="Apply blocked: "..state.liveError
+        elseif ui.prepareFailed then message="Apply blocked: "..(ui.prepareReason or "Review changes again.")
+        elseif preview and preview.canApply~=true then message="Apply blocked: "..(preview.reason or "Review changes again.")
+        elseif unassigned>0 then message="Apply blocked: "..unassigned.." present raiders need a target group."
+        elseif state.draft and state.draft.stale then message="Raid changed. Review changes again before Apply."
+        elseif not preview and applying.status=="stopped" then message=(applying.reason or "Apply stopped.").." Review changes before another Apply."
+        elseif not preview and applying.status=="complete" then message=(applying.reason or "Group changes confirmed.").." Review changes before another Apply."
+        elseif not preview then message="Review changes before Apply."
+        elseif (preview.operationCount or 0)==0 then message="Raid already matches. No live group changes to apply."
+        else message="Ready to apply: "..changes.." group changes · "..tostring(preview.operationCount).." moves/swaps." end
+        if preview and preview.canApply and not Locked() and #(preview.missing or {})>0 then message=message.." "..#preview.missing.." absent planned player(s) skipped." end
+        ui.applyReason=message
+        if not busy then
+            if ui.feedback then message=message.." · "..ui.feedback
+            elseif ui.selected then message=message.." · "..(ui.message or "Card selected.") end
+        end
+        if applying.priorRequestMaySettle and not Uncertain() and not busy then message=message.." · A prior move may still settle." end
         SetText(status,message or "")
     end
     function ui:Show()
         if self.active then return end
-        self.active=true;self.prepareFailed=false
+        self.active=true;self.prepareFailed=false;self.prepareReason=nil;self.prepareContext=nil
         Call("SetVisible",true);Refresh()
         if self.state and not self.state.draft and self.state.live then Call("FromCurrentRaid") end
         Prepare();Refresh()
     end
     function ui:Hide()
-        self.active=false;ClearSelection();HideModal();self.prepareFailed=false;self.feedback=nil
+        self.active=false;ClearSelection();HideModal();self.prepareFailed=false;self.prepareReason=nil;self.prepareContext=nil;self.feedback=nil
         nameBox:ClearFocus();sortMenu:Hide();Call("SetVisible",false)
     end
     parent:HookScript("OnShow",function()ui:Show()end)
     parent:HookScript("OnHide",function()ui:Hide()end)
     RA:RegisterCallback("RAID_GROUPS_CHANGED",function()
         if ui.active and parent:IsVisible() then
-            if not ui.preparing then ui.prepareFailed=false;ui.feedback=nil end
+            if not ui.preparing then ui.feedback=nil end
             Refresh()
         end
     end)

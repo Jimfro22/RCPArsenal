@@ -229,6 +229,47 @@ check(ui.slots[2][1].entryID==dragID,'Drop passed through sort menu to covered g
 mouseOver={};click('Role sort');check(not ui.sortMenu:IsShown() and #actions==1,'Role sort started live action or kept menu open')
 click('SORT DRAFT');click('Split odd / even');click('SORT DRAFT');click('Split adjacent groups')
 check(#actions==1 and ui.dirty,'Split menu moved live players or failed unsaved state')
+-- Actual UI automatic preparation keeps absent placeholders while exposing
+-- exact Apply state ahead of Save or selection feedback.
+while #roster>2 do table.remove(roster)end
+click('FROM RAID');nameBox():SetText('Small raid');click('SAVE')
+check(not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Raid already matches',1,true),'Zero-operation Apply had no clear explanation')
+local function importPlaceholder(name,label)
+ click('IMPORT WOWUTILS');ui.paste:SetText('EncounterID:42;Difficulty:Heroic;Name:'..label..'\ninvitelist:'..name..';')
+ ui.paste:Fire('OnTextChanged');click('READ SECTIONS');ui.modalRows[1]:Fire('OnClick');click('IMPORT & SAVE')
+end
+local function moveCurrent(group,slot)
+ local b=findCard(roster[1].guid);b:Fire('OnMouseDown');b:Fire('OnClick','LeftButton');card(group,slot)
+end
+local trayTarget
+for frame,target in pairs(ui.dropOwners)do if target.frame==frame then trayTarget=frame end end
+check(trayTarget~=nil,'Owned tray click target missing')
+for _,name in ipairs({'Absent','Absent-OtherRealm'})do
+ importPlaceholder(name,'Placeholder '..name)
+ local ghost=ui.slots[1][1]
+ check(ghost.detail.text:find('Absent',1,true) and not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('already matches',1,true),'Absent label/zero-op explanation lost: '..name)
+ moveCurrent(3,1)
+ check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Ready to apply',1,true) and ui.applyReason:find('1 absent planned',1,true),'Local move failed auto-prepare with grouped absent card: '..name)
+ ghost:Fire('OnMouseDown');ghost:Fire('OnClick','LeftButton');trayTarget:Fire('OnMouseDown');trayTarget:Fire('OnMouseUp','LeftButton')
+ check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('1 absent planned',1,true),'Tray absent placeholder blocked automatic UI review: '..name)
+end
+importPlaceholder('Twin','Current unresolved')
+check(not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Match Twin',1,true) and ui.applyStatus.text:find('Apply blocked:',1,true)==1,'Current unresolved reason hidden behind imported/saved success')
+click('SAVE');check(ui.applyStatus.text:find('Apply blocked:',1,true)==1 and ui.applyStatus.text:find('Match Twin',1,true) and ui.applyStatus.text:find('Layout saved locally.',1,true),'Saving unchanged content erased the exact Apply blocker')
+check(core:DeleteLayout('Small raid') and ui.applyStatus.text:find('Match Twin',1,true),'Deleting an unrelated saved layout erased the exact Apply blocker')
+local current=findCard(roster[1].guid);current:Fire('OnMouseDown');current:Fire('OnClick','LeftButton')
+check(ui.applyStatus.text:find('Apply blocked:',1,true)==1 and ui.applyStatus.text:find('Match Twin',1,true),'Selection overwrote exact identity blocker')
+check(ui.slots[1][1].detail.text:find('Needs matching',1,true) and not ui.slots[1][1].detail.text:find('Absent',1,true),'Current unresolved card was falsely labeled absent')
+ui.slots[1][1]:Fire('OnMouseDown');ui.slots[1][1]:Fire('OnClick','RightButton')
+check(button('REMOVE UNMATCHED CARD')~=nil,'Unmatched current-name card was offered as confirmed absent')
+ui.modal:Fire('OnKeyDown','ESCAPE')
+roster[2].name='Twin';roster[2].realm='BetaRealm';roster[2].online=false
+core:RefreshRoster();click('REVIEW CHANGES')
+check(not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('2 current raiders',1,true),'Offline cross-realm ambiguity was treated as absence')
+unreadable=true;click('REVIEW CHANGES')
+check(not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('unavailable',1,true),'Failed fresh capture retained ready/absent authorization')
+unreadable=false;core:RefreshRoster();click('REVIEW CHANGES')
+check(#actions==1,'Placeholder review/assignment made accidental live calls')
 local stateGetter=core.GetState
 core.GetState=function(self)local state=stateGetter(self);state.apply={status='stopped',unknownResult=true};return state end
 refresh();check(not button('SORT DRAFT'):IsEnabled(),'Unresolved Apply enabled local sort menu');core.GetState=stateGetter;refresh()
