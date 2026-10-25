@@ -5,6 +5,8 @@ source=source:sub(1,assert(source:find('local h=Lifecycle();local RA=h.RA',1,tru
 source=source..[[
 local function prepared(saved)
     local h=Lifecycle(saved)
+    h.methods.SetTextColor=function(self,...)self.textColor={...}end
+    h.methods.SetJustifyH=function(self,value)self.justifyH=value end
     function h:button(prefix)
         for _,o in ipairs(self.objects)do if o.label and o.label.text:find(prefix,1,true)==1 and o:IsVisible()then return o end end
     end
@@ -51,7 +53,7 @@ RA.PersonalTools.SetOption=optionSetter
 h.setCombat(false);h.event('PLAYER_REGEN_ENABLED')
 check(not RA:IsHUDEnabled(),'Combat end applied a rejected setting')
 quiet(h,before)
--- Local addon states choose distinct routes, never a group version query.
+-- Compact addon names always offer their CurseForge link; local state only styles the row.
 local report={byID={}};local localRefreshes=0
 local ids={'northernsky','rclootcouncil','simulationcraft','wowutils','autopotion','bigwigs'}
 local values={{true,true,true},{true,true,true},{true,false,true},{true,true,false},{false,false,false},{true,nil,true}}
@@ -62,28 +64,55 @@ RA:OpenConfig('MYTOOLS');RA:OpenConfig('GENERAL')
 local addonRows={}
 for _,o in ipairs(h.objects)do if o.state and o:IsVisible()then addonRows[#addonRows+1]=o end end
 check(#addonRows==6 and h:visible('Morning Brew addons') and not h:button('Morning Brew addons'),'Addon rows are collapsed or incomplete')
-local function RowButton(row)for _,o in ipairs(h.objects)do if o.parent==row and o.label then return o end end end
-local expected={'Setup','Details','How to enable','Details','Get addon','Check again'}
-local hints={'verified Northern Sky','selected details','enabling this addon','selected details','install this addon outside WoW','Refresh local addon detection'}
+local function RowButton(row)
+    local buttons={}
+    for _,o in ipairs(h.objects)do if o.parent==row and o.kind=='Button'then buttons[#buttons+1]=o end end
+    check(#buttons==1,'Addon row retained a separate action column')
+    return buttons[1]
+end
+local function RowText(row,value)
+    for _,o in ipairs(h.objects)do if o.parent==row and o.kind=='FontString' and o.text==value then return o end end
+end
+local function colorIs(label,color)
+    local value=label.textColor or {}
+    return value[1]==color[1] and value[2]==color[2] and value[3]==color[3] and value[4]==color[4]
+end
+local expected={'Installed','Installed','Disabled · reload required','Not loaded','Missing','Unknown'}
+local colors=RA.Theme.Colors
 for i,row in ipairs(addonRows)do
-    local action=RowButton(row)
-    check(row:GetHeight()==42 and action.label.text==expected[i],'Wrong compact addon action '..i)
+    local name=RowButton(row);local entry=RA.AddonCatalog:GetEntry(ids[i])
+    local priority=RowText(row,i<=4 and 'Important' or 'Optional')
+    local status=RowText(row,expected[i])
+    check(row:GetHeight()==42 and name.label.text==entry.name and name:IsEnabled(),'Missing clickable addon name '..i)
+    check(priority and not RowText(row,'Core') and not RowText(row,'Team tool'),'Wrong addon priority label '..i)
+    check(status and status.justifyH=='RIGHT' and #status.points==1 and status.points[1][1]=='TOPRIGHT'
+        and status.points[1][2]==row and status.points[1][3]=='TOPRIGHT' and status.points[1][4]<0,'Addon status is not right aligned '..i)
+    check(status:GetWidth()-status.points[1][4]+486<=row:GetWidth(),'Addon status overlaps the priority column '..i)
+    local active=i==1 or i==2 or i==4
+    local color=active and colors.magenta or colors.muted
+    check(colorIs(name.label,color) and colorIs(status,color) and colorIs(priority,active and colors.textSoft or colors.muted),'Wrong installed/disabled addon colors '..i)
     local lines={};local line=h.env.GameTooltip.AddLine
     h.env.GameTooltip.AddLine=function(_,value)lines[#lines+1]=value end
-    action:Fire('OnEnter');action:Fire('OnLeave');h.env.GameTooltip.AddLine=line
-    check(table.concat(lines,' '):find(hints[i],1,true),'Child addon action lacks state-specific hover help '..i)
+    name:Fire('OnEnter');name:Fire('OnLeave');h.env.GameTooltip.AddLine=line
+    check(table.concat(lines,' '):find('Click to copy its CurseForge download link.',1,true) and colorIs(name.label,color),'Addon link hover is missing or loses state color '..i)
 end
 check(h:visible('Installed') and h:visible('Disabled · reload required') and h:visible('Not loaded') and h:visible('Missing') and h:visible('Unknown'),'Addon states conflated')
-RowButton(addonRows[1]):Fire('OnClick');check(h:visible('Northern Sky'),'Verified NSRT route failed')
-RA:OpenConfig('GENERAL');RowButton(addonRows[2]):Fire('OnClick')
-check(h:visible('Addons & versions') and h:visible('RCLootCouncil'),'Installed Details opened wrong addon')
-RA:OpenConfig('GENERAL');RowButton(addonRows[3]):Fire('OnClick')
-check(h:visible('How to enable Simulationcraft') and h:click('CLOSE'),'Disabled addon did not show enable guidance')
-RowButton(addonRows[4]):Fire('OnClick');check(h:visible('Addons & versions'),'Not-loaded addon was treated as missing')
-RA:OpenConfig('GENERAL');RowButton(addonRows[5]):Fire('OnClick')
-check(h:visible('AutoPotion — copy link to your browser') and h:click('CLOSE'),'Missing addon copy link failed')
-local count=localRefreshes;RowButton(addonRows[6]):Fire('OnClick')
-check(localRefreshes==count+1,'Unknown Check again did not use local metadata')
+local count=localRefreshes
+for i,row in ipairs(addonRows)do
+    local entry=RA.AddonCatalog:GetEntry(ids[i]);RowButton(row):Fire('OnClick')
+    local link
+    for _,o in ipairs(h.objects)do if o.kind=='EditBox' and o:IsVisible() and o:GetText()==entry.url then link=o end end
+    check(h:visible(entry.name..' — copy link to your browser') and link and link:HasFocus()
+        and entry.url:find('https://www.curseforge.com/wow/addons/',1,true)==1,'Addon name opened the wrong CurseForge link '..i)
+    check(h:click('CLOSE') and h:visible('Morning Brew addons'),'Addon link did not return to General '..i)
+end
+check(localRefreshes==count,'Addon name click refreshed metadata instead of opening its link')
+check(RA.AddonCatalog:GetEntry('northernsky').priority=='Core' and RA.AddonCatalog:GetEntry('wowutils').priority=='Team tool','Display labels changed catalog priority data')
+report.byID.northernsky={installed=true,enabled=false,loaded=false}
+report.byID.autopotion={installed=true,enabled=true,loaded=true}
+RA:OpenConfig('MYTOOLS');RA:OpenConfig('GENERAL')
+check(RowText(addonRows[1],'Disabled') and colorIs(RowButton(addonRows[1]).label,colors.muted),'Disabled addon retained its installed color')
+check(RowText(addonRows[5],'Installed') and colorIs(RowButton(addonRows[5]).label,colors.magenta),'Newly installed addon retained its missing color')
 quiet(h,before)
 -- All ordinary pages restore; both legacy setup entry points become General.
 for _,tab in ipairs({'GENERAL','MYTOOLS','ADDONS','QUICKBAR','RAIDGROUPS','CONTENT','HUD','SCANNING','ACTIONS','WORLDMARKERS','SETTINGS','NORTHERNSKY','SETUP','invalid'})do

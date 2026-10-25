@@ -77,26 +77,18 @@ function RA:CreateGeneralPane(parent,kit)
             kit.Backdrop(row,index%2==1 and C.surfaceRaised or C.surface,C.transparent,2,false)
             row:EnableMouse(true)
             Help(row,d.name,d.description.." Installed status is local; it does not establish configuration or the latest version.")
-            Text(kit,row,d.name,11,14,-14,340)
-            Text(kit,row,d.priority,10,370,-14,116)
-            local status=Text(kit,row,"",10,506,-14,220)
-            local action=kit.Button(row,"Details",164,30,function()
-                local state=row.state
-                if state=="missing" then RA:ShowAddonLink(d.id)
-                elseif state=="unknown" then RA.AddonCatalog:RefreshLocal();Refresh()
-                elseif state=="disabled" then RA:ShowAddonEnableHelp(d.id)
-                elseif state=="loaded" and d.id=="northernsky" then RA:OpenConfig("NORTHERNSKY")
-                else RA:OpenAddonDetails(d.id) end
-            end)
-            Help(action,d.name,function()
-                if row.state=="missing" then return "Copy a download link, then install this addon outside WoW."
-                elseif row.state=="unknown" then return "Refresh local addon detection. Does not query the group."
-                elseif row.state=="disabled" then return "Show local guidance for enabling this addon through WoW's AddOns controls."
-                elseif row.state=="loaded" and d.id=="northernsky" then return "Open Arsenal's verified Northern Sky integration."
-                else return "Open this addon's selected details in Arsenal." end
-            end)
-            T.SetPoint(action,"RIGHT",row,"RIGHT",-8,0)
-            rows[#rows+1]={frame=row,entry=d,status=status,action=action}
+            local name=CreateFrame("Button",nil,row)
+            T.SetSize(name,354,42);T.SetPoint(name,"TOPLEFT",row,"TOPLEFT",0,0)
+            name.label=Text(kit,name,d.name,11,14,-14,326);name.label:SetWordWrap(false)
+            name:SetScript("OnClick",function()RA:ShowAddonLink(d.id)end)
+            name:SetScript("OnEnter",function()name.label:SetTextColor(unpack(row.nameColor==C.muted and C.textSoft or C.orange))end)
+            name:SetScript("OnLeave",function()name.label:SetTextColor(unpack(row.nameColor or C.muted))end)
+            Help(name,d.name,d.description.." Click to copy its CurseForge download link.")
+            local priority=Text(kit,row,d.priority=="Optional" and "Optional" or "Important",10,370,-14,116)
+            local status=Text(kit,row,"",10,0,0,300)
+            status:ClearAllPoints();T.SetPoint(status,"TOPRIGHT",row,"TOPRIGHT",-14,-14)
+            status:SetJustifyH("RIGHT");status:SetWordWrap(false)
+            rows[#rows+1]={frame=row,entry=d,name=name.label,priority=priority,status=status}
         end
     end
     Refresh=function()
@@ -110,9 +102,11 @@ function RA:CreateGeneralPane(parent,kit)
             elseif data.installed==true and data.enabled==true and data.loaded==false then state,label="not_loaded","Not loaded"
             elseif data.installed==true and data.enabled==true and data.loaded==true then state,label="loaded","Installed" end
             row.frame.state=state;RA:SetVisualText(row.status,label)
-            local action=state=="missing" and "Get addon" or state=="unknown" and "Check again" or state=="disabled" and "How to enable"
-                or (state=="loaded" and row.entry.id=="northernsky") and "Setup" or "Details"
-            RA:SetVisualText(row.action.label,action)
+            local active=data.installed==true and data.enabled==true
+            local color=active and C.magenta or C.muted
+            row.frame.nameColor=color
+            row.name:SetTextColor(unpack(color));row.status:SetTextColor(unpack(color))
+            row.priority:SetTextColor(unpack(active and C.textSoft or C.muted))
         end
         Resize(190+#rows*44+14)
     end
