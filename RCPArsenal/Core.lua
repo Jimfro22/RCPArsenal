@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.21"
+RA.VERSION = "0.15.3-alpha.22"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -152,7 +152,7 @@ local DEFAULTS = {
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false, radialEnabled = false },
-        personalTools = { autoRes = false, consumableReminder = false, healthThreshold = 40,
+        personalTools = { autoRes = false, autoResInCombat = false, consumableReminder = false, healthThreshold = 40,
             reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "IN_COMBAT", reminderSound = true,
             reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false, reminderStoneGlow = true },
         readiness = { targets = {}, revision = 0, updatedAt = 0, origin = "" },
@@ -453,6 +453,7 @@ local function MigrateProfile(profile)
     if not profile.hudEnabled then profile.shown = false end
     profile.personalTools = type(profile.personalTools) == "table" and profile.personalTools or {}
     profile.personalTools.autoRes = profile.personalTools.autoRes == true
+    profile.personalTools.autoResInCombat = profile.personalTools.autoResInCombat == true
     profile.personalTools.consumableReminder = profile.personalTools.consumableReminder == true
     profile.personalTools.healthThreshold = math.max(1, math.min(99, tonumber(profile.personalTools.healthThreshold) or 40))
     local personal = profile.personalTools

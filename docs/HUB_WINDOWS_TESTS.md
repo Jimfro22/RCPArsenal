@@ -1,4 +1,6 @@
-# 0.15.0-alpha.1 Windows validation
+# Historical 0.15.0-alpha.1 Windows validation
+
+For current navigation, defaults and the alpha.22 combat acceptance owner test, use [Windows smoke test](WINDOWS_SMOKE_TEST.md) and [General and Personal Tools](SETTINGS_CLEANUP.md). The historical steps below retain their original build context.
 
 All checks below remain pending until run in the actual WoW client. Record exact client build, TOC/addon version, ZIP SHA-256, profile schema, install path, roster roles, external addon versions, and Lua errors. Keep a SavedVariables backup; preserve the baseline and prior marker alpha installers.
 

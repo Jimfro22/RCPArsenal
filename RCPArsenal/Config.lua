@@ -41,7 +41,6 @@ local RefreshWorldMarkers
 local RefreshConfig
 local RefreshHub
 local RefreshFooter
-local RefreshSetup
 local RefreshGeneral
 local RefreshRaidGroups
 local placementReturnPending
@@ -84,7 +83,7 @@ local TAB_DEFS = {
     { key = "SETTINGS", label = "PROFILES & RECOVERY", group = "SYSTEM", icon = Theme.Assets.NavActions },
 }
 local PANE_CONTEXT = {
-    SETUP = "GENERAL", NORTHERNSKY = "ADDONS",
+    NORTHERNSKY = "ADDONS",
     CONTENT = "COOLDOWNS", HUD = "COOLDOWNS", SCANNING = "COOLDOWNS", ACTIONS = "COOLDOWNS",
 }
 local COOLDOWN_TABS = {
@@ -347,12 +346,22 @@ local function CreateToggle(parent, labelText, description, getter, setter)
         SetSurfaceColor(self, TC.surfaceHover)
     end)
     row:SetScript("OnLeave", function(self)
-        SetSurfaceColor(self, TC.surfaceRaised)
+        SetSurfaceColor(self, self.compactColor or TC.surfaceRaised)
     end)
     row:SetScript("OnClick", function()
         setter(not getter())
         row:Refresh()
     end)
+
+    function row:SetCompact(alternate)
+        self.compactColor = alternate and TC.surfaceRaised or TC.surface
+        SetHeight(self, 44)
+        Backdrop(self, self.compactColor, TC.transparent, 2, false)
+        self.description:Hide()
+        self.title:ClearAllPoints()
+        SetPoint(self.title, "LEFT", self, "LEFT", 14, 0)
+        SetPoint(self.title, "RIGHT", self, "RIGHT", -66, 0)
+    end
 
     function row:Refresh()
         local enabled = getter() and true or false
@@ -1436,29 +1445,28 @@ local function CreateSecureTestButton(parent, label, macroText, width)
 end
 
 local function CreateQuickBarPane(parent)
-    CreateHeading(parent, "Quick Bar", "Raid setup controls stay tucked away until you hover the checkmark puck.")
+    CreateHeading(parent, "Quick Bar", "")
 
-    local leftCard = CreateCard(parent, "QUICK BAR", "Everything about the launcher and its flyout lives here.")
-    SetSize(leftCard, 456, 598)
-    SetPoint(leftCard, "TOPLEFT", parent, "TOPLEFT", 0, -62)
-
-    local rightTop = CreateCard(parent, "BEHAVIOR", "Fast when you want it; unobtrusive when you do not.", Theme.Assets.GradientBerry)
-    SetSize(rightTop, 476, 278)
-    SetPoint(rightTop, "TOPRIGHT", parent, "TOPRIGHT", 0, -62)
-
-    local rightBottom = CreateCard(parent, "MOVE QUICK BAR", "The puck has its own saved position, separate from the HUD.")
-    SetSize(rightBottom, 476, 302)
-    SetPoint(rightBottom, "BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
-
-    local toolboxToggle = CreateToggle(leftCard, "Enable Quick Bar", "Independent raid dock. Privileged actions require lead or assist.",
+    local leftCard = CreateFrame("Frame",nil,parent)
+    SetSize(leftCard,918,500);SetPoint(leftCard,"TOPLEFT",parent,"TOPLEFT",0,-62)
+    local function Help(control,detail)
+        control:EnableMouse(true)
+        control:HookScript("OnEnter",function(owner)
+            GameTooltip:SetOwner(owner,"ANCHOR_RIGHT");GameTooltip:SetText("Quick Bar")
+            GameTooltip:AddLine(detail,0.76,0.80,0.86,true);GameTooltip:Show()
+        end)
+        control:HookScript("OnLeave",function()GameTooltip:Hide()end)
+    end
+    local toolboxToggle = CreateToggle(leftCard, "Quick Bar", "Independent raid dock. Privileged actions require lead or assist.",
         function() return RA:GetDB().leaderToolbox.enabled == true end,
         function(value)
             RA:SetQuickBarEnabled(value)
             if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
         end)
-    SetPoint(toolboxToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -64)
-    SetWidth(toolboxToggle, 420)
-    SetHeight(toolboxToggle, 44)
+    SetPoint(toolboxToggle, "TOPLEFT", leftCard, "TOPLEFT", 0, 0)
+    SetWidth(toolboxToggle, 451)
+    toolboxToggle:SetCompact(false)
+    Help(toolboxToggle,"Independent raid dock. Privileged actions require leader or assistant permission.")
 
     local nonLeaderToggle = CreateToggle(leftCard, "Show when not Leader/Assist", "Also show the dock to ordinary raid members.",
         function() return RA:GetDB().leaderToolbox.showForNonLeaders ~= false end,
@@ -1466,9 +1474,10 @@ local function CreateQuickBarPane(parent)
             RA:GetDB().leaderToolbox.showForNonLeaders = value
             if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
         end)
-    SetPoint(nonLeaderToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -112)
-    SetWidth(nonLeaderToggle, 420)
-    SetHeight(nonLeaderToggle, 44)
+    SetPoint(nonLeaderToggle, "TOPLEFT", leftCard, "TOPLEFT", 467, 0)
+    SetWidth(nonLeaderToggle, 451)
+    nonLeaderToggle:SetCompact(false)
+    Help(nonLeaderToggle,"Also show the dock to ordinary raid members.")
 
     local missingToggle = CreateToggle(leftCard, "Missing provider classes", "Defaults on each time Quick Bar is enabled. You can turn it off here.",
         function() return RA:GetDB().leaderToolbox.showMissing ~= false end,
@@ -1476,9 +1485,10 @@ local function CreateQuickBarPane(parent)
             RA:GetDB().leaderToolbox.showMissing = value
             if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.Refresh then RA.RaidLeaderToolbox:Refresh() end
         end)
-    SetPoint(missingToggle, "TOPLEFT", leftCard, "TOPLEFT", 18, -160)
-    SetWidth(missingToggle, 420)
-    SetHeight(missingToggle, 44)
+    SetPoint(missingToggle, "TOPLEFT", leftCard, "TOPLEFT", 0, -52)
+    SetWidth(missingToggle, 451)
+    missingToggle:SetCompact(true)
+    Help(missingToggle,"Defaults on each time Quick Bar is enabled. Checks provider classes, not active auras or cooldown availability.")
 
     local direction = CreateSegmented(leftCard, "FLYOUT DIRECTION", {
         {label = "AUTO", value = "AUTO"},
@@ -1490,9 +1500,9 @@ local function CreateQuickBarPane(parent)
         RA:GetDB().leaderToolbox.flyoutDirection = value
         if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.RefreshGeometry then RA.RaidLeaderToolbox:RefreshGeometry() end
     end)
-    SetPoint(direction, "TOPLEFT", leftCard, "TOPLEFT", 18, -216)
-    SetSize(direction, 420, 54)
-    direction:Layout(420)
+    SetPoint(direction, "TOPLEFT", leftCard, "TOPLEFT", 467, -52)
+    SetSize(direction, 451, 54)
+    direction:Layout(451)
 
     local puckSize = CreateSlider(leftCard, "PUCK SIZE", 24, 44, 1,
         function() return RA:GetDB().leaderToolbox.puckSize or 30 end,
@@ -1501,48 +1511,35 @@ local function CreateQuickBarPane(parent)
             if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.RefreshGeometry then RA.RaidLeaderToolbox:RefreshGeometry() end
         end,
         function(value) return string.format("%d px", value) end)
-    SetPoint(puckSize, "TOPLEFT", leftCard, "TOPLEFT", 18, -282)
-    SetWidth(puckSize, 420)
+    SetPoint(puckSize, "TOPLEFT", leftCard, "TOPLEFT", 0, -120)
+    SetWidth(puckSize, 451)
 
     local tooltipDelay = CreateSlider(leftCard, "TOOLTIP DELAY", 0.20, 2.50, 0.10,
         function() return RA:GetDB().leaderToolbox.tooltipDelay or 0.75 end,
         function(value) RA:GetDB().leaderToolbox.tooltipDelay = value end,
         function(value) return string.format("%.1f s", value) end)
-    SetPoint(tooltipDelay, "TOPLEFT", leftCard, "TOPLEFT", 18, -338)
-    SetWidth(tooltipDelay, 420)
+    SetPoint(tooltipDelay, "TOPLEFT", leftCard, "TOPLEFT", 467, -120)
+    SetWidth(tooltipDelay, 451)
 
     local closeDelay = CreateSlider(leftCard, "MOUSE-OUT CLOSE DELAY", 0.15, 3.00, 0.05,
         function() return RA:GetDB().leaderToolbox.closeDelay or 1.0 end,
         function(value) RA:GetDB().leaderToolbox.closeDelay = value end,
         function(value) return string.format("%.1f s", value) end)
-    SetPoint(closeDelay, "TOPLEFT", leftCard, "TOPLEFT", 18, -394)
-    SetWidth(closeDelay, 420)
+    SetPoint(closeDelay, "TOPLEFT", leftCard, "TOPLEFT", 0, -184)
+    SetWidth(closeDelay, 451)
 
     local countdownSeconds = CreateSlider(leftCard, "PUCK COUNTDOWN", 1, 60, 1,
         function() return RA:GetDB().leaderToolbox.countdownSeconds or 15 end,
         function(value) RA:GetDB().leaderToolbox.countdownSeconds = math.floor(value + 0.5) end,
         function(value) return string.format("%d s", value) end)
-    SetPoint(countdownSeconds, "TOPLEFT", leftCard, "TOPLEFT", 18, -450)
-    SetWidth(countdownSeconds, 420)
+    SetPoint(countdownSeconds, "TOPLEFT", leftCard, "TOPLEFT", 467, -184)
+    SetWidth(countdownSeconds, 451)
 
-    local resetDock = CreateButton(rightBottom, "RESET PUCK POSITION", 220, 34, function()
+    local resetDock = CreateButton(leftCard, "RESET PUCK POSITION", 220, 40, function()
         if RA.RaidLeaderToolbox and RA.RaidLeaderToolbox.ResetPosition then RA.RaidLeaderToolbox:ResetPosition() end
     end)
-    SetPoint(resetDock, "BOTTOMLEFT", rightBottom, "BOTTOMLEFT", 20, 24)
-
-    local behaviorText = Font(rightTop, 10.0, TC.textSoft, "REGULAR")
-    behaviorText:SetWordWrap(true)
-    behaviorText:SetSpacing(5)
-    RA:SetVisualText(behaviorText, "• Hover: opens immediately\n• Left click puck: start configured countdown; click again to cancel\n• Mouse leaves: uses the close delay\n• Click elsewhere: closes immediately\n• Middle click puck: pin / unpin\n• Right click puck: start a ready check\n• Missing badge: hidden at 0, amber at 1–2, urgent at 3+")
-    SetPoint(behaviorText, "TOPLEFT", rightTop, "TOPLEFT", 20, -66)
-    SetWidth(behaviorText, 430)
-
-    local directionHelp = Font(rightBottom, 9.3, TC.textSoft, "REGULAR")
-    directionHelp:SetWordWrap(true)
-    directionHelp:SetSpacing(5)
-    RA:SetVisualText(directionHelp, "Enable Quick Bar to show its checkmark puck while in a raid. Provider coverage checks roster classes, not active auras or cooldown availability.\n\nOutside combat, hold the left mouse button and drag the puck to move it. Dragging does not start a countdown.\n\nReset below changes only the puck position. Move the HUD under Available Cooldowns > Display & Position.")
-    SetPoint(directionHelp, "TOPLEFT", rightBottom, "TOPLEFT", 20, -66)
-    SetWidth(directionHelp, 430)
+    SetPoint(resetDock,"TOPLEFT",leftCard,"TOPLEFT",0,-260)
+    Help(resetDock,"Resets only the Quick Bar puck. Outside combat, hold left mouse and drag the puck to move it. Dragging does not start a countdown.")
 end
 
 local function CreateWorldMarkersPane(parent)
@@ -2027,6 +2024,7 @@ end
 
 local function SetTab(tabKey)
     if tabKey == "RAIDTOOLS" then tabKey = "ADDONS" end
+    if tabKey == "SETUP" then tabKey = "GENERAL" end
     local navigation = Navigation()
     if tabKey == "COOLDOWNS" then
         tabKey = PANE_CONTEXT[navigation.cooldownTab] == "COOLDOWNS" and navigation.cooldownTab or "CONTENT"
@@ -2035,7 +2033,7 @@ local function SetTab(tabKey)
     if tabKey == "GENERAL" then RA.Setup:PresentIntroduction() end
     if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
     activeTab = tabKey
-    if tabKey ~= "SETUP" then navigation.lastTab = tabKey end
+    navigation.lastTab = tabKey
     if PaneContext(tabKey) == "COOLDOWNS" then navigation.cooldownTab = tabKey end
     for key, pane in pairs(panes) do
         pane:SetShown(key == tabKey or (key == "COOLDOWNS" and PaneContext(tabKey) == "COOLDOWNS"))
@@ -2064,7 +2062,6 @@ RefreshConfig = function()
         return
     end
     if RefreshGeneral and panes.GENERAL and panes.GENERAL:IsVisible() then RefreshGeneral() end
-    if RefreshSetup and panes.SETUP and panes.SETUP:IsVisible() then RefreshSetup() end
     if RefreshRaidGroups and panes.RAIDGROUPS and panes.RAIDGROUPS:IsVisible() then RefreshRaidGroups() end
     RefreshVisibleControls()
     if panes.CONTENT and panes.CONTENT:IsVisible() then RefreshCategoryRows(); RefreshAbilityList(false) end
@@ -2242,12 +2239,7 @@ local function CreateConfig()
     RA:SetVisualText(version, "v" .. RA.VERSION)
     SetPoint(version, "TOPLEFT", title, "BOTTOMLEFT", 0, -3)
 
-    local subtitle = Font(sidebar, 10.0, TC.textSoft, "REGULAR")
-    RA:SetVisualText(subtitle, "Morning Brew for your raid.\nA quiet hub. Tools you choose.")
-    subtitle:SetSpacing(2)
-    SetPoint(subtitle, "TOPLEFT", sidebar, "TOPLEFT", 18, -84)
-
-    local navTop, navGroup = -126, nil
+    local navTop, navGroup = -88, nil
     for i = 1, #TAB_DEFS do
         local definition = TAB_DEFS[i]
         if definition.group ~= navGroup then
@@ -2320,8 +2312,6 @@ local function CreateConfig()
         pane:Hide()
         panes[TAB_DEFS[i].key] = pane
     end
-    panes.SETUP = CreateFrame("Frame", nil, content)
-    panes.SETUP:SetAllPoints(content);panes.SETUP:Hide()
     for key in pairs(PANE_CONTEXT) do
         if key == "NORTHERNSKY" then
             local pane = CreateFrame("Frame", nil, content)
@@ -2332,11 +2322,18 @@ local function CreateConfig()
     end
 
     local cooldownHost = panes.COOLDOWNS
-    CreateHeading(cooldownHost, "Available Cooldowns", "Shows which raid members can provide each ability. Cooldown use and remaining time aren't tracked.")
-    local master = CreateToggle(cooldownHost, "Enable Available Cooldowns — HUD & inspection",
-        "Off stops this HUD and inspection. Quick Bar remains independent.",
+    CreateHeading(cooldownHost, "Available Cooldowns", "")
+    local master = CreateToggle(cooldownHost, "Available Cooldowns",
+        "",
         function() return RA:IsHUDEnabled() end,
         function(value) RA:SetHUDEnabled(value); RefreshConfig() end)
+    master:SetCompact(false)
+    master:HookScript("OnEnter", function(owner)
+        GameTooltip:SetOwner(owner,"ANCHOR_RIGHT");GameTooltip:SetText("Available Cooldowns")
+        GameTooltip:AddLine("Enables the HUD and inspection to show ability providers. Provider ownership is static; cooldown use and remaining time are not tracked.",0.76,0.80,0.86,true)
+        GameTooltip:Show()
+    end)
+    master:HookScript("OnLeave",function()GameTooltip:Hide()end)
     SetPoint(master, "TOPLEFT", cooldownHost, "TOPLEFT", 0, -58)
     SetWidth(master, 950)
     local tabX = 0
@@ -2365,11 +2362,8 @@ local function CreateConfig()
         Refresh = function() RefreshConfig() end,
     })
     RefreshGeneral = RA:CreateGeneralPane(panes.GENERAL, {
-        Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading, Refresh = function() RefreshConfig() end,
-    })
-    RefreshSetup = RA:CreateSetupPane(panes.SETUP, {
-        Font = Font, Button = CreateButton, Card = CreateCard, Heading = CreateHeading,
-        Toggle = CreateToggle, Slider = CreateSlider, Segmented = CreateSegmented, Refresh = function() RefreshConfig() end,
+        Font = Font, Button = CreateButton, Heading = CreateHeading, Toggle = CreateToggle, Backdrop = Backdrop,
+        Refresh = function() RefreshConfig() end,
     })
 
     RefreshRaidGroups = RA:CreateRaidGroupsPane(panes.RAIDGROUPS, {
@@ -2387,15 +2381,9 @@ local function CreateConfig()
     SetPoint(previewAll,"LEFT",footer,"LEFT",12,0)
     local moveAll = CreateButton(footer, "MOVE ALL", 144, 42, function()RA:BeginGlobalPlacement("MOVE")end,false,Theme.Assets.IconTarget)
     SetPoint(moveAll,"LEFT",previewAll,"RIGHT",10,0)
-    local setup = CreateButton(footer,"RESUME REVIEW",156,42,function()RA:OpenSetup()end)
-    SetPoint(setup,"LEFT",moveAll,"RIGHT",10,0)
-    setup.owner=footer
-    setup.Refresh=function(self)self:SetShown(RA.Setup:HasDraft() and activeTab~="SETUP" and activeTab~="GENERAL")end
-    RegisterControl(setup)
-
     statusText = Font(footer, 9.3, TC.textSoft, "REGULAR")
     statusText:SetJustifyH("RIGHT")
-    SetPoint(statusText, "LEFT", setup, "RIGHT", 16, 0)
+    SetPoint(statusText, "LEFT", moveAll, "RIGHT", 16, 0)
     SetPoint(statusText, "RIGHT", footer, "RIGHT", -18, 0)
 
     local function FitToScreen()
@@ -2411,19 +2399,6 @@ local function CreateConfig()
         FitToScreen()
         SetTab(activeTab)
     end)
-    frame:HookScript("OnHide",function()
-        -- All addon-driven hides carry an intent. A native Escape from
-        -- UISpecialFrames has no intent; ancestor hides leave IsShown true.
-        local userDismiss=frame.__rcpHideIntent=="USER" or (frame.__rcpHideIntent==nil and not frame:IsShown())
-        if userDismiss and not RA.Placement:IsActive() then
-            -- Clearing an active editor may synchronously route its empty pane
-            -- to General. User dismissal must retain the last ordinary page.
-            local closingReview=activeTab=="SETUP"
-            local ordinary=Navigation().lastTab or "GENERAL"
-            RA.Setup:Dismiss()
-            if closingReview then activeTab=ordinary;Navigation().lastTab=ordinary end
-        end
-    end)
     if type(UISpecialFrames)=="table" then table.insert(UISpecialFrames,"RCPArsenalConfig") end
 end
 
@@ -2434,15 +2409,14 @@ function RA:OpenConfig(tabKey)
     end
     if self.Placement:IsActive() then self.Placement:Cancel("Arsenal opened",true) end
     placementReturnPending = nil
-    local previous = activeTab
     local requested = tabKey
     if requested == nil then
         requested = self.Setup:IsFirstRunPending() and "GENERAL" or Navigation().lastTab
         if requested == "SETUP" then requested = "GENERAL" end
     end
+    if requested == "SETUP" then requested = "GENERAL" end
     activeTab = type(requested) == "string" and requested or "GENERAL"
     if activeTab == "GENERAL" then self.Setup:PresentIntroduction() end
-    if activeTab == "SETUP" then self.Setup:Begin(previous) end
     if not frame then
         CreateConfig()
     end
@@ -2452,10 +2426,8 @@ function RA:OpenConfig(tabKey)
 end
 
 function RA:OpenSetup()
-    if InCombatLockdown() then self:Print("Open Setup after combat.");return false end
-    self.Setup:Begin(activeTab)
-    self:OpenConfig("SETUP")
-    return true
+    self:OpenConfig("GENERAL") -- compatibility for /rcp setup and old callers
+    return not InCombatLockdown()
 end
 
 function RA:BeginGlobalPlacement(mode)
@@ -2470,14 +2442,10 @@ function RA:BeginGlobalPlacement(mode)
     return ok,reason
 end
 
-RA:RegisterCallback("SETUP_CHANGED",function()
-    if frame and activeTab=="SETUP" and not RA.Setup:HasDraft() then SetTab("GENERAL")
-    elseif frame and frame:IsShown() then RefreshConfig() end
-end)
 local function RestoreAfterPlacement()
     if placementReturnPending and not InCombatLockdown() and not RA.InEncounter and not (IsEncounterInProgress and IsEncounterInProgress()) then
         placementReturnPending=nil;RA:OpenConfig(activeTab)
-    elseif frame and frame:IsShown() and panes.SETUP:IsVisible() then RefreshConfig() end
+    elseif frame and frame:IsShown() then RefreshConfig() end
 end
 RA:RegisterEvent("PLAYER_REGEN_DISABLED",RestoreAfterPlacement)
 RA:RegisterEvent("PLAYER_REGEN_ENABLED",RestoreAfterPlacement)

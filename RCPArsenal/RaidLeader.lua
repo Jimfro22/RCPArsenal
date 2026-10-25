@@ -2063,6 +2063,7 @@ CreateToolbox = function()
             local hasAccess = IsLeaderOrAssistant()
             local restricted = hasAccess and 0.82 or 0.50
             GameTooltip:AddLine(string.format("Left click: %ds countdown / cancel", seconds), restricted, hasAccess and 0.87 or 0.52, hasAccess and 0.94 or 0.56)
+            GameTooltip:AddLine("Outside combat: hold left mouse and drag to move", 0.82, 0.87, 0.94, true)
             GameTooltip:AddLine("Middle click: pin / unpin", 0.82, 0.87, 0.94)
             GameTooltip:AddLine("Right click: ready check", restricted, hasAccess and 0.87 or 0.52, hasAccess and 0.94 or 0.56)
             if not hasAccess then

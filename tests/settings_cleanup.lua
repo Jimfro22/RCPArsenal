@@ -18,128 +18,141 @@ local function quiet(h,before)
     local after=h.metrics()
     check(after.sent==before.sent and after.inspects==before.inspects and after.talents==before.talents,'Navigation performed optional group work')
 end
--- New neutral opens General once, without staging, starting tools or polling.
+-- General is an immediate local settings surface, without a staged editor.
 local h,RA=prepared();local before=h.metrics()
 RA:OpenConfig()
-check(h:visible('General') and h:visible('Welcome to Arsenal. Turn on only the tools you want.'),'Fresh overview introduction missing')
-check(not RA.Setup:HasDraft() and h.env.RaidArsenalDB.navigation.lastTab=='GENERAL','Overview started/stored editor')
+check(h:visible('General') and h:control('Auto resurrection') and h:control('Consumable reminder')
+    and h:control('Quick Bar') and h:control('Available Cooldowns'),'General masters missing')
+check(not RA.Setup:HasDraft() and RA.Setup.Save==nil and not h:button('REVIEW CHOICES') and not h:button('RESUME REVIEW'),'Retired review remains reachable')
 quiet(h,before)
 local timerCount=#h.timers
-h:disclose('Morning Brew addons')
-check(#h.timers==timerCount,'Local addon disclosure started polling')
-for _,entry in ipairs(RA.AddonCatalog.Entries)do if not entry.internal then
-    local chip=h:button(entry.name..'\n');check(chip and chip.label.text:find(entry.priority,1,true),'Team addon/priority/local status missing: '..entry.name)
-    chip:Fire('OnClick');check(h:click('CLOSE'),'Addon link modal missing')
-end end
+h:control('Auto resurrection'):Fire('OnClick')
+check(RA:GetDB().personalTools.autoRes and not RA:GetDB().personalTools.autoResInCombat and #h.timers==timerCount,'General res required Apply or replayed an offer')
+h:control('Auto resurrection'):Fire('OnClick')
+local scans=0;RA.ScheduleInspectionScan=function()scans=scans+1 end
+h:control('Available Cooldowns'):Fire('OnClick')
+check(RA:IsHUDEnabled() and scans==1,'HUD immediate activation did not use its setter')
+h:control('Available Cooldowns'):Fire('OnClick')
+RA:GetDB().leaderToolbox.showMissing=false
+h:control('Quick Bar'):Fire('OnClick')
+check(RA:GetDB().leaderToolbox.enabled and RA:GetDB().leaderToolbox.showMissing,'Quick Bar activation lost existing provider default')
+RA:GetDB().leaderToolbox.showMissing=false;RA:OpenConfig('GENERAL')
+check(not RA:GetDB().leaderToolbox.showMissing,'Refresh reset an enabled child choice')
+h:control('Quick Bar'):Fire('OnClick')
+h.setCombat(true);h:control('Available Cooldowns'):Fire('OnClick')
+check(not RA:IsHUDEnabled() and h:visible('Change this after combat.'),'Rejected General setting was silent or queued')
+h:control('Quick Bar'):Fire('OnClick')
+check(not RA:GetDB().leaderToolbox.enabled and h:visible('Change this after combat.'),'Rejected Quick Bar change was silent or applied')
+local optionSetter=RA.PersonalTools.SetOption
+RA.PersonalTools.SetOption=function()return false,'Profile unavailable.'end
+h:control('Auto resurrection'):Fire('OnClick')
+check(not RA:GetDB().personalTools.autoRes and h:visible('Profile unavailable.'),'Unavailable Personal parent silently failed')
+RA.PersonalTools.SetOption=optionSetter
+h.setCombat(false);h.event('PLAYER_REGEN_ENABLED')
+check(not RA:IsHUDEnabled(),'Combat end applied a rejected setting')
 quiet(h,before)
-check(h:click('SKIP FOR NOW') and not RA.Setup:HasDraft() and h.env.RaidArsenalDB.setup.completed,'Overview Skip did not dismiss onboarding')
-check(h.env.RaidArsenalDB.setup.role=='RAIDER' and not RA:IsHUDEnabled(),'Overview Skip changed role or HUD')
-RA:OpenConfig('MYTOOLS');check(h:click('RESUME REVIEW')==nil,'Permanent Setup/review shelf action remains')
--- Every saved ordinary route reopens; a saved legacy editor is overview only.
-for _,tab in ipairs({'GENERAL','MYTOOLS','ADDONS','QUICKBAR','RAIDGROUPS','CONTENT','HUD','SCANNING','ACTIONS','WORLDMARKERS','SETTINGS','NORTHERNSKY','SETUP','invalid'}) do
-    h,RA=prepared({profile={schemaVersion=19},navigation={lastTab=tab,cooldownTab='HUD'}})
+-- Local addon states choose distinct routes, never a group version query.
+local report={byID={}};local localRefreshes=0
+local ids={'northernsky','rclootcouncil','simulationcraft','wowutils','autopotion','bigwigs'}
+local values={{true,true,true},{true,true,true},{true,false,true},{true,true,false},{false,false,false},{true,nil,true}}
+for i,id in ipairs(ids)do local v=values[i];report.byID[id]={installed=v[1],enabled=v[2],loaded=v[3]}end
+RA.AddonCatalog.GetLocalReport=function()return report end
+RA.AddonCatalog.RefreshLocal=function()localRefreshes=localRefreshes+1;return report end
+RA:OpenConfig('MYTOOLS');RA:OpenConfig('GENERAL')
+local addonRows={}
+for _,o in ipairs(h.objects)do if o.state and o:IsVisible()then addonRows[#addonRows+1]=o end end
+check(#addonRows==6 and h:visible('Morning Brew addons') and not h:button('Morning Brew addons'),'Addon rows are collapsed or incomplete')
+local function RowButton(row)for _,o in ipairs(h.objects)do if o.parent==row and o.label then return o end end end
+local expected={'Setup','Details','How to enable','Details','Get addon','Check again'}
+local hints={'verified Northern Sky','selected details','enabling this addon','selected details','install this addon outside WoW','Refresh local addon detection'}
+for i,row in ipairs(addonRows)do
+    local action=RowButton(row)
+    check(row:GetHeight()==42 and action.label.text==expected[i],'Wrong compact addon action '..i)
+    local lines={};local line=h.env.GameTooltip.AddLine
+    h.env.GameTooltip.AddLine=function(_,value)lines[#lines+1]=value end
+    action:Fire('OnEnter');action:Fire('OnLeave');h.env.GameTooltip.AddLine=line
+    check(table.concat(lines,' '):find(hints[i],1,true),'Child addon action lacks state-specific hover help '..i)
+end
+check(h:visible('Installed') and h:visible('Disabled · reload required') and h:visible('Not loaded') and h:visible('Missing') and h:visible('Unknown'),'Addon states conflated')
+RowButton(addonRows[1]):Fire('OnClick');check(h:visible('Northern Sky'),'Verified NSRT route failed')
+RA:OpenConfig('GENERAL');RowButton(addonRows[2]):Fire('OnClick')
+check(h:visible('Addons & versions') and h:visible('RCLootCouncil'),'Installed Details opened wrong addon')
+RA:OpenConfig('GENERAL');RowButton(addonRows[3]):Fire('OnClick')
+check(h:visible('How to enable Simulationcraft') and h:click('CLOSE'),'Disabled addon did not show enable guidance')
+RowButton(addonRows[4]):Fire('OnClick');check(h:visible('Addons & versions'),'Not-loaded addon was treated as missing')
+RA:OpenConfig('GENERAL');RowButton(addonRows[5]):Fire('OnClick')
+check(h:visible('AutoPotion — copy link to your browser') and h:click('CLOSE'),'Missing addon copy link failed')
+local count=localRefreshes;RowButton(addonRows[6]):Fire('OnClick')
+check(localRefreshes==count+1,'Unknown Check again did not use local metadata')
+quiet(h,before)
+-- All ordinary pages restore; both legacy setup entry points become General.
+for _,tab in ipairs({'GENERAL','MYTOOLS','ADDONS','QUICKBAR','RAIDGROUPS','CONTENT','HUD','SCANNING','ACTIONS','WORLDMARKERS','SETTINGS','NORTHERNSKY','SETUP','invalid'})do
+    h,RA=prepared({profile={schemaVersion=19},navigation={lastTab=tab,cooldownTab='HUD'},setup={completed=true,role='LEADER',returnTab='SETUP'}})
     RA:OpenConfig()
     local expected=(tab=='SETUP' or tab=='invalid') and 'GENERAL' or tab
-    check(h.env.RaidArsenalDB.navigation.lastTab==expected and not RA.Setup:HasDraft(),'Saved route migration failed: '..tab)
+    check(h.env.RaidArsenalDB.navigation.lastTab==expected and not RA.Setup:HasDraft(),'Saved routing failed: '..tab)
+    check(RA.Setup:GetRole()=='LEADER' and h.env.RaidArsenalDB.setup.returnTab==nil,'Role changed or legacy draft route retained')
     quiet(h,{sent=0,inspects=0,talents=0})
 end
-h,RA=prepared();h.env.SlashCmdList.RCPARSENAL('tools')
-check(h:visible('Personal Tools') and not RA.Setup:HasDraft(),'Fresh explicit tools deep link overridden')
-h:control('GENERAL'):Fire('OnClick');RA:OpenConfig('QUICKBAR');RA:CloseConfig('CONTEXT');RA:OpenConfig()
-check(h:visible('Quick Bar') and not RA.Setup:IsFirstRunPending(),'Sidebar General visit did not mark introduction presented')
-h.env.SlashCmdList.RCPARSENAL('general');check(h:visible('General') and not RA.Setup:HasDraft(),'General slash failed')
-h.env.SlashCmdList.RCPARSENAL('setup');check(RA.Setup:HasDraft() and h:visible('Review choices'),'Explicit setup slash did not begin review')
-check(h.env.RaidArsenalDB.navigation.lastTab=='GENERAL','Explicit setup polluted saved ordinary route')
-RA.Setup:Set('role','LEADER');RA.Setup:Set('hud',true);RA:OpenConfig('QUICKBAR')
-check(h:button('RESUME REVIEW') and RA.Setup:Get('hud'),'Paused review lost master/resume action')
-RA:OpenConfig('GENERAL');check(h:visible('Available Cooldowns · Off'),'General rendered paused master as saved')
-local resumeCount=0;for _,o in ipairs(h.objects)do if o.label and o.label.text=='RESUME REVIEW' and o:IsVisible()then resumeCount=resumeCount+1 end end
-check(resumeCount==1,'General duplicated its primary Resume action in the shelf')
-check(h:click('RESUME REVIEW') and RA.Setup:Get('role')=='LEADER','Resume lost role')
-check(h:click('SKIP FOR NOW') and h.env.RaidArsenalDB.setup.role=='RAIDER' and not RA:IsHUDEnabled(),'First review Skip saved role/master')
--- Replay Cancel and paused close discard role, preserving last ordinary page.
-h,RA=prepared({profile={schemaVersion=19},setup={completed=true,role='LEADER'},navigation={lastTab='HUD'}})
-RA:OpenConfig();RA:OpenSetup();check(RA.Setup:Get('role')=='LEADER' and not RA.Setup:IsFirstUseDraft(),'Saved replay role lost')
-RA.Setup:Set('role','RAIDER');RA.Setup:Set('reminder',true);RA:OpenConfig('MYTOOLS');RA:OpenSetup()
-check(RA.Setup:Get('reminder') and h:click('CANCEL'),'Replay Cancel missing')
-check(h.env.RaidArsenalDB.navigation.lastTab=='HUD' and h.env.RaidArsenalDB.setup.role=='LEADER'
-    and not RA:GetDB().personalTools.consumableReminder,'Cancel lost original return or saved role/master')
-RA:OpenSetup();RA.Setup:Set('role','RAIDER');RA:OpenConfig('QUICKBAR');RA:CloseConfig();RA:OpenConfig()
-check(h:visible('Quick Bar') and not RA.Setup:HasDraft() and h.env.RaidArsenalDB.setup.role=='LEADER','Paused user close did not discard/preserve role/last tab')
--- Closing while the editor itself is active retains the last ordinary page,
--- even though clearing its draft synchronously exits the empty editor.
-for _,ordinary in ipairs({'MYTOOLS','HUD','QUICKBAR'}) do
-    RA:OpenConfig(ordinary);RA:OpenSetup();RA.Setup:Set('role','RAIDER');RA:CloseConfig()
-    check(not RA.Setup:HasDraft() and h.env.RaidArsenalDB.navigation.lastTab==ordinary,'Active review close overwrote ordinary route '..ordinary)
-    RA:OpenConfig();check(h.env.RaidArsenalDB.navigation.lastTab==ordinary and not RA.Setup:HasDraft(),'Reopen recreated editor/lost route '..ordinary)
-end
-RA:OpenConfig('MYTOOLS');RA:OpenSetup();RA.ConfigFrame:Hide();RA:OpenConfig()
-check(h.env.RaidArsenalDB.navigation.lastTab=='MYTOOLS' and not RA.Setup:HasDraft(),'Unlabelled native Escape-style close lost ordinary page')
--- A child-only change is immediate and is not owned by the four-master review.
-RA:OpenSetup();RA.Setup:Set('role','LEADER');RA.Setup:Set('reminder',true)
-RA:GetDB().personalTools.healthThreshold=71;RA:GetDB().personalTools.reminderSound=false
-RA:GetDB().personalTools.reminderGlow.pixelLines=11;RA:GetDB().actions.leftClickMode='WHISPER'
-RA:GetDB().leaderToolbox.showMissing=false
-check(not RA.Setup:GetConflict() and h:click('SAVE CHOICES'),'Child-only edits incorrectly invalidated review')
-check(RA:GetDB().personalTools.healthThreshold==71 and not RA:GetDB().personalTools.reminderSound and RA:GetDB().personalTools.reminderGlow.pixelLines==11
-    and RA:GetDB().actions.leftClickMode=='WHISPER' and not RA:GetDB().leaderToolbox.showMissing,'Review overwrote a child choice')
-RA:OpenConfig('MYTOOLS');RA:OpenSetup();RA.Setup:Set('hud',true);RA:OpenConfig('MYTOOLS')
-RA.PersonalTools:SetOption('autoRes',true);RA:OpenSetup()
-check(RA.Setup:GetConflict() and not RA.Setup:Save(),'Conflicting master edit was silently overwritten')
-check(h:click('RELOAD CHOICES') and not RA.Setup:GetConflict() and RA.Setup:Get('autoRes') and not RA.Setup:Get('hud'),'Reload did not replace stale choices')
-check(h:click('CANCEL') and h:visible('Personal Tools'),'Reload lost original return destination')
--- Import invalidates even same-object notifications; full reset leaves no empty editor.
-RA:OpenSetup();RA.Setup:Set('hud',true)
-local imported=RA:CreateDefaultProfile()
-check(RA:ApplyImportedProfile(imported) and RA.Setup:HasDraft() and RA.Setup:GetConflict(),'Actual import silently cleared or accepted old draft')
-check(not RA.Setup:Save() and h:click('RELOAD CHOICES') and not RA.Setup:GetConflict(),'Imported profile lacks deliberate reload')
-RA:FireCallback('PROFILE_IMPORTED')
-check(RA.Setup:HasDraft() and RA.Setup:GetConflict(),'Same-object import callback did not invalidate review')
-check(h:click('CANCEL'),'Import conflict Cancel unavailable')
-RA:OpenSetup();RA.Setup:Set('hud',true);RA:ResetProfile()
-check(not RA.Setup:HasDraft() and h:visible('General') and not h:button('SAVE CHOICES'),'Full reset retained a Save-enabled empty review')
+h,RA=prepared({profile={schemaVersion=19,personalTools={autoResInCombat=true,reminderSound=false,healthThreshold=71,reminderGlow={style='PIXEL'}},actions={leftClickMode='WHISPER'},leaderToolbox={showMissing=false}},setup={completed=true,role='LEADER'}})
+RA:OpenConfig('MYTOOLS');check(not h:control('Also accept during combat'):IsEnabled() and RA.PersonalTools:GetState().autoResInCombat,'Parent OFF lost stored dependent choice')
+RA:OpenConfig('GENERAL');h:control('Auto resurrection'):Fire('OnClick')
+check(RA:GetDB().personalTools.autoRes and RA:GetDB().personalTools.autoResInCombat,'Immediate parent edit changed child')
+RA:OpenConfig('MYTOOLS');check(h:control('Also accept during combat'):IsEnabled(),'General parent did not update dependent control')
+h.env.SlashCmdList.RCPARSENAL('setup');check(h:visible('General') and not RA.Setup:HasDraft(),'Setup slash opened old editor')
+RA:OpenConfig('SETUP');RA:OpenConfig('QUICKBAR');check(not h:button('RESUME REVIEW'),'Footer resume remains')
+local imported=RA:CreateDefaultProfile();check(RA:ApplyImportedProfile(imported),'Import failed')
+check(RA:GetDB().personalTools.healthThreshold==71 and not RA:GetDB().personalTools.reminderSound and RA:GetDB().personalTools.reminderGlow.style=='PIXEL'
+    and RA:GetDB().actions.leftClickMode=='WHISPER' and not RA:GetDB().leaderToolbox.showMissing and RA.Setup:GetRole()=='LEADER','Navigation/import overwrote saved preferences')
+check(not RA.Setup:HasDraft() and not RA.Setup.Save,'Import recreated draft lifecycle')
+RA:ResetProfile();check(not RA:GetDB().personalTools.autoRes and not RA:GetDB().personalTools.autoResInCombat and not RA.Setup:HasDraft(),'Reset enabled optional behavior or editor')
 -- One scroll body, quiet default options; all accepted details remain reachable.
 h,RA=prepared({profile={schemaVersion=19,personalTools={consumableReminder=true,reminderStoneText='Use |Hitem:1|h[stone]|h',reminderGlow={style='PIXEL'}}},setup={completed=true}})
 RA:OpenConfig('MYTOOLS');before=h.metrics();timerCount=#h.timers
-check(h:control('HEALTH THRESHOLD') and h:control('WHEN TO SHOW'),'Visible basics missing')
-check(not h:control('ICON SIZE') and not h:control('Warning sound') and not h:control('Healthstone message'),'Details start expanded')
-local threshold=h:control('HEALTH THRESHOLD')
+check(h:control('Visual health threshold') and h:control('Show reminder'),'Visible basics missing')
+check(not h:control('ICON SIZE') and not h:control('Warning sound (35%)') and not h:control('Healthstone message'),'Details start expanded')
+local originalStatus=RA.PersonalTools.GetStatusText
+RA.PersonalTools.GetStatusText=function(self,key)if key=='consumableReminder' then return 'No supported healing item carried. Low-health visual: OUT OF POTIONS!' end;return originalStatus(self,key)end
+RA:FireCallback('PERSONAL_TOOLS_CHANGED');check(h:visible('No healing items carried.'),'Known empty inventory lost concise exception')
+RA.PersonalTools.GetStatusText=originalStatus;RA:FireCallback('PERSONAL_TOOLS_CHANGED')
+local threshold=h:control('Visual health threshold')
 local config=threshold.parent;local body=config.parent;local scroll=body.parent
 check(scroll.kind=='ScrollFrame' and scroll.child==body and body:GetWidth()==918,'Personal options lack one 918-wide scroll child')
 check(body:GetHeight()<=598,'Default Personal Tools needlessly overflows viewport')
+RA.PersonalTools:SetOption('autoRes',true);h.setCombat(true);h.event('RESURRECT_REQUEST');h.setCombat(false)
 local resReason
 for _,o in ipairs(h.objects)do if o.parent==body and o.kind=='FontString' and o.points[1] and o.text==RA.PersonalTools:GetStatusText('autoRes')then resReason=o end end
 check(resReason~=nil,'Resurrection reason missing')
 local metric=resReason.GetStringHeight;resReason.GetStringHeight=function()return 96 end
 RA:FireCallback('PERSONAL_TOOLS_CHANGED')
 check(-h:control('Consumable reminder').points[1][5]>=96+58,'Wrapped status did not move following section')
-resReason.GetStringHeight=metric;RA:FireCallback('PERSONAL_TOOLS_CHANGED')
-local appearance=h:disclose('Appearance · ')
+resReason.GetStringHeight=metric;RA.PersonalTools:SetOption('autoRes',false);RA:FireCallback('PERSONAL_TOOLS_CHANGED')
+local appearance=h:disclose('Appearance ')
 check(h:control('ICON SIZE') and h:control('TEXT SIZE') and h:control('EMPTY WARNING SIZE') and h:control('Glow at 35% or lower'),'Appearance omitted controls')
 h:disclose('Advanced glow')
 check(h:control('LINES') and h:control('THICKNESS') and body:GetHeight()>598,'Advanced Pixel controls do not extend scroll body')
 scroll:SetVerticalScroll(80)
 local lines=h:control('LINES');lines.slider:SetValue(10)
 check(h:control('LINES') and scroll:GetVerticalScroll()==80 and RA:GetDB().personalTools.reminderGlow.pixelLines==10,'Slider collapsed details or reset scroll')
-h:disclose('Messages · ')
+h:disclose('Messages ')
 check(not h:control('LINES') and h:control('Healthstone message'),'Messages did not close Appearance')
 check(scroll:GetVerticalScroll()==0,'Folding did not clamp old scroll range')
 local message=h:control('Healthstone message')
 check(message.box:GetText()=='Use |Hitem:1|h[stone]|h','Caption editor interpreted literal pipes')
 message.box:SetFocus();message.box:SetText('New | texture');message.box:Fire('OnEnterPressed')
 check(RA:GetDB().personalTools.reminderStoneText=='New | texture','Caption commit lost literal text')
-h:disclose('Sound · ')
-check(not h:control('Healthstone message') and h:control('Warning sound'),'Sound did not close Messages')
+h:disclose('Sound ')
+check(not h:control('Healthstone message') and h:control('Warning sound (35%)'),'Sound did not close Messages')
 check(h:click('Sound 6  v'),'Sound chooser missing')
 for _,choice in ipairs(RA.ReminderSounds:GetOptions())do check(h:button(choice.label),'Missing sound choice '..choice.label)end
 check(h:click('Built-in alert') and RA:GetDB().personalTools.reminderSoundChoice=='builtin_alert','Built-in option did not save')
-h:disclose('Item behavior · ')
-check(h:control('SHOW ITEMS') and not h:control('Warning sound'),'Item behavior did not close Sound')
+h:disclose('Item behavior ')
+check(h:control('SHOW ITEMS') and not h:control('Warning sound (35%)'),'Item behavior did not close Sound')
 local items=h:control('SHOW ITEMS');items.buttons[2].frame:Fire('OnClick')
 check(RA:GetDB().personalTools.reminderShowOnCooldown,'Any carried control failed')
 quiet(h,before);check(#h.timers==timerCount,'Detail edits started polling')
 -- Closing configuration removes owned picker sessions before it hides controls.
-h:disclose('Appearance · ');h:disclose('Advanced glow')
+h:disclose('Appearance ');h:disclose('Advanced glow')
 local picker={hides=0}
 function picker:Hide()self.hides=self.hides+1 end
 function picker:SetupColorPickerAndShow(info)self.swatchFunc=info.swatchFunc;self.cancelFunc=info.cancelFunc end

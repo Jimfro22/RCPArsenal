@@ -47,42 +47,12 @@ metrics=function()return {sent=sent,talents=talentReads,inspects=inspectCalls,at
 end
 
 local h=Lifecycle();local RA=h.RA
-check(not RA.ConfigFrame and not RA.Placement:IsActive(),'Fresh login opened setup or placement')
-check(h.metrics().frames==5 and h.metrics().sent==0 and h.metrics().inspects==0 and h.metrics().talents==0,'Fresh OFF setup added runtime frames/queries')
-RA:OpenConfig()
-check(h:visible('General') and not RA.Setup:HasDraft(),'Fresh General began a draft')
-check(h:click('REVIEW CHOICES') and h:visible('Review choices') and RA.Setup:HasDraft(),'Explicit review failed')
-RA.Setup:Set('role','LEADER');RA.Setup:Set('reminder',true)
-check(not RA:GetDB().hudEnabled and not RA:GetDB().personalTools.consumableReminder,'Staged role/master applied before Save')
-RA:OpenConfig('ADDONS')
-check(RA.Setup:HasDraft() and RA.Setup:Get('reminder'),'Sidebar navigation discarded draft')
-RA:OpenConfig('GENERAL')
-check(h:visible('Consumable reminder · Off') and h:click('RESUME REVIEW') and RA.Setup:Get('role')=='LEADER','Overview leaked draft or resume lost role')
-RA:OpenConfig('ADDONS');RA:CloseConfig();RA:OpenConfig()
-check(h:visible('Addons & versions') and not RA.Setup:HasDraft() and h.env.RaidArsenalDB.setup.completed,'User close of paused review retained draft/introduction')
-check(h.env.RaidArsenalDB.setup.role=='RAIDER' and not RA:GetDB().personalTools.consumableReminder,'Dismissal wrote draft role/master')
-
-h=Lifecycle({profile={schemaVersion=19,personalTools={reminderSound=false,reminderSoundChoice='sound_2',reminderSoundChannel='SFX',reminderSoundWhenEffectsMuted=true,reminderStoneGlow=false,reminderGlow={style='AUTOCAST',pixelLines=9,autocastGroups=6}},actions={leftClickMode='SAY'},leaderToolbox={enabled=false,showMissing=false}},navigation={lastTab='HUD'}});RA=h.RA
-RA:OpenConfig();check(h:visible('Display & Position'),'Existing OFF installation lost saved-tab behavior')
-RA:OpenSetup();check(not RA.Setup:IsFirstUseDraft() and RA.Setup:Get('reminder')==false,'Existing replay unexpectedly first use')
-RA.Setup:Set('role','LEADER');RA.Setup:Set('reminder',true);RA.Setup:Set('quickBar',true)
-local count,summary=RA.Setup:GetSummary()
-check(count==2 and summary:find('Consumable reminder',1,true) and summary:find('Quick Bar',1,true),'Setup summary misstated child/activation consequences')
-local ok,destination=RA.Setup:Save()
-check(ok and destination=='HUD' and RA:GetDB().personalTools.consumableReminder and RA:GetDB().leaderToolbox.enabled,'Reviewed choices failed to save/return')
-check(RA:GetDB().leaderToolbox.showMissing and not RA:IsHUDEnabled(),'Quick Bar enable lost provider default or enabled inspection')
-check(RA:GetDB().personalTools.reminderSoundChoice=='sound_2' and RA:GetDB().personalTools.reminderSoundChannel=='SFX' and RA:GetDB().personalTools.reminderSoundWhenEffectsMuted,'Setup changed unrelated saved sound selection/routing')
-check(RA:GetDB().personalTools.reminderGlow.style=='AUTOCAST' and RA:GetDB().personalTools.reminderGlow.pixelLines==9 and RA:GetDB().personalTools.reminderGlow.autocastGroups==6,'Setup overwrote saved appearance values')
-check(h.metrics().inspects==0 and h.metrics().sent==0,'Quick Bar-only setup inspected or communicated')
-RA:OpenConfig('ADDONS');RA:OpenSetup();RA.Setup:Set('hud',true)
-local scans=0;RA.ScheduleInspectionScan=function()scans=scans+1 end
-h.setCombat(true);check(not RA.Setup:Save() and not RA:IsHUDEnabled() and RA.Setup:Get('hud'),'Combat applied or discarded setup draft')
-h.setCombat(false);h.event('PLAYER_REGEN_ENABLED')
-check(not RA:IsHUDEnabled() and scans==0,'Combat end automatically saved setup')
-check(RA.Setup:Save() and RA:IsHUDEnabled() and scans==1,'Explicit HUD setup did not activate exactly once')
-RA.Setup:Begin('HUD');check(RA.Setup:Save() and scans==1,'Unchanged replay restarted inspection')
-RA.Setup:Begin('HUD');RA.Setup:Set('reminder',false);RA:GetDB().personalTools.autoRes=true
-check(not RA.Setup:Save() and RA:GetDB().personalTools.autoRes,'Stale Setup overwrote newer master')
+check(not RA.ConfigFrame and not RA.Placement:IsActive(),'Fresh login opened config or placement')
+check(h.metrics().frames==5 and h.metrics().sent==0 and h.metrics().inspects==0 and h.metrics().talents==0,'Fresh OFF added runtime frames/queries')
+RA:OpenSetup()
+check(h:visible('General') and not RA.Setup:HasDraft() and not RA.Setup.Save,'Legacy setup created an editor')
+RA:OpenConfig('MYTOOLS');RA:CloseConfig();RA:OpenConfig()
+check(h:visible('Personal Tools'),'Ordinary saved route failed')
 
 h=Lifecycle({profile={schemaVersion=19,position={point='TOPLEFT',relativePoint='TOPLEFT',x=124,y=-87},positionAnchorVersion=3,
 leaderToolbox={position={point='TOPLEFT',relativePoint='TOPLEFT',x=69,y=-211},positionAnchorVersion=3},
@@ -147,24 +117,22 @@ RA.RefreshHUDPosition=restore
 RA.Placement:Start('MOVE');h.event('DISPLAY_SIZE_CHANGED');check(not RA.Placement:IsActive() and RA:GetDB().position.x==901,'Viewport change saved or retained stale placement')
 RA.Placement:Start('MOVE');RA:ResetProfile();check(not RA.Placement:IsActive(),'Profile reset retained stale placement')
 
-h=Lifecycle();RA=h.RA;RA:OpenSetup();RA.Setup:Set('role','LEADER');RA.Setup:Set('reminder',true)
-check(RA:BeginGlobalPlacement('MOVE') and not RA.ConfigFrame:IsShown() and RA.Setup:HasDraft(),'Collapsing to placement discarded Setup')
+h=Lifecycle();RA=h.RA;RA:OpenConfig('MYTOOLS')
+check(RA:BeginGlobalPlacement('MOVE') and not RA.ConfigFrame:IsShown(),'Placement did not collapse config')
 h.named.RCPArsenalPlacementSession:Hide()
-check(RA.ConfigFrame:IsShown() and RA.Setup:Get('reminder')==true and not RA.Placement:IsActive(),'Escape/cancel did not restore the same draft/page')
+check(RA.ConfigFrame:IsShown() and h:visible('Personal Tools') and not RA.Placement:IsActive(),'Cancel did not restore the same page')
 RA:BeginGlobalPlacement('MOVE');RA.Placement:SetPosition('HUD',777,-222);local originalX=RA:GetDB().position.x
 h.setCombat(true);h.event('PLAYER_REGEN_DISABLED')
-check(not RA.Placement:IsActive() and RA:GetDB().position.x==originalX and RA.Setup:Get('reminder')==true,'Combat cancellation saved/cleared staged state')
+check(not RA.Placement:IsActive() and RA:GetDB().position.x==originalX,'Combat cancellation saved staged positions')
 h.setCombat(false);h.event('PLAYER_REGEN_ENABLED')
-check(RA.ConfigFrame:IsShown() and RA.Setup:Get('reminder')==true and RA:GetDB().personalTools.healthThreshold==40,'Safe UI restoration applied the Setup draft')
+check(RA.ConfigFrame:IsShown() and h:visible('Personal Tools') and RA:GetDB().personalTools.healthThreshold==40,'Safe UI restoration changed preferences')
 RA:GetDB().personalTools.reminderStoneText='Use |Hitem:1|h[stone]|h';RA:BeginGlobalPlacement('PREVIEW')
 check(h.named.RCPArsenalPlacementREMINDER.caption.text=='Use ||Hitem:1||h[stone]||h','Global reminder caption interpreted literal pipes')
 check(h.named.RCPArsenalPlacementREMINDER.caption.points[1][1]=='TOP' and h.named.RCPArsenalPlacementREMINDER.caption.points[1][3]=='BOTTOM','Reminder caption moved off its live below-anchor rule')
 RA.Placement:Cancel()
-h=Lifecycle();RA=h.RA;RA:OpenSetup();RA.Setup:Set('reminder',true)
-h.event('ENCOUNTER_START')
-check(RA.Setup:HasDraft() and RA.Setup:Get('reminder')==true and not h.env.RaidArsenalDB.setup.completed,'Automatic encounter hide dismissed/completed Setup')
-h.event('ENCOUNTER_END');RA:OpenConfig('SETUP')
-check(RA.Setup:Get('reminder')==true,'Encounter return lost the paused Setup draft')
+h=Lifecycle();RA=h.RA;RA:OpenConfig('GENERAL')
+h.event('ENCOUNTER_START');h.event('ENCOUNTER_END');RA:OpenConfig('SETUP')
+check(h:visible('General') and not RA.Setup:HasDraft() and not RA:GetDB().personalTools.consumableReminder,'Context return restored retired staged settings')
 
 -- A visible protected HUD must be restored by the native combat visibility
 -- driver, not an insecure Show during cancellation. Drivers exist only while

@@ -1,12 +1,12 @@
-# RCP Arsenal — 0.15.2-alpha.1
+# RCP Arsenal — 0.15.3-alpha.22
 
-Open **`/rcp`** for Morning Brew. The four sections are **Addons**, **My tools**, **Raid tools**, and **Settings**. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
+Open **`/rcp`** for Arsenal. General applies four tool switches immediately and shows local addon status/actions. Personal Tools follows it in the sidebar; raid tools, addon versions and Profiles & Recovery remain directly accessible. First neutral open shows General, then restores your last page. `/rcp setup` also opens General; there is no staged review or Save step. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
 
 ## Quiet startup
 
 Fresh and reset profiles start with optional tools off. The one-time schema-19 migration turns inherited HUD/demo/scan/Quick Bar/callout defaults off while retaining content choices, templates, appearance, and positions. Existing schema-18 world-marker opt-in and order are preserved. Choices you make after this migration persist.
 
-**My tools → Capability HUD + talent inspection** is the explicit inspection switch. Switching it off stops the scan queue. Quick Bar is independent and does not start scans. Opening settings or resetting an overlay position does not enable it. Imported profiles preserve local tool switches, positions, marker order, and addon comparison targets.
+**General → Available Cooldowns** is the explicit inspection switch. Switching it off stops the scan queue. Quick Bar is independent and does not start scans. Opening settings or resetting an overlay position does not enable it. Imported profiles preserve local tool switches, positions, marker order, and addon comparison targets.
 
 ## Inspections across reload and login
 
@@ -20,7 +20,7 @@ Use **`/rcp scan`** for holes, **`/rcp rescan`** or **Full Rescan** to confirm t
 
 The shelf detects Arsenal, Northern Sky Raid Tools, RCLootCouncil, Simulationcraft, WowUtils, AutoPotion, and BigWigs. Installed, configured enabled, loaded, and version are separate facts. An enabled addon may still be unloaded; an addon disabled pending reload may still be running. Links are for manual copying into your browser. Arsenal never installs or updates other addons.
 
-On **Raid tools**, select an addon, enter an exact local target, or deliberately capture your enabled addon versions. These account-local profile targets are your comparison baseline, not a claim about the latest web release or a shared guild policy. Capturing skips missing, disabled, and unknown versions without erasing previous targets.
+On **Addons & versions**, select an addon, enter an exact local target, or deliberately capture your enabled addon versions. These account-local profile targets are your comparison baseline, not a claim about the latest web release or a shared guild policy. Capturing skips missing, disabled, and unknown versions without erasing previous targets.
 
 A party/raid leader or assistant can click **Check group versions** outside combat and communication restrictions. Other players need Arsenal running to report their local metadata; their optional tools can all be off. Non-response is unknown, offline stays offline, and missing requires an explicit valid reply. Partial replies and unknown versions are not treated as success. Ordered numeric versions distinguish older/newer; suffixes and incompatible schemes use exact-match/different states. Snapshots expire visibly and roster changes invalidate remote results. No periodic network query runs.
 
@@ -36,7 +36,7 @@ Session restore is guarded against external changes. **Keep Current / Release Un
 
 ## Personal tools
 
-**Accept normal resurrection** is off by default. It requests acceptance only outside detected player, pet, group combat, and encounters, with a second safety check after deferral. Combat/encounter offers and unknown states stay manual. The event does not identify the offered spell; this is conservative combat exclusion, not universal battle-res spell classification.
+**Auto resurrection** is off by default. Its separate **Also accept during combat** option also defaults off and has no effect without the parent. With the child off, detected player, pet, group combat, encounters, and unknown combat state leave offers manual. With the child on, Arsenal can request acceptance during a pull or boss fight without classifying the offer's spell. It does not cast resurrection. Each future offer gets at most one guarded request; changing either preference or replacing a profile cancels pending work. Hardcore, invalid/unknown offers, life state, and applicable timed recovery delays remain guarded. A successful Lua call is only an acceptance request; actual client/server acceptance remains unverified in this owner test build. Native popups remain available if the request is rejected.
 
 **Healthstone / potion reminder** is an experimental, independent opt-in visual. It prefers a present, usable, ready Healthstone, then a known health potion. It uses a native health curve directly for alpha and performs no health-value arithmetic or branching in Lua. It never uses an item or presses a key. **Press your item/macro key yourself.** Dead/ghost/unknown life state suppresses the reminder. Unsupported or restricted item data shows nothing.
 

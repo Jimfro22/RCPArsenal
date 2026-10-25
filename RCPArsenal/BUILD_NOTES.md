@@ -1,3 +1,9 @@
+# 0.15.3-alpha.22 owner test candidate
+
+General now applies Personal and Raid tool switches immediately and shows all six Morning Brew addon rows with local state-specific actions. The staged Setup editor and Resume review footer are retired; legacy setup entry points open General. Personal Tools keeps collapsed reminder sections, short labels and hover help, and separates the editable visual threshold from fixed 35% sound/glow behavior.
+
+Auto resurrection gains a separate strict default-OFF combat opt-in. Settings affect future offers only, use request-generation cancellation, preserve reminder runtime state, and leave native manual popups intact. No offer spell classification, cast, retry loop, or native acceptance guarantee is provided. The optional Hardcore predicate may be absent on positively identified Retail; an existing predicate must still return readable false, and invalid namespaces or an omitted predicate with unknown flavor remain manual. Actual resurrection acceptance and UI fit remain Windows owner checks. No CurseForge release or tag is created.
+
 # RCP Arsenal v0.14.2-alpha.1 — Build Notes
 
 ## v0.14.2 optional world marker cycler
