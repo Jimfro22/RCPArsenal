@@ -6,10 +6,12 @@ local secret = setmetatable({}, {
     __div = function() error("secret arithmetic") end, __lt = function() error("secret comparison") end,
     __le = function() error("secret comparison") end, __tostring = function() error("secret conversion") end,
 })
+local directEvents,subscriptions
 local frames, timers, tickers, events, callbacks, initializers, items
 local healthCalls, itemCalls, scans, accepted, hidden, notices, now
 local combat, encounter, raid, grouped, groupCount, groupCombat, exists
 local cooldownCalls, usabilityCalls, cooldownError
+local hardcore, sickness, hasResTimer, recoveryCalls, offerCalls, resQueries
 local dead, petExistsUnknown, petCombatUnknown
 local offer, recovery, healthResult, healthError, itemError, healthRatio, reportedHealthRatio, nativeAlpha
 local profile, RA
@@ -35,8 +37,12 @@ function UnitAffectingCombat(unit)
     return groupCombat[unit] or false
 end
 function UnitIsDeadOrGhost(unit) check(unit == "player", "Life-state guard must use fixed player token"); return dead end
-function ResurrectGetOfferer() return offer end
-function GetCorpseRecoveryDelay() return recovery end
+function ResurrectGetOfferer() offerCalls=offerCalls+1;return offer end
+WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
+C_GameRules={IsHardcoreActive=function()resQueries=resQueries+1;return hardcore end}
+function ResurrectHasSickness()resQueries=resQueries+1;return sickness end
+function ResurrectHasTimer()resQueries=resQueries+1;return hasResTimer end
+function GetCorpseRecoveryDelay() recoveryCalls=recoveryCalls+1;return recovery end
 function AcceptResurrect() accepted = accepted + 1 end
 function StaticPopup_Hide(name) hidden[#hidden + 1] = name end
 function GetTime() return now end
@@ -241,10 +247,12 @@ local coreTextChunk = assert(loadfile("RCPArsenal/Core.lua"))
 setfenv(coreTextChunk, coreTextEnv); coreTextChunk("RCPArsenal", coreTextRA)
 local function loadTools(settings)
     frames, timers, tickers, events, callbacks, initializers, items = {}, {}, {}, {}, {}, {}, {}
+    directEvents,subscriptions={},{}
     nativeGroups,nativeTracks,nativeTextures=0,0,0
     healthCalls, itemCalls, scans, accepted, hidden, notices, now = 0, 0, 0, 0, {}, 0, 100
     combat, encounter, raid, grouped, groupCount, groupCombat, exists = false, false, false, false, 0, {}, {}
     dead, petExistsUnknown, petCombatUnknown = false, false, false
+    hardcore,sickness,hasResTimer,recoveryCalls,offerCalls,resQueries=false,false,true,0,0,0
     offer, recovery, healthResult, healthError, itemError = "Healer", 0, secret, false, false
     healthRatio, reportedHealthRatio, nativeAlpha = .35, nil, nil
     cooldownCalls, usabilityCalls, cooldownError = 0, 0, false
@@ -262,6 +270,7 @@ local function loadTools(settings)
         end,
         RegisterOptionalEvent = function(_, name, fn)
             local entry = {enabled=false, SetEnabled=function(self,value) self.enabled=value==true end}
+            directEvents[name],subscriptions[name]=fn,entry
             events[name]=function(...) if entry.enabled then return fn(...) end end
             return entry
         end,
@@ -295,11 +304,11 @@ check(#frames == 0 and #timers == 0 and #tickers == 0 and itemCalls == 0 and hea
 for name, fn in pairs(events) do fn(name, "player") end
 check(#frames == 0 and #timers == 0 and #tickers == 0 and itemCalls == 0 and scans == 0,
     "Disabled event handlers must do no work")
+dead=true
 check(tools:SetOption("autoRes", true), "Normal res enable failed")
-events.RESURRECT_REQUEST(); check(#timers == 1 and accepted == 0, "Res must defer popup cleanup one frame")
+events.RESURRECT_REQUEST(); check(#timers == 1 and accepted == 0, "Res must defer the acceptance request one frame")
 runTimers()
-check(accepted == 1 and table.concat(hidden, ",") == "RESURRECT,RESURRECT_NO_SICKNESS,RESURRECT_NO_TIMER",
-    "Normal res acceptance or popup cleanup failed")
+check(accepted == 1 and #hidden == 0, "Res request must preserve native manual popups")
 check(#frames == 0 and #tickers == 0, "Auto res must not start the visual")
 for _, state in ipairs({ "combat", "encounter", "party", "raid", "pet", "local pet", "secret pet existence",
     "unknown pet existence", "secret pet combat", "unknown pet combat", "secret", "unknown" }) do
@@ -318,7 +327,7 @@ for _, state in ipairs({ "combat", "encounter", "party", "raid", "pet", "local p
     elseif state == "secret" then combat = secret
     elseif state == "unknown" then encounter = nil end
     events.RESURRECT_REQUEST(); runTimers()
-    check(accepted == 1 and #hidden == 3, "Battle/unknown res must stay manual: " .. state)
+    check(accepted == 1 and #hidden == 0, "Battle/unknown res must stay manual: " .. state)
 end
 combat, encounter, raid, grouped, exists, groupCombat = false, false, false, false, {}, {}
 petExistsUnknown, petCombatUnknown = false, false
@@ -341,6 +350,173 @@ check(accepted == 1, "Secret offer must remain manual")
 offer = ""
 events.RESURRECT_REQUEST(); runTimers()
 check(accepted == 1, "Missing offer must remain manual")
+
+-- Combat opt-in affects future offers only and bypasses combat classification.
+offer,recovery,hardcore,sickness,hasResTimer="Healer",0,false,false,true
+check(tools:SetOption("autoResInCombat",true) and accepted==1 and active(timers)==0,"Child checkbox replayed an old offer")
+for _,case in ipairs({"player","encounter","local pet","party","raid","party pet","raid pet","unknown"}) do
+    combat,encounter,raid,grouped,exists,groupCombat=false,false,false,false,{},{}
+    if case=="player" then combat=true
+    elseif case=="encounter" then encounter=true
+    elseif case=="local pet" then exists.pet=true;groupCombat.pet=true
+    elseif case=="party" then grouped=true;exists.party2=true;groupCombat.party2=true
+    elseif case=="raid" then raid=true;grouped=true;groupCount=40;exists.raid40=true;groupCombat.raid40=true
+    elseif case=="party pet" then grouped=true;exists.partypet1=true;groupCombat.partypet1=true
+    elseif case=="raid pet" then raid=true;groupCount=20;exists.raidpet20=true;groupCombat.raidpet20=true
+    else combat,encounter,exists.pet=secret,nil,secret end
+    local before,combatReads=accepted,scans
+    events.RESURRECT_REQUEST();runTimers()
+    check(accepted==before+1 and scans==combatReads and #hidden==0,"Combat opt-in scanned/blocked combat or hid manual controls: "..case)
+end
+combat,encounter,raid,grouped,exists,groupCombat=false,false,false,false,{},{}
+local originalCombat=InCombatLockdown
+InCombatLockdown=function()error("Explicit opt-in must not classify combat")end
+events.RESURRECT_REQUEST();runTimers();InCombatLockdown=originalCombat
+check(tools:GetStatusText("autoRes"):find("acceptance requested",1,true),"Non-throwing call was not labelled request-only")
+-- The dialog timer policy follows sickness precedence, never spell type.
+local originalDelay,originalTimer=GetCorpseRecoveryDelay,ResurrectHasTimer
+for _,delay in ipairs({5,-1,secret,0/0,math.huge,-math.huge,"0",{}}) do
+    local before=accepted;recovery=delay;sickness,hasResTimer=false,true
+    events.RESURRECT_REQUEST();runTimers();check(accepted==before,"Invalid applicable recovery delay accepted")
+end
+for _,noTimerAPI in ipairs({"positive","missing","throwing"})do
+    local before,queries=accepted,recoveryCalls;sickness,hasResTimer,recovery=false,false,25
+    if noTimerAPI=="missing" then GetCorpseRecoveryDelay=nil
+    elseif noTimerAPI=="throwing" then GetCorpseRecoveryDelay=function()error("No-timer path queried delay")end end
+    events.RESURRECT_REQUEST();runTimers()
+    check(accepted==before+1 and recoveryCalls==queries,"No-timer offer used unrelated recovery delay")
+    GetCorpseRecoveryDelay=originalDelay
+end
+sickness,hasResTimer,recovery=true,nil,0;ResurrectHasTimer=function()error("Sickness takes precedence")end
+local before=accepted;events.RESURRECT_REQUEST();runTimers();check(accepted==before+1,"Sickness incorrectly required timer flag")
+ResurrectHasTimer=originalTimer
+for _,property in ipairs({"sickness","timer","life","offer"})do
+    for _,bad in ipairs({"missing","secret","throwing","malformed"})do
+        sickness,hasResTimer,hardcore,dead,offer,recovery=false,false,false,true,"Healer",0
+        local key=({sickness="ResurrectHasSickness",timer="ResurrectHasTimer",life="UnitIsDeadOrGhost",offer="ResurrectGetOfferer"})[property]
+        local holder=_G
+        local original=holder[key]
+        if bad=="missing" then holder[key]=nil
+        elseif bad=="secret" then holder[key]=function()return secret end
+        elseif bad=="throwing" then holder[key]=function()error("Unavailable guard")end
+        else holder[key]=function()return 1 end end
+        local before=accepted;events.RESURRECT_REQUEST();runTimers()
+        check(accepted==before and #hidden==0,"Unreadable offer/game guard granted permission: "..property.."/"..bad)
+        holder[key]=original
+    end
+end
+-- Retail omits this optional predicate. Require valid explicit Mainline
+-- identity only for that omission; do not infer Classic/unknown support.
+local ruleNamespace,projectID,mainlineID=C_GameRules,WOW_PROJECT_ID,WOW_PROJECT_MAINLINE
+local nativePredicate=C_GameRules.IsHardcoreActive
+for _,combatOptIn in ipairs({false,true})do
+    tools:SetOption("autoResInCombat",combatOptIn)
+    combat,encounter,dead,offer,recovery,sickness,hasResTimer=combatOptIn,combatOptIn,true,"Healer",0,false,true
+    C_GameRules={};WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
+    local before,combatReads=accepted,scans
+    events.RESURRECT_REQUEST();local request=timers[#timers];request.callback();request.callback()
+    check(accepted==before+1 and #hidden==0,"Supported Retail absent-predicate offer blocked or duplicated; child="..tostring(combatOptIn))
+    if combatOptIn then check(scans==combatReads,"Absent-predicate combat opt-in scanned combat")end
+    for _,badFlavor in ipairs({"unsupported","both missing","missing project","missing mainline","string project","string mainline","secret project","secret mainline","zero","negative","fractional","infinite","nan"})do
+        WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
+        if badFlavor=="unsupported" then WOW_PROJECT_ID=2
+        elseif badFlavor=="both missing" then WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=nil,nil
+        elseif badFlavor=="missing project" then WOW_PROJECT_ID=nil
+        elseif badFlavor=="missing mainline" then WOW_PROJECT_MAINLINE=nil
+        elseif badFlavor=="string project" then WOW_PROJECT_ID="1"
+        elseif badFlavor=="string mainline" then WOW_PROJECT_MAINLINE="1"
+        elseif badFlavor=="secret project" then WOW_PROJECT_ID=secret
+        elseif badFlavor=="secret mainline" then WOW_PROJECT_MAINLINE=secret
+        elseif badFlavor=="zero" then WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=0,0
+        elseif badFlavor=="negative" then WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=-1,-1
+        elseif badFlavor=="fractional" then WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1.5,1.5
+        elseif badFlavor=="infinite" then WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=math.huge,math.huge
+        else WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=0/0,0/0 end
+        local before=accepted;events.RESURRECT_REQUEST();request=timers[#timers];request.callback();request.callback()
+        check(accepted==before and #hidden==0,"Absent predicate granted unsupported/unreadable flavor: "..badFlavor)
+    end
+    WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
+    for _,badNamespace in ipairs({"missing","false","number","string","secret","throwing lookup"})do
+        if badNamespace=="missing" then C_GameRules=nil elseif badNamespace=="false" then C_GameRules=false
+        elseif badNamespace=="number" then C_GameRules=1 elseif badNamespace=="string" then C_GameRules="rules"
+        elseif badNamespace=="throwing lookup" then C_GameRules=setmetatable({},{__index=function()error("Unavailable namespace")end}) else C_GameRules=secret end
+        local before=accepted;events.RESURRECT_REQUEST();runTimers()
+        check(accepted==before and #hidden==0,"Missing/malformed game-rule namespace allowed acceptance: "..badNamespace)
+    end
+    for _,existing in ipairs({"true","nil result","secret result","throwing","malformed result","non-callable","secret predicate"})do
+        C_GameRules={}
+        if existing=="true" then C_GameRules.IsHardcoreActive=function()return true end
+        elseif existing=="nil result" then C_GameRules.IsHardcoreActive=function()return nil end
+        elseif existing=="secret result" then C_GameRules.IsHardcoreActive=function()return secret end
+        elseif existing=="throwing" then C_GameRules.IsHardcoreActive=function()error("Predicate unavailable")end
+        elseif existing=="malformed result" then C_GameRules.IsHardcoreActive=function()return 1 end
+        elseif existing=="non-callable" then C_GameRules.IsHardcoreActive=false
+        else C_GameRules.IsHardcoreActive=secret end
+        local before=accepted;events.RESURRECT_REQUEST();runTimers()
+        check(accepted==before and #hidden==0,"Existing predicate bypassed manual policy: "..existing.." child="..tostring(combatOptIn))
+    end
+end
+C_GameRules,WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=ruleNamespace,projectID,mainlineID
+C_GameRules.IsHardcoreActive=nativePredicate
+combat,encounter=false,false
+hardcore=true;local before=accepted;events.RESURRECT_REQUEST();runTimers();check(accepted==before,"Hardcore opt-in was accepted")
+hardcore,dead=false,false;events.RESURRECT_REQUEST();runTimers();check(accepted==before,"Living-player offer was accepted")
+dead,sickness,hasResTimer,recovery,offer=true,false,true,0,"Healer"
+for _,failure in ipairs({"missing delay","throwing delay","missing accept","nil sickness","false game rule data"})do
+    local delayAPI,acceptAPI=GetCorpseRecoveryDelay,AcceptResurrect
+    local ruleAPI=C_GameRules.IsHardcoreActive
+    if failure=="missing delay" then GetCorpseRecoveryDelay=nil
+    elseif failure=="throwing delay" then GetCorpseRecoveryDelay=function()error("Delay unavailable")end
+    elseif failure=="missing accept" then AcceptResurrect=nil
+    elseif failure=="nil sickness" then sickness=nil
+    else C_GameRules.IsHardcoreActive=function()return nil end end
+    local before=accepted;events.RESURRECT_REQUEST();runTimers()
+    check(accepted==before and #hidden==0,"Missing required API/data allowed acceptance: "..failure)
+    GetCorpseRecoveryDelay,AcceptResurrect,C_GameRules.IsHardcoreActive=delayAPI,acceptAPI,ruleAPI;sickness=false
+end
+-- Changes during the single deferral do not retry.
+for _,change in ipairs({"offer","hardcore","delay","life"})do
+    local before=accepted;events.RESURRECT_REQUEST()
+    if change=="offer" then offer="" elseif change=="hardcore" then hardcore=true elseif change=="delay" then recovery=3 else dead=false end
+    runTimers();check(accepted==before and active(timers)==0,"Changed deferred guard accepted or retried: "..change)
+    offer,hardcore,recovery,dead="Healer",false,0,true
+end
+-- An old callback cannot erase or consume a newer event, even from same name.
+events.RESURRECT_REQUEST();local old=timers[#timers]
+events.RESURRECT_REQUEST();local latest=timers[#timers]
+local before,noticeCount,queries=accepted,notices,offerCalls+resQueries+recoveryCalls
+old.callback()
+check(accepted==before and notices==noticeCount and active(timers)==1 and offerCalls+resQueries+recoveryCalls==queries,"Stale event mutated newer request")
+latest.callback();latest.callback();old.callback()
+check(accepted==before+1 and active(timers)==0,"Request callback accepted more than once")
+for _,transition in ipairs({"parent","child off","child on","reset","import"})do
+    tools:SetOption("autoRes",true);tools:SetOption("autoResInCombat",transition~="child on")
+    events.RESURRECT_REQUEST();old=timers[#timers]
+    if transition=="parent" then tools:SetOption("autoRes",false);tools:SetOption("autoRes",true)
+    elseif transition=="child off" then tools:SetOption("autoResInCombat",false)
+    elseif transition=="child on" then tools:SetOption("autoResInCombat",true)
+    else callbacks[transition=="reset" and "PROFILE_RESET" or "PROFILE_IMPORTED"]() end
+    local before,noticeCount,queries=accepted,notices,offerCalls+resQueries+recoveryCalls
+    old.callback()
+    check(accepted==before and notices==noticeCount and offerCalls+resQueries+recoveryCalls==queries,"Cancelled option/profile callback acted: "..transition)
+    events.RESURRECT_REQUEST();latest=timers[#timers];old.callback()
+    check(not latest.cancelled,"Old callback erased newer owned timer: "..transition)
+    latest.callback();check(accepted==before+1,"Future event failed after transition: "..transition)
+end
+local originalAccept=AcceptResurrect
+AcceptResurrect=function()error("Client unavailable")end
+events.RESURRECT_REQUEST();old=timers[#timers];local before=accepted;old.callback();old.callback()
+check(accepted==before and tools:GetStatusText("autoRes"):find("Offer left manual:",1,true) and #hidden==0,"Throwing request lost manual recovery or retried")
+AcceptResurrect=originalAccept
+tools:SetOption("autoRes",false);tools:SetOption("autoResInCombat",true)
+local before,queries,timerCount=accepted,offerCalls+resQueries+recoveryCalls,#timers
+events.RESURRECT_REQUEST();directEvents.RESURRECT_REQUEST();old.callback();tools:GetState();tools:Refresh(false)
+check(not subscriptions.RESURRECT_REQUEST.enabled and accepted==before and queries==offerCalls+resQueries+recoveryCalls and #timers==timerCount,"Parent OFF performed resurrection work")
+-- Resurrection edits preserve existing reminder readiness/health/audio state.
+tools=loadTools();ready(5512);tools:SetOption("consumableReminder",true)
+local beforeItems,beforeHealth,beforeCooldown,beforeFrames,beforeTimers=itemCalls,healthCalls,cooldownCalls,#frames,#timers
+for _,key in ipairs({"autoRes","autoResInCombat"})do tools:SetOption(key,true);tools:SetOption(key,false)end
+check(itemCalls==beforeItems and healthCalls==beforeHealth and cooldownCalls==beforeCooldown and #frames==beforeFrames and #timers==beforeTimers,"Resurrection edit refreshed unrelated reminder runtime")
 
 tools = loadTools()
 ready(5512); ready(224464); ready(241304); ready(271884)

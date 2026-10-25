@@ -414,14 +414,14 @@ local function clickVisible(label)
 end
 local function clickDisclosure(name)
     for _,obj in ipairs(objects) do
-        if obj.label and obj.label.text:find(name..' · ',1,true)==1 and obj:IsVisible() then obj:Fire('OnClick');return true end
+        if obj.label and obj.label.text:find(name..' ',1,true)==1 and obj:IsVisible() then obj:Fire('OnClick');return true end
     end
 end
-check(not hasVisibleText('HEALTH THRESHOLD') and not hasVisibleText('ICON SIZE'),'OFF reminder exposed saved options without Settings')
+check(not hasVisibleText('Visual health threshold') and not hasVisibleText('ICON SIZE'),'OFF reminder exposed saved options without Settings')
 local beforeSettingsTimers,beforeSettingsSent=#timers,sent
-check(clickVisible('SETTINGS') and hasVisibleText('HEALTH THRESHOLD') and hasVisibleText('WHEN TO SHOW'),'OFF settings action failed')
+check(clickVisible('SETTINGS') and hasVisibleText('Visual health threshold') and hasVisibleText('Show reminder'),'OFF settings action failed')
 check(not personalSettings.consumableReminder and #timers==beforeSettingsTimers and sent==beforeSettingsSent,'Settings opted in or started work')
-check(not hasVisibleText('Warning sound') and not hasVisibleText('ICON SIZE'),'Disclosures did not start closed')
+check(not hasVisibleText('Warning sound (35%)') and not hasVisibleText('ICON SIZE'),'Disclosures did not start closed')
 local function visibleField(label)
     for _,obj in ipairs(objects) do if obj.box and obj.title and obj.title.text==label and obj:IsVisible() then return obj.box:GetText() end end
 end
@@ -554,21 +554,22 @@ check(clickNav('ADDONS & VERSIONS') and clickVisible('Northern Sky') and clickVi
 check(clickVisible('BACK TO ADDONS') and hasHeading('Addons & versions'), 'Nested Northern Sky Back did not return to Addons')
 check(clickNav('AVAILABLE COOLDOWNS') and hasHeading('Categories'), 'Available Cooldowns did not start on Categories')
 local coverageExplanation="Shows which raid members can provide each ability. Cooldown use and remaining time aren't tracked."
-check(hasVisibleText(coverageExplanation) and hasVisibleText('Enable Available Cooldowns — HUD & inspection'), 'Master or honest coverage explanation is absent above Categories')
+check(hasVisibleText('Available Cooldowns') and not hasVisibleText(coverageExplanation), 'Short master label missing or verbose coverage paragraph remains')
 local masterFrame, cooldownScroller
 for _,obj in ipairs(objects) do
-    if obj.title and obj.title.text=='Enable Available Cooldowns — HUD & inspection' then masterFrame=obj end
+    if obj.title and obj.title.text=='Available Cooldowns' and obj:IsVisible() then masterFrame=obj end
 end
 for _,obj in ipairs(objects) do
     if obj.kind=='ScrollFrame' and obj.parent==masterFrame.parent then cooldownScroller=obj end
 end
 check(cooldownScroller and -masterFrame.points[1][5] < -cooldownScroller.points[1][5], 'Categories body scroll does not keep the master above it')
-local headingParent
-for _,obj in ipairs(objects) do if obj.text==coverageExplanation then headingParent=obj.parent end end
-check(headingParent==masterFrame.parent and cooldownScroller.child~=headingParent, 'Coverage explanation scrolls with the settings body')
+local coverageLines={};local oldCoverageLine=GameTooltip.AddLine
+GameTooltip.AddLine=function(_,text)coverageLines[#coverageLines+1]=text end
+masterFrame:Fire('OnEnter');masterFrame:Fire('OnLeave');GameTooltip.AddLine=oldCoverageLine
+check(table.concat(coverageLines,' '):find('inspection',1,true) and table.concat(coverageLines,' '):find('remaining time are not tracked',1,true),'Coverage tooltip omits inspection/static-provider limits')
 for _, old in ipairs({'HUD','CONTENT','SCANNING','CALLOUTS & PANIC','VERSION CHECK'}) do check(not clickNav(old), 'Duplicate primary destination remains: '..old) end
 check(clickVisible('DISPLAY & POSITION') and hasVisibleText('HUD GROWTH DIRECTION') and not clickVisible('HIDE SAMPLE'), 'Display controls or initially hidden sample are wrong')
-check(hasVisibleText('HUD OPACITY') and hasVisibleText(coverageExplanation), 'Live opacity or fixed coverage explanation is hidden')
+check(hasVisibleText('HUD OPACITY') and hasVisibleText('Available Cooldowns'), 'Live opacity or fixed coverage explanation is hidden')
 check(clickVisible('SHOW SAMPLE') and clickVisible('HIDE SAMPLE'), 'HUD sample was not explicitly collapsible')
 check(hasVisibleText('HUD OPACITY') and hasVisibleText('PRESENTATION'), 'Closing the sample hid common appearance settings')
 check(clickNav('QUICK BAR') and not hasVisibleText('HUD GROWTH DIRECTION') and visibleButton('RESET PUCK POSITION'), 'Quick Bar retained unrelated HUD controls or lost its position reset')
@@ -589,12 +590,12 @@ check(db.position == navPosition and db.leaderToolbox.position == navPuckPositio
     db.leaderToolbox.position.x == navPuckX and db.leaderToolbox.position.y == navPuckY and db.scale == navScale,
     'Opening settings changed saved geometry')
 check(clickNav('PERSONAL TOOLS') and not clickVisible('CONFIGURE'), 'Personal tools retained generic Configure detours')
-check(hasVisibleText('Ready Healthstone first, then healing potion. You use the item.'),'Reminder explanation missing')
-check(hasVisibleText('HEALTH THRESHOLD') and hasVisibleText('WHEN TO SHOW') and not hasVisibleText('ICON SIZE'),'Reminder essentials wrong')
+check(not hasVisibleText('Ready Healthstone first, then healing potion. You use the item.'),'Reminder description was not moved to hover')
+check(hasVisibleText('Visual health threshold') and hasVisibleText('Show reminder') and not hasVisibleText('ICON SIZE'),'Reminder essentials wrong')
 check(clickDisclosure('Sound') and not hasVisibleText('Healthstone message'),'Sound disclosure failed single-open rule')
-check(hasVisibleText('Warning sound') and hasVisibleText('Normally around 35%, with a supported item ready.') and hasVisibleText('CHANNEL'),'Sound controls missing')
+check(hasVisibleText('Warning sound (35%)') and hasVisibleText('CHANNEL'),'Sound controls missing')
 local audioToggle
-for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Warning sound' and obj.switch then audioToggle=obj end end
+for _,obj in ipairs(objects) do if obj.title and obj.title.text=='Warning sound (35%)' and obj.switch then audioToggle=obj end end
 check(audioToggle~=nil and RA:GetDB().personalTools.reminderSound==true, 'Default native sound preference missing')
 audioToggle:Fire('OnClick')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder, 'Sound toggle enabled master or failed OFF')
@@ -602,7 +603,7 @@ local oldKit,oldPlaySound,oldPlayFile=SOUNDKIT,PlaySound,PlaySoundFile
 local previews,beforeSoundTimers,beforeSoundSent=0,#timers,sent
 SOUNDKIT={ALARM_CLOCK_WARNING_3=12889}
 PlaySoundFile=function(path,channel,...) check(path:find('RCP_Sound06.ogg',1,true) and channel=='Master' and select('#',...)==0,'Preview did not use default Sound 6 / Master');previews=previews+1;return true,7777 end
-check(clickVisible('PLAY SAMPLE') and previews==1, 'Explicit sound preview failed')
+check(clickVisible('Preview') and previews==1, 'Explicit sound preview failed')
 check(RA:GetDB().personalTools.reminderSound==false and not RA:GetDB().personalTools.consumableReminder
     and #timers==beforeSoundTimers and sent==beforeSoundSent, 'Audio preview changed opt-in or started timer/network work')
 SOUNDKIT,PlaySound,PlaySoundFile=oldKit,oldPlaySound,oldPlayFile

@@ -2,7 +2,7 @@ local _, RA = ...
 
 local function PrintHelp()
     RA:Print("Commands:")
-    print("  |cff3aa7ff/rcp setup|r - replay Setup; Preview all and Move all are on every Arsenal page")
+    print("  |cff3aa7ff/rcp setup|r - open General; Preview all and Move all are on every Arsenal page")
     print("  |cff3aa7ff/rcp hud|r, |cff3aa7ff/rcp quickbar|r, |cff3aa7ff/rcp content|r, |cff3aa7ff/rcp scanning|r - open Arsenal settings")
     print("  |cff3aa7ff/rcp callouts|r, |cff3aa7ff/rcp tools|r, |cff3aa7ff/rcp profiles|r - callouts, personal tools, or profiles")
     print("  |cff3aa7ff/rcp groups|r - draft and save raid groups; Apply to raid remains explicit")

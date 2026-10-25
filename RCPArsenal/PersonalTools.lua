@@ -7,11 +7,10 @@ RA.PersonalTools = Tools
 -- 2026-10-18 RCP feasibility report. EasyAutoAcceptRes b902c0d7 was a behavior
 -- reference only; no implementation is incorporated here.
 --
--- Normal res is deliberately conservative. RESURRECT_REQUEST does not identify
--- battle res, and a dead player's own combat flag is insufficient.
+-- Incoming offers have no spell classification. The default policy checks all
+-- combat contexts; the separate explicit opt-in skips that policy only.
 -- The consumable visual is experimental until its native threshold boundary,
 -- inventory, and raid restriction behavior are verified on the target client.
-local POPUPS = { "RESURRECT", "RESURRECT_NO_SICKNESS", "RESURRECT_NO_TIMER" }
 local GENERIC_POTION_ICON = "Interface\\Icons\\INV_Potion_51" -- Preview illustration only.
 local DEFAULT_THRESHOLD = 40 -- Editable implementation default, not a user preference.
 local DEFAULT_POSITION = { point = "CENTER", relativePoint = "CENTER", x = 0, y = -140 }
@@ -19,6 +18,7 @@ local VALID_POINTS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true,
     CENTER = true, RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
 
 local reminder, bounce, curve, curveThreshold, glowCurve35, resTimer
+local resGeneration = 0
 local layoutMasked, reminderDesiredShown = false, false
 local reminderEvents, resurrectionEvent = {}, nil
 local readinessTimer, readinessGeneration, lastExpiry = nil, 0, nil
@@ -208,7 +208,14 @@ local function Notify(option)
 end
 
 local function CancelRes()
-    if resTimer then resTimer:Cancel(); resTimer = nil end
+    resGeneration = resGeneration + 1
+    local timer = resTimer
+    resTimer = nil
+    if timer then pcall(function() timer:Cancel() end) end
+end
+local function RefreshResurrection()
+    if resurrectionEvent then resurrectionEvent:SetEnabled(Enabled("autoRes") == true) end
+    resReason = Enabled("autoRes") and "On. Waiting for a future offer; client confirmation pending." or "Off."
 end
 
 local function CancelReadiness()
@@ -478,7 +485,7 @@ function Tools:Refresh(refreshInventory)
     local previousSoundReady = soundSupplyReady
     soundSupplyReady = false
     if not Enabled("autoRes") then CancelRes(); resReason = "Off."
-    elseif resReason == "Off." then resReason = "On. Combat/encounter offers stay manual; client confirmation pending." end
+    elseif resReason == "Off." then RefreshResurrection() end
     if not Enabled("consumableReminder") then
         inventory = nil
         HideReminder("Off.")
@@ -564,50 +571,77 @@ local function NormalResIsSafe()
     return true
 end
 
+local function HardcoreAllowsResurrection()
+    local rules = C_GameRules
+    if IsSecret(rules) or type(rules) ~= "table" then return false end
+    local ok, predicate = pcall(function() return rules.IsHardcoreActive end)
+    if not ok or IsSecret(predicate) then return false end
+    if predicate ~= nil then return ReadBoolean(predicate) == false end
+    -- Mainline's optional predicate may be absent (UI source 15881d522c44).
+    -- Only positively identified Retail may omit it; nil == nil is no gate.
+    local project, mainline = Number(WOW_PROJECT_ID), Number(WOW_PROJECT_MAINLINE)
+    return project ~= nil and mainline ~= nil and project > 0
+        and project == math.floor(project) and project == mainline
+end
+
+local function OfferIsReady()
+    if type(issecretvalue) ~= "function" or type(AcceptResurrect) ~= "function"
+        or type(ResurrectGetOfferer) ~= "function" then return false end
+    if not HardcoreAllowsResurrection() or ReadBoolean(UnitIsDeadOrGhost, "player") ~= true then return false end
+    local ok, offer = pcall(ResurrectGetOfferer)
+    if not ok or IsSecret(offer) or type(offer) ~= "string" or offer == "" then return false end
+    -- Sickness takes precedence in Blizzard's dialog selection. Neither flag
+    -- classifies the spell. No-timer offers do not use corpse recovery delay.
+    local sickness = ReadBoolean(ResurrectHasSickness)
+    if sickness == nil then return false end
+    local timed = sickness or ReadBoolean(ResurrectHasTimer)
+    if timed == nil then return false end
+    if timed then
+        if type(GetCorpseRecoveryDelay) ~= "function" then return false end
+        local valid, delay = pcall(GetCorpseRecoveryDelay)
+        if not valid or Number(delay) ~= 0 then return false end
+    end
+    return true
+end
 local function RequestNormalRes()
     CancelRes()
     if not Enabled("autoRes") then return end
-    if not NormalResIsSafe() then
+    if not Enabled("autoResInCombat") and not NormalResIsSafe() then
         resReason = "Offer left manual: combat, encounter, or group state is active or unknown."
-        Notify()
-        return
+        Notify(); return
     end
-    if not C_Timer or type(C_Timer.NewTimer) ~= "function" or type(AcceptResurrect) ~= "function"
-        or type(StaticPopup_Hide) ~= "function" or type(ResurrectGetOfferer) ~= "function"
-        or type(GetCorpseRecoveryDelay) ~= "function" then
-        resReason = "Offer left manual: resurrection APIs unavailable."
-        Notify()
-        return
+    if not C_Timer or type(C_Timer.NewTimer) ~= "function" then
+        resReason = "Offer left manual: resurrection timer unavailable."
+        Notify(); return
     end
-    -- Defer one frame so Blizzard has raised the appropriate dialog, then
-    -- recheck combat. No names are retained or compared across the deferral.
-    resTimer = C_Timer.NewTimer(0, function()
-        resTimer = nil
-        if not Enabled("autoRes") then return end
-        if not NormalResIsSafe() then
+    local generation = resGeneration
+    local ok, timer = pcall(C_Timer.NewTimer, 0, function()
+        -- Ownership and settings precede all writes. A forced cancelled callback
+        -- cannot clear a newer timer or publish delayed status.
+        if generation ~= resGeneration or not Enabled("autoRes") then return end
+        CancelRes() -- consume once, including guard failures and throwing calls
+        if not Enabled("autoResInCombat") and not NormalResIsSafe() then
             resReason = "Offer left manual: combat, encounter, or group state changed."
-            Notify()
-            return
-        end
-        local ok, offer, delay = pcall(function() return ResurrectGetOfferer(), GetCorpseRecoveryDelay() end)
-        delay = Number(delay)
-        if not ok or IsSecret(offer) or type(offer) ~= "string" or offer == "" or delay ~= 0 then
-            resReason = "Offer left manual: unavailable offer or recovery delay."
+        elseif not OfferIsReady() then
+            resReason = "Offer left manual: offer, game rules, life state, or recovery delay unavailable."
         elseif pcall(AcceptResurrect) then
-            for _, popup in ipairs(POPUPS) do StaticPopup_Hide(popup) end
-            resReason = "Resurrection acceptance requested outside detected combat; client confirmation pending."
+            resReason = "Resurrection acceptance requested; client confirmation pending."
         else
             resReason = "Offer left manual: acceptance unavailable."
         end
+        -- Blizzard owns popup dismissal. A non-throwing request is not proof of
+        -- acceptance; preserve its manual controls if the client rejects it.
         Notify()
     end)
+    if ok then resTimer = timer
+    else resReason = "Offer left manual: resurrection timer unavailable."; Notify() end
 end
 
 function Tools:SetOption(key, value)
     local db = RA:GetDB()
     if not db then return false, "Profile unavailable." end
     if IsSecret(key) or IsSecret(value) then return false, "Invalid personal tool option." end
-    if key ~= "autoRes" and key ~= "consumableReminder" and key ~= "healthThreshold"
+    if key ~= "autoRes" and key ~= "autoResInCombat" and key ~= "consumableReminder" and key ~= "healthThreshold"
         and key ~= "reminderStoneText" and key ~= "reminderPotionText" and key ~= "reminderIconSize" and key ~= "reminderTextSize" and key ~= "reminderEmptyTextSize" and key ~= "reminderCombat" and key ~= "reminderSound" and key ~= "reminderSoundChoice" and key ~= "reminderSoundChannel" and key ~= "reminderShowOnCooldown" and key ~= "reminderSoundWhenEffectsMuted" and key ~= "reminderStoneGlow" and key ~= "reminderGlow" then
         return false, "Unknown personal tool option."
     end
@@ -635,6 +669,15 @@ function Tools:SetOption(key, value)
     elseif type(value) ~= "boolean" then return false, "Choose on or off." end
     if type(db.personalTools) ~= "table" then
         db.personalTools = { autoRes = false, consumableReminder = false, healthThreshold = DEFAULT_THRESHOLD }
+    end
+    if key == "autoRes" or key == "autoResInCombat" then
+        if db.personalTools[key] ~= value then
+            CancelRes()
+            db.personalTools[key] = value
+            RefreshResurrection()
+            Notify(key)
+        end
+        return true
     end
     db.personalTools[key] = value
     -- Audio preferences do not refresh inventory, visuals or health.
@@ -842,12 +885,12 @@ end
 function Tools:GetStatusText(key)
     if key == "autoRes" then return resReason end
     if key == "consumableReminder" then return reminderReason end
-    return "Normal res: " .. resReason .. " Reminder: " .. reminderReason
+    return "Auto resurrection: " .. resReason .. " Reminder: " .. reminderReason
 end
 
 function Tools:GetState()
     local soundChoice, soundChannel = SoundSelection()
-    return { autoRes = Enabled("autoRes") == true, consumableReminder = Enabled("consumableReminder") == true,
+    return { autoRes = Enabled("autoRes") == true, autoResInCombat = Enabled("autoResInCombat") == true, consumableReminder = Enabled("consumableReminder") == true,
         reminderStoneGlow = (Settings() or {}).reminderStoneGlow ~= false,
         reminderGlow = RA:NormalizeReminderGlow((Settings() or {}).reminderGlow),
         reminderSoundWhenEffectsMuted = Enabled("reminderSoundWhenEffectsMuted") == true, reminderShowOnCooldown = Enabled("reminderShowOnCooldown") == true, reminderSound = SoundEnabled(), reminderSoundChoice = soundChoice, reminderSoundChannel = soundChannel, healthThreshold = Threshold((Settings() or {}).healthThreshold), itemID = selectedItem,
@@ -862,7 +905,10 @@ function Tools:GetReminderCurveForValidation()
 end
 
 RA:RegisterInitializer(function() Tools:Refresh() end)
-RA:RegisterCallback("PROFILE_RESET", function() Tools:StopReminderPreview(); Tools:Refresh(); PositionReminder() end)
+RA:RegisterCallback("PROFILE_RESET", function()
+    CancelRes(); RefreshResurrection(); Tools:StopReminderPreview(); Tools:Refresh(); PositionReminder()
+end)
+RA:RegisterCallback("PROFILE_IMPORTED", function() CancelRes(); RefreshResurrection() end)
 resurrectionEvent = RA:RegisterOptionalEvent("RESURRECT_REQUEST", RequestNormalRes)
 local function ReminderEvent(event, callback, unit)
     reminderEvents[#reminderEvents + 1] = RA:RegisterOptionalEvent(event, callback, unit)

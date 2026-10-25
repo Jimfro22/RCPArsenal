@@ -171,6 +171,17 @@ for _, audioFirst in ipairs({false,true}) do
     h.native:Hide();h.native:Show();check(#h.plays==1,'Combat ordering prevented a new eligible episode')
 end
 
+-- Resurrection edits must not reset the active audio episode or reminder cache.
+h=Lifecycle();h:combat(true);h:ready(5512);h.tools:SetOption('consumableReminder',true)
+h.native:Show();check(#h.plays==1,'Resurrection isolation fixture did not start warning')
+before=h:metrics();local stops=#h.stops
+for _,key in ipairs({'autoRes','autoResInCombat'})do h.tools:SetOption(key,true);h.tools:SetOption(key,false)end
+h.native:Fire('OnShow')
+local after=h:metrics()
+check(sameItemWork(before,after) and before.health==after.health and before.frames==after.frames
+    and before.timers==after.timers and #h.plays==1 and #h.stops==stops,'Resurrection edits reset/replayed warning or refreshed reminder')
+h.native:Hide();h.native:Show();check(#h.plays==2,'Resurrection edits broke next eligible warning')
+
 -- Preview is explicit, independent of inventory/master, and cannot rearm.
 h=Lifecycle();before=h:metrics()
 check(h.audio:Preview() and #h.plays==1 and not h.tools:GetState().consumableReminder,'Empty/OFF manual Preview was blocked or enabled master')

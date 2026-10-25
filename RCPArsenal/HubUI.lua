@@ -10,6 +10,7 @@ function RA:CreateHubPanes(panes, kit)
     local refreshers, matrixRows, selectors, targetDrafts = {}, {}, {}, {}
     local feedback, targetBox, matrixMeta, matrixScroll, matrixChild, showDetails
     local lastTargetID, lastTargetValue
+    local enableOverlay
     local linkOverlay, linkBox, linkTitle, resetOverlay, supplyOverlay, soundOverlay
     local closePersonalPopups
     local function SetText(region, value) RA:SetVisualText(region, value or "") end
@@ -35,6 +36,7 @@ function RA:CreateHubPanes(panes, kit)
     function RA:HideHubTransientDialogs()
         if closePersonalPopups then closePersonalPopups() end
         if linkOverlay then linkOverlay:Hide() end
+        if enableOverlay then enableOverlay:Hide() end
         if resetOverlay then resetOverlay:Hide() end
         if supplyOverlay then supplyOverlay:Hide() end
         if soundOverlay then soundOverlay:Hide() end
@@ -72,6 +74,29 @@ function RA:CreateHubPanes(panes, kit)
     function RA:ShowAddonLink(id)
         local entry = RA.AddonCatalog:GetEntry(id)
         if entry then CopyLink(entry) end
+    end
+    function RA:ShowAddonEnableHelp(id)
+        local entry=RA.AddonCatalog:GetEntry(id)
+        if not entry then return end
+        if not enableOverlay then
+            enableOverlay=CreateFrame("Frame",nil,RA.ConfigFrame,"BackdropTemplate")
+            enableOverlay:SetAllPoints(RA.ConfigFrame);enableOverlay:SetFrameLevel(RA.ConfigFrame:GetFrameLevel()+100)
+            enableOverlay:EnableMouse(true);kit.Backdrop(enableOverlay,{0,0,0,0.68},C.line,14,false)
+            local dialog=CreateFrame("Frame",nil,enableOverlay,"BackdropTemplate")
+            Size(dialog,700,172);Point(dialog,"CENTER",enableOverlay,"CENTER",0,0)
+            dialog:EnableMouse(true);kit.Backdrop(dialog,C.surface,C.lineStrong,14,true)
+            enableOverlay.title=Text(dialog,"",14,20,-18,660,C.text)
+            Text(dialog,"Open WoW's AddOns controls, enable the addon for this character, then reload if requested. Return to General to refresh its status.",11,20,-52,660)
+            local close=Button(dialog,"CLOSE",100,30,function()enableOverlay:Hide()end)
+            Point(close,"BOTTOMRIGHT",dialog,"BOTTOMRIGHT",-20,15)
+        end
+        SetText(enableOverlay.title,"How to enable "..entry.name);enableOverlay:Show()
+    end
+    function RA:OpenAddonDetails(id)
+        if not RA.AddonCatalog:GetEntry(id) then return end
+        selectedAddon,lastTargetID=id,nil
+        RA:OpenConfig("ADDONS")
+        showDetails(true);refreshers.ADDONS()
     end
     RA.ConfigFrame:HookScript("OnHide", function() RA:HideHubTransientDialogs() end)
 
@@ -348,7 +373,7 @@ function RA:CreateHubPanes(panes, kit)
     RA:RegisterEvent("ADDON_LOADED",function() if addons:IsVisible() then refreshers.ADDONS() end end)
 
     local tools = panes.MYTOOLS
-    kit.Heading(tools, "Personal Tools", "Changes save immediately.")
+    kit.Heading(tools, "Personal Tools", "")
     local scroll=CreateFrame("ScrollFrame",nil,tools,"UIPanelScrollFrameTemplate")
     Point(scroll,"TOPLEFT",tools,"TOPLEFT",0,-62);Point(scroll,"BOTTOMRIGHT",tools,"BOTTOMRIGHT",-28,0)
     local body=CreateFrame("Frame",nil,scroll);Size(body,918,500);scroll:SetScrollChild(body)
@@ -375,24 +400,32 @@ function RA:CreateHubPanes(panes, kit)
     local function Toggle(owner,label,detail,key,x,y,width)
         local control=kit.Toggle(owner,label,detail,function()return State()[key]end,function(value)Edit(key,value)end)
         Width(control,width or 918);Point(control,"TOPLEFT",owner,"TOPLEFT",x or 0,y or 0)
+        control:SetCompact(key=="autoResInCombat" or key=="consumableReminder")
+        control:HookScript("OnEnter",function(self)Tooltip(self,{label,detail})end)
+        control:HookScript("OnLeave",function()GameTooltip:Hide()end)
         return control
     end
-    Toggle(body,"Normal resurrection","Accept ordinary offers outside detected combat.","autoRes",0,0)
-    local resHelp=Text(body,"Offers stay manual during an encounter, group combat, or unknown combat state.",9,0,-58,918)
-    local resStatus=Text(body,"",9,0,-78,918)
-    local reminderMaster=Toggle(body,"Consumable reminder","Ready Healthstone first, then healing potion. You use the item.","consumableReminder",0,-108)
+    Toggle(body,"Auto resurrection","Accepts incoming offers outside detected combat by default. Does not cast resurrection.","autoRes",0,0)
+    local combatRes=Toggle(body,"Also accept during combat","May accept an incoming offer immediately during a pull or boss fight, without identifying its spell type. The client may reject the request. Does not cast resurrection.","autoResInCombat",22,-46,896)
+    local resHelp=Text(body,"Accept offers during pulls and boss fights. Does not cast resurrection.",9,36,-98,882)
+    local resStatus=Text(body,"",9,14,-120,890)
+    local divider=body:CreateTexture(nil,"ARTWORK");divider:SetColorTexture(unpack(C.line));Size(divider,918,1)
+    local reminderMaster=Toggle(body,"Consumable reminder","Ready Healthstone first, then healing potion. You use the item.","consumableReminder",0,-150)
     local reminderStatus=Text(body,"",9,0,-166,918)
     local settingsAction=Button(body,"SETTINGS",130,30,function()configureOff=not configureOff;PersonalLayout();kit.Refresh()end)
     Point(settingsAction,"TOPLEFT",body,"TOPLEFT",0,-194)
     local configuration=CreateFrame("Frame",nil,body);Size(configuration,918,400)
     Point(configuration,"TOPLEFT",body,"TOPLEFT",0,-204)
-    local threshold=kit.Slider(configuration,"HEALTH THRESHOLD",1,99,1,function()return State().healthThreshold end,
+    local threshold=kit.Slider(configuration,"Visual health threshold",1,99,1,function()return State().healthThreshold end,
         function(value)Edit("healthThreshold",value)end,function(value)return tostring(value).."%"end)
     Width(threshold,451);Point(threshold,"TOPLEFT",configuration,"TOPLEFT",0,0)
-    local when=kit.Segmented(configuration,"WHEN TO SHOW",{
+    local when=kit.Segmented(configuration,"Show reminder",{
         {label="In combat",value="IN_COMBAT"},{label="Out of combat",value="OUT_OF_COMBAT"},{label="In and out of combat",value="BOTH"},
     },function()return State().reminderCombat end,function(value)Edit("reminderCombat",value)end)
     Width(when,451);Point(when,"TOPLEFT",configuration,"TOPLEFT",467,0);when:Layout(451)
+    threshold:EnableMouse(true)
+    threshold:HookScript("OnEnter",function(self)Tooltip(self,{"Visual health threshold","Sets reminder visibility. Warning sound and glow use a separate fixed 35% threshold."})end)
+    threshold:HookScript("OnLeave",function()GameTooltip:Hide()end)
     for _,name in ipairs({"Sound","Appearance","Messages","Item behavior"}) do
         local key=name
         local section=CreateFrame("Frame",nil,configuration);Size(section,918,230);section:Hide();sections[name]=section
@@ -405,12 +438,12 @@ function RA:CreateHubPanes(panes, kit)
         disclosures[name]=disclosure
     end
     local sound=sections.Sound
-    Toggle(sound,"Warning sound","Normally around 35%, with a supported item ready.","reminderSound",0,0,451)
+    Toggle(sound,"Warning sound (35%)","Uses the native low-health warning, normally around 35%, with a supported item ready. Separate from the visual health threshold.","reminderSound",0,0,451)
     local channel=kit.Segmented(sound,"CHANNEL",{{label="SFX",value="SFX"},{label="MASTER",value="Master"}},
         function()return State().reminderSoundChannel end,function(value)Edit("reminderSoundChannel",value)end)
     Width(channel,220);Point(channel,"TOPLEFT",sound,"TOPLEFT",467,0);channel:Layout(220)
     local soundStatus=Text(sound,"",9,0,-182,918)
-    local soundPreview=Button(sound,"PLAY SAMPLE",200,32,function()
+    local soundPreview=Button(sound,"Preview",200,32,function()
         local _,reason=RA.PersonalTools:PreviewReminderSound();SetText(soundStatus,reason)
     end)
     Point(soundPreview,"TOPLEFT",sound,"TOPLEFT",467,-80)
@@ -454,12 +487,16 @@ function RA:CreateHubPanes(panes, kit)
     local function SizeSlider(label,key,min,max,x,y)
         local slider=kit.Slider(appearance,label,min,max,1,function()return State()[key]end,function(value)Edit(key,value)end,function(value)return tostring(value).." px"end)
         Width(slider,451);Point(slider,"TOPLEFT",appearance,"TOPLEFT",x,y)
+        slider:EnableMouse(true)
+        slider:HookScript("OnEnter",function(self)
+            Tooltip(self,{label,key=="reminderEmptyTextSize" and "Size of the OUT OF POTIONS! warning when no supported healing item is carried." or key=="reminderIconSize" and "Size of the item icon." or "Size of the Healthstone or potion caption."})
+        end)
+        slider:HookScript("OnLeave",function()GameTooltip:Hide()end)
     end
     SizeSlider("ICON SIZE","reminderIconSize",24,128,0,0)
     SizeSlider("TEXT SIZE","reminderTextSize",8,32,467,0)
     SizeSlider("EMPTY WARNING SIZE","reminderEmptyTextSize",16,96,0,-64)
-    Text(appearance,"Size of the OUT OF POTIONS! text.",10,467,-82,451)
-    Toggle(appearance,"Glow at 35% or lower","While the reminder is visible.","reminderStoneGlow",0,-128)
+    Toggle(appearance,"Glow at 35% or lower","While the reminder is visible. Uses a fixed 35% threshold, separate from visual visibility.","reminderStoneGlow",0,-128)
     local resetReminder=Button(appearance,"RESET REMINDER POSITION",230,30,function()RA.PersonalTools:ResetReminderPosition()end)
     Point(resetReminder,"TOPLEFT",appearance,"TOPLEFT",0,-190)
     local glowDetails=CreateFrame("Frame",nil,appearance);Size(glowDetails,918,184)
@@ -559,8 +596,9 @@ function RA:CreateHubPanes(panes, kit)
     local itemChoice=kit.Segmented(items,"SHOW ITEMS",{{label="Ready only",value=false},{label="Any carried",value=true}},
         function()return State().reminderShowOnCooldown end,function(value)Edit("reminderShowOnCooldown",value)end)
     Width(itemChoice,451);Point(itemChoice,"TOPLEFT",items,"TOPLEFT",0,0);itemChoice:Layout(451)
-    Text(items,"Any carried includes cooldown, unusable and unknown readiness.",10,467,-20,451)
-    Text(items,"Empty bags: OUT OF POTIONS! text, with the icon hidden.",10,0,-74,918)
+    itemChoice:EnableMouse(true)
+    itemChoice:HookScript("OnEnter",function(self)Tooltip(self,{"Show items","Any carried includes cooldown, unusable and unknown readiness. Empty bags show OUT OF POTIONS! with the icon hidden."})end)
+    itemChoice:HookScript("OnLeave",function()GameTooltip:Hide()end)
     PersonalLayout=function()
         local state=State()
         local show=state.consumableReminder or configureOff
@@ -568,13 +606,15 @@ function RA:CreateHubPanes(panes, kit)
         SetText(settingsAction.label,configureOff and "HIDE SETTINGS" or "SETTINGS")
         configuration:SetShown(show)
         local function Height(label) local value=label:GetStringHeight();return type(value)=="number" and value>0 and value or 12 end
-        local resStatusY=58+Height(resHelp)+8
-        resStatus:ClearAllPoints();Point(resStatus,"TOPLEFT",body,"TOPLEFT",0,-resStatusY)
-        local reminderY=resStatusY+Height(resStatus)+20
+        combatRes:SetEnabled(state.autoRes);combatRes:SetAlpha(state.autoRes and 1 or 0.65)
+        local resStatusY=98+Height(resHelp)+8
+        resStatus:ClearAllPoints();Point(resStatus,"TOPLEFT",body,"TOPLEFT",14,-resStatusY)
+        local reminderY=resStatusY+(resStatus:IsShown() and Height(resStatus)+10 or 0)+24
+        divider:ClearAllPoints();Point(divider,"TOPLEFT",body,"TOPLEFT",0,-reminderY+12)
         reminderMaster:ClearAllPoints();Point(reminderMaster,"TOPLEFT",body,"TOPLEFT",0,-reminderY)
-        local statusY=reminderY+58
-        reminderStatus:ClearAllPoints();Point(reminderStatus,"TOPLEFT",body,"TOPLEFT",0,-statusY)
-        local configY=statusY+Height(reminderStatus)+26
+        local statusY=reminderY+52
+        reminderStatus:ClearAllPoints();Point(reminderStatus,"TOPLEFT",body,"TOPLEFT",14,-statusY)
+        local configY=statusY+(reminderStatus:IsShown() and Height(reminderStatus)+12 or 0)+8
         settingsAction:ClearAllPoints();Point(settingsAction,"TOPLEFT",body,"TOPLEFT",0,-configY)
         if not state.consumableReminder then configY=configY+40 end
         configuration:ClearAllPoints();Point(configuration,"TOPLEFT",body,"TOPLEFT",0,-configY)
@@ -582,12 +622,11 @@ function RA:CreateHubPanes(panes, kit)
         glowDetails:SetShown(expanded=="Appearance" and advancedGlow==true)
         SetText(glowDisclosure.label,"Advanced glow "..(advancedGlow and "-" or "+"))
         local heights={Sound=218,Appearance=advancedGlow and 270+glowDetails:GetHeight() or 270,Messages=118,["Item behavior"]=106}
-        local summaries={Sound=state.reminderSound and "On" or "Off",Appearance=tostring(state.reminderIconSize).." px",Messages="Healthstone / potion",["Item behavior"]=state.reminderShowOnCooldown and "Any carried" or "Ready only"}
         local y=72
         for _,name in ipairs({"Sound","Appearance","Messages","Item behavior"}) do
             local disclosure,section=disclosures[name],sections[name]
             disclosure:ClearAllPoints();Point(disclosure,"TOPLEFT",configuration,"TOPLEFT",0,-y)
-            SetText(disclosure.label,name.." · "..summaries[name].." "..(expanded==name and "-" or "+"))
+            SetText(disclosure.label,name.." "..(expanded==name and "-" or "+"))
             y=y+36
             section:ClearAllPoints();Point(section,"TOPLEFT",configuration,"TOPLEFT",0,-y)
             section:SetShown(expanded==name);section:SetHeight(heights[name])
@@ -607,8 +646,15 @@ function RA:CreateHubPanes(panes, kit)
     tools:HookScript("OnHide",ClosePersonalPopups)
     refreshers.MYTOOLS=function()
         local state=State()
-        SetText(resStatus,RA.PersonalTools:GetStatusText("autoRes"))
-        SetText(reminderStatus,state.consumableReminder and RA.PersonalTools:GetStatusText("consumableReminder") or "Off. Your settings are kept.")
+        local res=RA.PersonalTools:GetStatusText("autoRes")
+        SetText(resStatus,res);resStatus:SetShown(state.autoRes and res:find("Offer left manual:",1,true)==1)
+        local reminder=RA.PersonalTools:GetStatusText("consumableReminder")
+        local empty=reminder:find("No supported healing item carried.",1,true)==1
+        SetText(reminderStatus,empty and "No healing items carried." or reminder)
+        reminderStatus:SetShown(state.consumableReminder and (empty or (reminder~="Hidden by combat setting."
+            and (reminder:find("unavailable",1,true) or reminder:find("unknown",1,true)
+                or reminder:find("suppressed",1,true) or reminder:find("no known-ready",1,true)
+                or reminder:find("not confirmed",1,true))~=nil)))
         PersonalLayout()
         if expanded=="Sound" then
             SetText(soundStatus,RA.NativeWarningAudio and RA.NativeWarningAudio:GetStatusText() or "Warning sound unavailable.")
