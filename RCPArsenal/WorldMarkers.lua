@@ -129,7 +129,7 @@ local function CreateActions()
         if branch=="clear" then activityStatus="Clear requested; activity awaits a readable resync." end
     end
     cycle:SetScript("PreClick",function(_,_,down)
-        if down and not cycle:GetAttribute("rcp-radial-held") then Markers:ResyncActive() end
+        if down and not cycle:GetAttribute("rcp-radial-held") and not cycle:GetAttribute("rcp-radial-consumed") then Markers:ResyncActive() end
     end)
     clear:SetFrameRef("cycle", cycle)
     SecureHandlerWrapScript(cycle, "OnClick", cycle, CYCLE_SNIPPET)
@@ -241,9 +241,9 @@ end
 
 function Markers:GetModeHelp()
     if #self:GetSettings().order == 0 then
-        return "Marker order empty: center release does nothing. Choose an outer marker; release to aim, then click ground. Right-click/Escape cancels."
+        return "Marker order empty: key release does nothing. Hold and click a wheel icon to aim, then click ground. Right-click/Escape cancels."
     end
-    return "Center release places the next available sequence marker, even after a long hold. Inactive markers are preferred; when all are active the order wraps and reuses. Choose a sector; release to aim, then left-click ground. Right-click/Escape cancels."
+    return "Release the key to place the next available marker at the cursor, regardless of movement or hold time. To choose a marker, hold and click its icon, then click ground. The wheel appears immediately, including on taps. Right-click/Escape cancels."
 end
 
 function Markers:GetRadialStatusText()

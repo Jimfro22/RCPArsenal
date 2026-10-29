@@ -89,7 +89,7 @@ ui.slots[2][1]:Fire('OnEnter');check(env.GameTooltip.text=='Twin-BetaRealm','Too
 local first,second=ui.slots[1][1].entryID,ui.slots[2][1].entryID
 card(1,1);card(2,1)
 check(ui.slots[2][1].entryID==first and ui.slots[1][1].entryID==second and #actions==0,'Click move did not swap locally')
-check(statusContains('2 group changes') and ui.slots[1][1].detail.text:find('G2 > G1',1,true),'Changed count/live-target group missing')
+check(statusContains('Ready to move 2 players') and ui.slots[1][1].detail.text:find('G2 > G1',1,true),'Changed count/live-target group missing')
 local source,target=ui.slots[2][1],ui.slots[3][1]
 source:Fire('OnDragStart');focus={source};mouseOver={[target]=true};source:Fire('OnDragStop')
 check(target.entryID==first and #actions==0,'Drop followed captured source instead of destination')
@@ -249,9 +249,9 @@ for _,name in ipairs({'Absent','Absent-OtherRealm'})do
  local ghost=ui.slots[1][1]
  check(ghost.detail.text:find('Absent',1,true) and not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('already matches',1,true),'Absent label/zero-op explanation lost: '..name)
  moveCurrent(3,1)
- check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Ready to apply',1,true) and ui.applyReason:find('1 absent planned',1,true),'Local move failed auto-prepare with grouped absent card: '..name)
+ check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Ready to move',1,true) and ui.applyReason:find('1 not in raid',1,true),'Local move failed auto-prepare with grouped absent card: '..name)
  ghost:Fire('OnMouseDown');ghost:Fire('OnClick','LeftButton');trayTarget:Fire('OnMouseDown');trayTarget:Fire('OnMouseUp','LeftButton')
- check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('1 absent planned',1,true),'Tray absent placeholder blocked automatic UI review: '..name)
+ check(button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('1 not in raid',1,true),'Tray absent placeholder blocked automatic UI review: '..name)
 end
 importPlaceholder('Twin','Current unresolved')
 check(not button('APPLY TO RAID'):IsEnabled() and ui.applyReason:find('Match Twin',1,true) and ui.applyStatus.text:find('Apply blocked:',1,true)==1,'Current unresolved reason hidden behind imported/saved success')
@@ -259,7 +259,7 @@ click('SAVE');check(ui.applyStatus.text:find('Apply blocked:',1,true)==1 and ui.
 check(core:DeleteLayout('Small raid') and ui.applyStatus.text:find('Match Twin',1,true),'Deleting an unrelated saved layout erased the exact Apply blocker')
 local current=findCard(roster[1].guid);current:Fire('OnMouseDown');current:Fire('OnClick','LeftButton')
 check(ui.applyStatus.text:find('Apply blocked:',1,true)==1 and ui.applyStatus.text:find('Match Twin',1,true),'Selection overwrote exact identity blocker')
-check(ui.slots[1][1].detail.text:find('Needs matching',1,true) and not ui.slots[1][1].detail.text:find('Absent',1,true),'Current unresolved card was falsely labeled absent')
+check(ui.slots[1][1].match:IsShown() and ui.slots[1][1].detail.text:find('Needs matching',1,true) and not ui.slots[1][1].detail.text:find('Absent',1,true),'Current unresolved card was falsely labeled absent')
 ui.slots[1][1]:Fire('OnMouseDown');ui.slots[1][1]:Fire('OnClick','RightButton')
 check(button('REMOVE UNMATCHED CARD')~=nil,'Unmatched current-name card was offered as confirmed absent')
 ui.modal:Fire('OnKeyDown','ESCAPE')
