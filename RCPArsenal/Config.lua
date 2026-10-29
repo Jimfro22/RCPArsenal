@@ -1557,22 +1557,21 @@ local function CreateWorldMarkersPane(parent)
         end)
     SetPoint(toggle, "TOPLEFT", parent, "TOPLEFT", 0, -62)
     SetWidth(toggle, 462)
-    local radialToggle=CreateToggle(parent,"Hold marker wheel (optional)","Release cycles at cursor. Hold and click an icon, then click ground.",
+    local radialToggle=CreateToggle(parent,"Separate wheel key (optional)","Unbound until you choose a separate key. Place next stays instant.",
         function()return markers:GetSettings().radialEnabled==true end,
         function(value)local _,detail=markers:SetRadialEnabled(value);message=detail or "" end)
     SetPoint(radialToggle,"TOPRIGHT",parent,"TOPRIGHT",0,-62);SetWidth(radialToggle,472)
     radialToggle:HookScript("OnEnter",function(self)
-        GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText("Hold marker wheel · optional prototype")
+        GameTooltip:SetOwner(self,"ANCHOR_RIGHT");GameTooltip:SetText("Separate marker wheel key")
         GameTooltip:AddLine(markers:GetModeHelp(),0.90,0.92,0.95,true)
-        GameTooltip:AddLine("Without an icon click, release places the next marker at the cursor regardless of movement or hold time. An unfinished icon press cancels instead of placing automatically.",0.76,0.80,0.86,true)
-        GameTooltip:AddLine("Release mouse look before choosing. Hold the marker key and complete a left click on its icon, then click ground. Release the marker key to finish the selection; it will not place another marker. Right-click/Escape cancels native targeting.",0.76,0.80,0.86,true)
-        GameTooltip:AddLine("The clickable wheel appears immediately, so taps can briefly flash it. No hidden delay controls selection. Test in game before a pull. Unsupported keys keep normal sequence mode; the saved wheel choice is retained.",0.95,0.68,0.36,true)
+        GameTooltip:AddLine("Choose one physical wheel key, different from Place next and Clear. Modifier aliases of that same wheel key are supported. Nothing is assigned automatically.",0.76,0.80,0.86,true)
+        GameTooltip:AddLine("Release mouse look before choosing. The wheel is a separate hold/swipe/release action; it never replaces instant placement.",0.76,0.80,0.86,true)
         GameTooltip:Show()
     end)
     radialToggle:HookScript("OnLeave",function()GameTooltip:Hide()end)
 
     local orderCard = CreateCard(parent, "MARKER ORDER", "Normal sequence: click to append; select a slot to edit. The optional wheel always offers all eight markers.")
-    SetSize(orderCard, 950, 270)
+    SetSize(orderCard, 950, 234)
     SetPoint(orderCard, "TOPLEFT", parent, "TOPLEFT", 0, -126)
     local empty = Font(orderCard, 11, TC.textSoft, "REGULAR")
     RA:SetVisualText(empty, "Add at least one marker to use the cycler.")
@@ -1610,7 +1609,7 @@ local function CreateWorldMarkersPane(parent)
             selected = #order
             CommitOrder(order)
         end)
-        SetPoint(add, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -68)
+        SetPoint(add, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -58)
         add.label:ClearAllPoints()
         ApplyReadableFont(add.label, 8.5, "REGULAR")
         SetPoint(add.label, "BOTTOM", add, "BOTTOM", 0, 6)
@@ -1626,7 +1625,7 @@ local function CreateWorldMarkersPane(parent)
             message = ""
             RefreshWorldMarkers()
         end)
-        SetPoint(slot, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -148)
+        SetPoint(slot, "TOPLEFT", orderCard, "TOPLEFT", 18 + (id - 1) * 114, -126)
         slot.label:ClearAllPoints()
         SetPoint(slot.label, "LEFT", slot, "LEFT", 10, 0)
         slot.icon = slot:CreateTexture(nil, "ARTWORK")
@@ -1666,9 +1665,9 @@ local function CreateWorldMarkersPane(parent)
     end)
     SetPoint(remove, "LEFT", right, "RIGHT", 8, 0)
 
-    local bindingCard = CreateCard(parent, "KEY BINDINGS", "The same place key uses the normal sequence or your selected wheel mode. Clear all remains separate.")
-    SetSize(bindingCard, 950, 194)
-    SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -410)
+    local bindingCard = CreateCard(parent, "KEY BINDINGS", "Place next is instant. The optional wheel has its own unbound key.")
+    SetSize(bindingCard, 950, 230)
+    SetPoint(bindingCard, "TOPLEFT", parent, "TOPLEFT", 0, -374)
     local bindings = RA.MarkerBindings
     local bindingRows = {}
     local editorOverlay, editorUnavailable, editorVisual, drainHint, editorTitle, editorInfo, editorPrompt, replaceKey
@@ -1678,7 +1677,7 @@ local function CreateWorldMarkersPane(parent)
     SetWidth(scopeText, 250); scopeText:SetJustifyH("RIGHT")
     local bindingHelp = Font(bindingCard, 9.2, TC.textSoft, "REGULAR")
     bindingHelp:SetSpacing(4); bindingHelp:SetWordWrap(true)
-    SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -146)
+    SetPoint(bindingHelp, "TOPLEFT", bindingCard, "TOPLEFT", 18, -182)
     SetWidth(bindingHelp, 744)
     local function CancelEditor()
         if bindings:GetPending() then bindings:Cancel("Binding cancelled.") end
@@ -1787,8 +1786,8 @@ local function CreateWorldMarkersPane(parent)
         end
         RefreshEditor(); editorOverlay:Show()
     end
-    for row, action in ipairs({markers.PlaceBinding, markers.ClearBinding}) do
-        local actionLabel = row == 1 and "Place next world marker" or "Clear all world markers"
+    for row, action in ipairs({markers.PlaceBinding, markers.ClearBinding, markers.WheelBinding}) do
+        local actionLabel = row == 1 and "Place next (instant)" or row == 2 and "Clear all world markers" or "Wheel (optional)"
         local label = Font(bindingCard, 11, TC.text, "BOLD")
         RA:SetVisualText(label, actionLabel)
         SetPoint(label, "TOPLEFT", bindingCard, "TOPLEFT", 18, -(68 + (row - 1) * 36)); SetWidth(label, 264)
@@ -1802,7 +1801,7 @@ local function CreateWorldMarkersPane(parent)
                 message = detail or ""; RefreshWorldMarkers()
             end)
             SetPoint(unbind, "LEFT", key, "RIGHT", 4, 0)
-            AddTooltip(key, "Edit " .. (slot == 1 and "primary" or "alternate") .. " key: " .. actionLabel)
+            AddTooltip(key, "Edit " .. (slot == 1 and "primary" or "alternate") .. " key: " .. actionLabel .. (row==3 and ". Use one physical wheel key; alternate modifier aliases may use that same key." or ""))
             AddTooltip(unbind, "Unbind this key: " .. actionLabel .. ". Does not clear placed markers.")
             bindingRows[#bindingRows + 1] = {action=action, slot=slot, key=key, unbind=unbind}
         end

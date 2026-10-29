@@ -5,6 +5,7 @@ local secret=setmetatable({}, {__eq=function() error('secret equality') end,__lt
 function issecretvalue(v) return rawequal(v,secret) end
 local place='CLICK RCPArsenalWorldMarkerCycle:LeftButton'
 local clear='CLICK RCPArsenalWorldMarkerClear:LeftButton'
+local wheel='CLICK RCPArsenalWorldMarkerWheel:LeftButton'
 local combat,scope,context,store,order,writes,saves,events,callbacks,RA,editor
 local failWrite,failSave,secretRead,modifiers,handlers
 function InCombatLockdown() return combat end
@@ -53,7 +54,7 @@ local function setup()
     failWrite,failSave,secretRead,modifiers=nil,nil,nil,nil
     handlers={}
     change('F9',place);change('F10',place);change('F11',clear);change('SPACE','JUMP');change('J','JUMP');change('K','OPENALLBAGS')
-    RA={WorldMarkers={PlaceBinding=place,ClearBinding=clear}}
+    RA={WorldMarkers={PlaceBinding=place,ClearBinding=clear,WheelBinding=wheel}}
     function RA:RegisterEvent(name,fn) events[name]=fn end
     function RA:RegisterCallback(name,fn) handlers[name]=fn end
     function RA:FireCallback(name) callbacks[#callbacks+1]=name end
@@ -130,4 +131,9 @@ check(not editor:Replace() and store.SPACE=='JUMP' and store.J=='JUMP' and store
 for _,write in ipairs(writes) do check(write[1]~='J' and write[1]~='K','Rollback wrote an untouched mapping') end
 check(editor:GetStatusText():find('previous bindings restored',1,true),'Verified restoration feedback missing')
 setup();scope=0;check(not editor:GetState(place).editable and not editor:Begin(place,1) and #writes==0,'Unknown binding scope accepted')
+setup()
+check(editor:GetState(wheel).keys[1]==nil and #writes==0 and #saves==0,'New wheel key was assigned automatically')
+check(editor:Begin(wheel,1) and gesture('F12'),'Optional wheel missing from editor allowlist')
+check(GetBindingAction('F12',false,context)==wheel and GetBindingAction('F9',false,context)==place and GetBindingAction('F10',false,context)==place and GetBindingAction('F11',false,context)==clear,'Explicit wheel edit overwrote primary/Clear')
+check(editor:Clear(wheel,1) and editor:GetState(wheel).keys[1]==nil,'Wheel inline unbind failed')
 print('PASS: '..checks..' marker binding editor assertions (actual module; native capture and taint pending)')
