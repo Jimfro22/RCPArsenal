@@ -16,17 +16,16 @@ Markers.Definitions = {
 }
 Markers.PlaceBinding = "CLICK RCPArsenalWorldMarkerCycle:LeftButton"
 Markers.ClearBinding = "CLICK RCPArsenalWorldMarkerClear:LeftButton"
+Markers.WheelBinding = "CLICK RCPArsenalWorldMarkerWheel:LeftButton"
 _G.BINDING_HEADER_RCPARSENAL_MARKERS = "RCP Arsenal — World markers"
 _G["BINDING_NAME_" .. Markers.PlaceBinding] = "Place next world marker"
 _G["BINDING_NAME_" .. Markers.ClearBinding] = "Clear all world markers"
+_G["BINDING_NAME_" .. Markers.WheelBinding] = "Hold world marker wheel"
 
 -- Runs in Blizzard's restricted handler environment BEFORE the secure action.
 -- A fixed down phase prevents a key's release from advancing a second time.
 local CYCLE_SNIPPET = [[
     if self:GetAttribute("rcp-input-suppressed") then return false end
-    if self:GetAttribute("rcp-radial-enabled") then
-        return self:RunAttribute("rcp-radial-click", button, down)
-    end
     if not down then return false end
     if not self:GetAttribute("enabled") then return false end
     self:SetAttribute("macrotext", nil)
@@ -77,7 +76,8 @@ local CLEAR_SNIPPET = [[
     if not down then return false end
     if not self:GetAttribute("enabled") then return false end
     local cycle = self:GetFrameRef("cycle")
-    if cycle:GetAttribute("rcp-radial-reset") then cycle:RunAttribute("rcp-radial-reset") end
+    local wheel = cycle:GetFrameRef("rcp-wheel")
+    if wheel then wheel:RunAttribute("rcp-wheel-reset") end
     cycle:SetAttribute("index", 1)
     cycle:SetAttribute("rcp-pending-marker", nil)
     for i = 1, 8 do
@@ -129,7 +129,7 @@ local function CreateActions()
         if branch=="clear" then activityStatus="Clear requested; activity awaits a readable resync." end
     end
     cycle:SetScript("PreClick",function(_,_,down)
-        if down and not cycle:GetAttribute("rcp-radial-held") and not cycle:GetAttribute("rcp-radial-consumed") then Markers:ResyncActive() end
+        if down then Markers:ResyncActive() end
     end)
     clear:SetFrameRef("cycle", cycle)
     SecureHandlerWrapScript(cycle, "OnClick", cycle, CYCLE_SNIPPET)
@@ -151,8 +151,9 @@ function Markers:ApplyConfig()
     local order = settings.order
     local radial = RA.MarkerRadial and settings.radialEnabled == true
     effectiveEnabled = settings.enabled == true
-    cycle:SetAttribute("enabled", effectiveEnabled and (#order > 0 or radial))
-    cycle:SetAttribute("type", effectiveEnabled and (#order > 0 or radial) and "macro" or nil)
+    cycle:SetAttribute("enabled", effectiveEnabled)
+    cycle:SetAttribute("type", effectiveEnabled and #order > 0 and "macro" or nil)
+    cycle:SetAttribute("useOnKeyDown", true)
     cycle:SetAttribute("macrotext", nil)
     cycle:SetAttribute("count", #order)
     cycle:SetAttribute("index", 1)
@@ -236,14 +237,11 @@ function Markers:SetRadialEnabled(enabled)
 end
 
 function Markers:IsRadialEnabled()
-    return cycle and cycle:GetAttribute("rcp-radial-enabled") == true or false
+    return RA.MarkerRadial and RA.MarkerRadial:IsEnabled() or false
 end
 
 function Markers:GetModeHelp()
-    if #self:GetSettings().order == 0 then
-        return "Marker order empty: key release does nothing. Hold and click a wheel icon to aim, then click ground. Right-click/Escape cancels."
-    end
-    return "Release the key to place the next available marker at the cursor, regardless of movement or hold time. To choose a marker, hold and click its icon, then click ground. The wheel appears immediately, including on taps. Right-click/Escape cancels."
+    return "Place next is always instant at the cursor. The optional separate wheel key starts unbound: hold, swipe to a marker, release to aim, then click ground. Center release, right-click or Escape cancels."
 end
 
 function Markers:GetRadialStatusText()
@@ -263,11 +261,12 @@ function Markers:SetInputSuppressed(suppressed, owner)
     if RA.MarkerRadial then RA.MarkerRadial:Cancel() end
     cycle:SetAttribute("rcp-input-suppressed", inputSuppressed)
     clear:SetAttribute("rcp-input-suppressed", inputSuppressed)
+    if RA.MarkerRadial then RA.MarkerRadial:SetInputSuppressed(inputSuppressed) end
     return true
 end
 
 function Markers:GetNextMarker()
-    if not cycle or not effectiveEnabled or self:IsRadialEnabled() then return nil end
+    if not cycle or not effectiveEnabled then return nil end
     local count=cycle:GetAttribute("count") or 0
     if count==0 then return nil end
     local start=cycle:GetAttribute("index") or 1

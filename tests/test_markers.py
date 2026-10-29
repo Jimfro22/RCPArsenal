@@ -37,6 +37,7 @@ class MarkerDeliveryTests(unittest.TestCase):
         self.assertEqual(names, {
             "CLICK RCPArsenalWorldMarkerCycle:LeftButton",
             "CLICK RCPArsenalWorldMarkerClear:LeftButton",
+            "CLICK RCPArsenalWorldMarkerWheel:LeftButton",
         })
         for node in bindings:
             self.assertFalse((node.text or "").strip())

@@ -2,7 +2,7 @@ local _, RA = ...
 local Bindings = {}
 RA.MarkerBindings = Bindings
 
--- Only these two existing native CLICK actions are editable here. This module
+-- Only these three native CLICK actions are editable here. This module
 -- never invokes them, changes their secure attributes or installs overrides.
 local pending, writing, cancelledRelease
 local status = "Click a key slot to edit."
@@ -12,7 +12,7 @@ local function Text(value, maximum)
         and not value:find("[%z\r\n]")
 end
 local function Action(action)
-    return Text(action) and RA.WorldMarkers and (action == RA.WorldMarkers.PlaceBinding or action == RA.WorldMarkers.ClearBinding)
+    return Text(action) and RA.WorldMarkers and (action == RA.WorldMarkers.PlaceBinding or action == RA.WorldMarkers.ClearBinding or action == RA.WorldMarkers.WheelBinding)
 end
 local function Call(fn, ...)
     if type(fn) ~= "function" then return false end
@@ -55,6 +55,7 @@ end
 local function Label(action)
     if RA.WorldMarkers and action == RA.WorldMarkers.PlaceBinding then return "Place next world marker" end
     if RA.WorldMarkers and action == RA.WorldMarkers.ClearBinding then return "Clear all world markers" end
+    if RA.WorldMarkers and action == RA.WorldMarkers.WheelBinding then return "Hold world marker wheel" end
     local ok, value = Call(GetBindingName, action)
     return ok and Text(value) and value or action
 end
