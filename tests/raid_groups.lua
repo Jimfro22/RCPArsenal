@@ -316,10 +316,10 @@ h=fresh(1);g=h.groups;g:Open();check(g:ImportNote('invitelist:Raider01;',1),'Unr
 local beforeGroups=copy(g:GetState().view.groups);check(g:Reconcile(),'No-match reconcile failed')
 check(same(beforeGroups,g:GetState().view.groups) and not g:PrepareApply(),'Reconcile guessed a short name')
 h=fresh(0);h.inRaid=false;g=h.groups;g:ImportNote('invitelist:Raider01-TestRealm;',1)
-h.roster=roster(1);h.inRaid=true;g:Open();state=g:GetState();local newLive=state.view.tray[1]
-check(g:Move(newLive,2,1),'Explicit new live edit failed')
-beforeGroups=copy(g:GetState().view.groups)
-check(not g:Reconcile() and same(beforeGroups,g:GetState().view.groups),'Reconcile silently chose between two staged cards')
+h.roster=roster(1);h.inRaid=true;g:Open();state=g:GetState()
+check(#state.view.tray==0 and state.view.entries[state.view.groups[1][1]].guid==h.roster[1].guid,'Late join created redundant live tray card')
+beforeGroups=copy(state.view.groups)
+check(g:Reconcile() and same(beforeGroups,g:GetState().view.groups),'Unique late join reconciliation changed planned slots')
 
 -- Entry count remains bounded across multiple entirely different raids; new
 -- members remain visible even when adding another local card is rejected.

@@ -1,12 +1,12 @@
-# 0.15.3-alpha.24 owner test candidate
+# 0.15.3-alpha.25 owner test candidate
 
-Marker center/sector classification now uses the same circular 71-unit activation boundary (plus 0.01 unit numeric tolerance) for secure input and visuals, with a stable key-down origin and viewport/scale-change rejection. Automatic placement prefers inactive configured markers from a complete readable out-of-combat snapshot, then preserves configured wrap/reuse. In combat/unreadable state it uses bounded local issued history, not a global active-marker or placement-success guarantee. Manual sectors keep native reticle/ground-click and cancellation behavior.
+The owner chose a one-key click wheel after native testing showed alpha.24's larger center region did not solve moving quick taps. Unconsumed marker-key release now always requests next-at-cursor, regardless of pointer travel or hold duration. To choose a marker, hold the key, complete a left click on a visible protected icon, then click terrain. The wheel is visible immediately and can flash briefly on taps; no elapsed-time or invisible-hitbox classifier is used. Completed selection consumes the matching source-key release, and an unfinished icon press cancels. Other bindings and repeats cannot drain or reopen that gesture.
 
-Raid Groups recognizes bounded realm spelling aliases without changing character accents or guessing short names. The exact Coiled Altar export, legacy saved alias/tray duplicates, current GUID freshness and 25/40-player full-group cases have focused regressions. Unassigned present players retain an explicit actionable blocker; absent cards remain in the template/tray and need not be deleted.
+A separate out-of-combat configured secure input router tags the original native chords by physical base key while preserving saved binding/editor identities. Temporary modifier variants keep release ownership through cancellation and icon selection. Native reticle cancellation and real ground input are left to Blizzard after the wheel closes. Activity snapshots, local history, custom/empty orders, Clear and suppression remain.
 
-No native every-third cadence, placement success or original-client identity dump is claimed. Owner Windows retesting remains required. CurseForge, tags and releases are not published by this correction.
+Raid Groups matches fresh unique full-name late joins without moving planned slots and coalesces redundant tray copies locally. Unused unmatched tray placeholders are retained and disclosed, while every current GUID still needs an explicit group target. Grouped ambiguity has a visible Match button; conflicting targets remain blocked with a named reason. One/two-player organized raids, offline joins and large absent templates are covered. Explicit Save stores reconciliation; fresh roster, permissions, combat, capacity and per-operation acknowledgment safeguards remain.
 
-# 0.15.3-alpha.22 owner test candidate
+Offline checks do not certify native hardware routing, protected click-through, terrain, taint, subgroup server acknowledgments or UI fit. Owner retesting remains open. No CurseForge, tag or release action is included.
 
 General now applies Personal and Raid tool switches immediately and shows all six Morning Brew addon rows with local state-specific actions. The staged Setup editor and Resume review footer are retired; legacy setup entry points open General. Personal Tools keeps collapsed reminder sections, short labels and hover help, and separates the editable visual threshold from fixed 35% sound/glow behavior.
 

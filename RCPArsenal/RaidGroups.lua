@@ -216,6 +216,45 @@ local function Remove(model,id)
     if group then model.groups[group][slot]=false elseif slot then table.remove(model.tray,slot) end
     model.entries[id]=nil
 end
+-- Fresh full identities may bind a late join without changing any planned
+-- slot. Only redundant tray representations are coalesced; competing group
+-- targets remain an error. This changes local planning, never the raid/save.
+local function MatchCurrent(model,snapshot,rebind)
+    if not snapshot then return true,0 end
+    local matched,assigned=0,{}
+    for _,row in pairs(model.entries) do
+        local member=row.key and snapshot.byKey[row.key]
+        if member and (not row.guid or (rebind and not snapshot.byGuid[row.guid])) then
+            row.guid=member.guid;matched=matched+1
+        end
+    end
+    for group=1,8 do for slot=1,5 do
+        local row=model.entries[model.groups[group][slot]]
+        local member=row and row.guid and snapshot.byGuid[row.guid]
+        if member and member.key==row.key then
+            if assigned[member.guid] then return false,"Multiple group targets for "..member.fullName..". Keep one target before Apply." end
+            assigned[member.guid]=row
+        end
+    end end
+    local tray={}
+    for _,id in ipairs(model.tray) do
+        local row=model.entries[id]
+        local member=row and row.key and snapshot.byKey[row.key]
+        -- An old missing GUID can be a redundant alias, but a GUID currently
+        -- belonging to a different identity must never be silently relinked.
+        if member and row.guid and row.guid~=member.guid and snapshot.byGuid[row.guid] then member=nil end
+        local target=member and assigned[member.guid]
+        if target then
+            model.entries[id]=nil
+            model.mergedTrayDuplicates=(model.mergedTrayDuplicates or 0)+1
+        else
+            tray[#tray+1]=id
+            if member and row.guid==member.guid then assigned[member.guid]=row end
+        end
+    end
+    model.tray=tray
+    return true,matched
+end
 local function PlainShortName(value)
     value=Text(value,80)
     if not value or value=="" or value:find("[%s%p]") then return nil end
@@ -247,29 +286,36 @@ local function AbsentPlaceholder(entry,snapshot)
     local name=entry.fullName
     if not snapshot then return false,"Refresh the raid before checking "..name.."." end
     if entry.key then
-        if snapshot.byKey[entry.key] then return false,"Match "..name.." with Update raid or right-click before Apply.",1 end
+        if snapshot.byKey[entry.key] then return false,"Match "..name.." using the card's Match button before Apply.",1 end
         return true,nil,0
     end
     local short=PlainShortName(name)
-    if not short then return false,"Resolve the incomplete name "..name.." by right-clicking its card before Apply." end
+    if not short then return false,"Match the incomplete name "..name.." using its Match button before Apply." end
     local matches,unknown=0,false
     for _,member in ipairs(snapshot.members)do
         local same=SameShortName(short,member.name)
         if same==nil then unknown=true elseif same then matches=matches+1 end
     end
-    if matches>0 then return false,"Match "..name.." by right-clicking its card: "..matches.." current raider"..(matches==1 and " has" or "s have").." that short name.",matches end
-    if unknown then return false,"Cannot verify absence of "..name..". Right-click to match a full name before Apply." end
+    if matches>0 then return false,"Match "..name.." using its Match button: "..matches.." current raider"..(matches==1 and " has" or "s have").." that short name.",matches end
+    if unknown then return false,"Cannot verify absence of "..name..". Use its Match button to choose a full name before Apply." end
     return true,nil,0
 end
 local function View()
     if not draft then return nil end
-    local view={groups=Copy(draft.groups),tray=Copy(draft.tray),entries={}}
-    local represented={}
-    for id,row in pairs(draft.entries) do
+    local model=Copy(draft)
+    local matched,matchReason=MatchCurrent(model,not liveError and live or nil)
+    local view={groups=model.groups,tray=model.tray,entries={},mergedTrayDuplicates=model.mergedTrayDuplicates or 0,
+        matchError=not matched and matchReason or nil}
+    local represented,trayIDs={},{}
+    for _,id in ipairs(model.tray) do trayIDs[id]=true end
+    for id,row in pairs(model.entries) do
         local member=live and row.guid and live.byGuid[row.guid]
         if member and member.key~=row.key then member=nil end
         local entry=Copy(row);entry.missing=member==nil;entry.unresolved=row.key==nil
-        if not member then entry.absentPlaceholder,entry.identityReason,entry.matchCount=AbsentPlaceholder(row,not liveError and live or nil) end
+        if not member then
+            entry.absentPlaceholder,entry.identityReason,entry.matchCount=AbsentPlaceholder(row,not liveError and live or nil)
+            entry.unusedPlaceholder=trayIDs[id] and not entry.absentPlaceholder or nil
+        end
         entry.guid=member and member.guid or nil;entry.liveGroup=member and member.group or nil
         if member then
             entry.class=member.class;entry.role=member.role;entry.online=member.online;entry.offline=not member.online
@@ -304,8 +350,9 @@ function Groups:GetState()
     progress.priorRequestMaySettle=priorRequestMaySettle
     progress.canRecover=uncertain~=nil and live~=nil and liveError==nil and live.canApply==true
     progress.recoveryFingerprint=uncertain and live and live.fingerprint or nil
-    return {open=opened,live=Copy(live),liveError=liveError,draft=Copy(draft),view=View(),preview=reviewed,
-        layout={savedName=savedBaseline and savedBaseline.name,contentDirty=draft~=nil and (not savedBaseline or savedBaseline.key~=LayoutKey(draft)) or false},
+    local view=View()
+    return {open=opened,live=Copy(live),liveError=liveError,draft=Copy(draft),view=view,preview=reviewed,
+        layout={savedName=savedBaseline and savedBaseline.name,contentDirty=draft~=nil and (not savedBaseline or savedBaseline.key~=LayoutKey(draft) or (view and view.mergedTrayDuplicates>0)) or false},
         apply=progress,layouts=layouts,storageError=storageError}
 end
 function Groups:RefreshRoster()
@@ -379,21 +426,9 @@ function Groups:Reconcile()
     local ok,reason=Editable();if not ok then return false,reason end
     local snapshot;snapshot,reason=Capture();Record(snapshot,reason)
     if not snapshot then Emit();return false,reason end
-    local model,assigned=Copy(draft),{}
-    for id,row in pairs(model.entries) do
-        local member=row.guid and snapshot.byGuid[row.guid]
-        if member and member.key==row.key then assigned[member.guid]=id end
-    end
-    local matched=0
-    for id,row in pairs(model.entries) do
-        local member=row.key and snapshot.byKey[row.key]
-        if member and row.guid~=member.guid then
-            if assigned[member.guid] and assigned[member.guid]~=id then
-                Emit();return false,"A joined raider already has another draft card; choose an explicit identity mapping."
-            end
-            row.guid=member.guid;assigned[member.guid]=id;matched=matched+1
-        end
-    end
+    local model=Copy(draft)
+    local good,matched=MatchCurrent(model,snapshot,true)
+    if not good then Emit();return false,matched end
     model.basis=snapshot.fingerprint;model.stale=false;draft=model;Edited()
     return true,"Matched "..matched.." exact full-name identities; group slots and edits were preserved."
 end
@@ -529,9 +564,14 @@ function Groups:SaveLayout(name)
         end
     end
     if not store.items[name] and count>=MAX_LAYOUTS then return false,"At most 50 layouts can be saved." end
-    local saved;saved,reason=SerializeLayout(draft,draft.boss,name);if not saved then return false,reason end
+    local model=Copy(draft)
+    local matched;matched,reason=MatchCurrent(model,not liveError and live or nil)
+    if not matched then return false,reason end
+    local saved;saved,reason=SerializeLayout(model,model.boss,name);if not saved then return false,reason end
     store,reason=Store(true);if not store then return false,reason end
-    store.items[name]=saved;draft.mergedRealmAliases=nil;if preview then preview.mergedRealmAliases=0 end;savedBaseline={name=name,key=LayoutKey(draft)}
+    store.items[name]=saved;draft=model;draft.mergedRealmAliases=nil;draft.mergedTrayDuplicates=nil
+    if preview then preview.mergedRealmAliases=0;preview.mergedTrayDuplicates=0 end
+    savedBaseline={name=name,key=LayoutKey(draft)}
     Emit();return true
 end
 function Groups:DeleteLayout(name)
@@ -695,7 +735,8 @@ function Groups:ImportAndSaveNote(text,sectionIndex)
 end
 
 local function Targets(snapshot,view)
-    local targets,missing,used={},{},{}
+    if view.matchError then return nil,view.matchError end
+    local targets,missing,used,unused={},{},{},{}
     for group=1,8 do for slot=1,5 do
         local id=view.groups[group][slot]
         if id then
@@ -721,9 +762,8 @@ local function Targets(snapshot,view)
             if not member then return nil,"An unassigned player is no longer in this raid; Update raid and review again." end
             return nil,member.fullName.." (currently Group "..member.group..") needs a target. Place this Unassigned card in a group slot; dropping it on an absent card retains that card in the tray. No player is moved until Apply."
         end
-        local absent,reason=AbsentPlaceholder(entry,snapshot)
-        if not absent then return nil,reason end
-        missing[#missing+1]=entry.fullName
+        local absent=AbsentPlaceholder(entry,snapshot)
+        if absent then missing[#missing+1]=entry.fullName else unused[#unused+1]=entry.fullName end
     end
     for _,member in ipairs(snapshot.members) do if not targets[member.guid] then return nil,"A current raider is missing a reviewed target." end end
     local counts={0,0,0,0,0,0,0,0}
@@ -731,7 +771,7 @@ local function Targets(snapshot,view)
         if not snapshot.byGuid[guid] then return nil,"Draft identity is no longer in this raid." end
         counts[group]=counts[group]+1;if counts[group]>5 then return nil,"Target group exceeds five current raiders." end
     end
-    return targets,missing
+    return targets,missing,unused
 end
 local function Plan(snapshot,targets)
     local current,counts,ordered={},Copy(snapshot.counts),{}
@@ -772,7 +812,7 @@ function Groups:PrepareApply()
     if not snapshot then Emit();return nil,reason end
     if uncertain then Emit();return nil,"A submitted subgroup result is still unresolved; refresh after it settles." end
     local view=View()
-    local targets,missing=Targets(snapshot,view);if not targets then preview=nil;Emit();return nil,missing end
+    local targets,missing,unused=Targets(snapshot,view);if not targets then preview=nil;Emit();return nil,missing end
     local plan;plan,reason=Plan(snapshot,targets);if not plan then preview=nil;Emit();return nil,reason end
     local changes={}
     for _,member in ipairs(snapshot.members) do changes[#changes+1]={guid=member.guid,fullName=member.fullName,currentGroup=member.group,targetGroup=targets[member.guid],changed=member.group~=targets[member.guid]} end
@@ -782,7 +822,8 @@ function Groups:PrepareApply()
     if canApply then canApply,why=Capabilities(plan) end
     previewSerial=previewSerial+1
     preview={id="preview:"..previewSerial,draftRevision=draft.revision,fingerprint=snapshot.fingerprint,targets=targets,
-        changes=changes,missing=missing,realmAliasCount=aliases,mergedRealmAliases=draft.mergedRealmAliases or 0,
+        changes=changes,missing=missing,unusedPlaceholders=unused,realmAliasCount=aliases,mergedRealmAliases=draft.mergedRealmAliases or 0,
+        mergedTrayDuplicates=view.mergedTrayDuplicates,
         changedCount=changed,operationCount=#plan,canApply=canApply,reason=why,plan=plan}
     draft.basis=snapshot.fingerprint;draft.stale=false;Emit();return Copy(preview)
 end

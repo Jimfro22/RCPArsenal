@@ -40,8 +40,9 @@ function RA:CreateRaidGroupsPane(parent, kit)
         GameTooltip:AddLine("Draft: "..(target and ("Group "..target) or "Unassigned"),0.8,0.8,0.85)
         if entry.matchedFullName then GameTooltip:AddLine("Realm alias matched: "..Literal(entry.matchedFullName),0.8,0.8,0.85,true) end
         if entry.absentPlaceholder then GameTooltip:AddLine("Absent placeholder. Kept in this layout; skipped by Apply.",0.8,0.8,0.85,true)
+        elseif entry.unusedPlaceholder then GameTooltip:AddLine("Unused template card. Kept in the tray; skipped when all current players have targets.",0.8,0.8,0.85,true)
         elseif entry.identityReason then GameTooltip:AddLine(Literal(entry.identityReason),1,0.65,0.25,true)
-        elseif entry.unresolved then GameTooltip:AddLine("Unresolved identity. Right-click to match a raider.",1,0.65,0.25,true)
+        elseif entry.unresolved then GameTooltip:AddLine("Unresolved identity. Use Match to choose a current raider.",1,0.65,0.25,true)
         elseif entry.missing then GameTooltip:AddLine("Absent from this raid. Right-click for local options.",0.8,0.8,0.85,true)
         elseif member and member.online==false then GameTooltip:AddLine("Offline",0.8,0.8,0.85) end
         GameTooltip:AddLine("Slots plan groups; raid frames may sort players differently.",0.7,0.7,0.8,true)
@@ -131,6 +132,10 @@ function RA:CreateRaidGroupsPane(parent, kit)
         button.name=Text(button,"",10.5,9,-3,width-36,C.text);button.name:SetWordWrap(false)
         button.roleIcon=button:CreateTexture(nil,"OVERLAY");Size(button.roleIcon,13,13);Point(button.roleIcon,"TOPRIGHT",button,"TOPRIGHT",-5,-2);button.roleIcon:Hide()
         button.detail=Text(button,"",8.8,9,-16,width-18,C.textSoft);button.detail:SetWordWrap(false)
+        button.match=kit.Button(button,"MATCH",48,20,function()
+            if not Locked() and button.entryID then ClearPointer();ui.selected=nil;ShowResolve(button.entryID) end
+        end)
+        Point(button.match,"TOPRIGHT",button,"TOPRIGHT",-4,-4);button.match:Hide()
         button.classStrip=button:CreateTexture(nil,"OVERLAY");Size(button.classStrip,2,height-6);Point(button.classStrip,"TOPLEFT",button,"TOPLEFT",2,-3)
         button:RegisterForClicks("LeftButtonUp","RightButtonUp");button:RegisterForDrag("LeftButton")
         ui.dropOwners=ui.dropOwners or {};ui.dropOwners[button]=button
@@ -403,7 +408,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
     end
     local function Paint(button,id,target,entries)
         local entry=id and entries[id]
-        button.entryID=entry and id or nil;button.roleIcon:Hide()
+        button.entryID=entry and id or nil;button.roleIcon:Hide();button.match:Hide()
         if not entry then
             SetText(button.name,"Empty slot");SetText(button.detail,"");button.classStrip:Hide();button:SetAlpha(0.45);button:SetSelected(false);return
         end
@@ -416,6 +421,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
         button.classStrip:SetColorTexture(color and color.r or C.muted[1],color and color.g or C.muted[2],color and color.b or C.muted[3],1);button.classStrip:Show()
         local detail=class or ""
         if entry.absentPlaceholder then detail=entry.unresolved and "Absent · short name" or "Absent"
+        elseif entry.unusedPlaceholder then detail="Unused template · skipped"
         elseif entry.identityReason then detail="Needs matching"
         elseif entry.unresolved then detail="Unresolved"
         elseif entry.missing then detail=(detail~="" and detail.." · " or "").."Absent"
@@ -426,6 +432,11 @@ function RA:CreateRaidGroupsPane(parent, kit)
         if ui.nameCounts[(entry.name or ""):lower()] and ui.nameCounts[(entry.name or ""):lower()]>1 then
             detail=(entry.realm or entry.fullName or "Unknown realm")..(detail~="" and " · "..detail or "")
         end
+        local needsMatch=target~=nil and entry.identityReason~=nil and not entry.absentPlaceholder
+        button.match:SetShown(needsMatch);Enabled(button.match,not Locked())
+        if needsMatch then button.roleIcon:Hide() end
+        button.name:SetWidth(button:GetWidth()-(needsMatch and 68 or 36))
+        button.detail:SetWidth(button:GetWidth()-(needsMatch and 68 or 18))
         SetText(button.name,entry.name or entry.fullName);SetText(button.detail,detail)
         button:SetAlpha(entry.missing and 0.6 or member and member.online==false and 0.7 or 1)
         button:SetSelected(ui.selected==id)
@@ -463,7 +474,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
         local trayHeight=math.max(72,math.ceil(#(view.tray or {})/4)*32)
         trayChild:SetHeight(trayHeight)
         local current=trayScroll:GetVerticalScroll()or 0;if current>trayHeight-72 then trayScroll:SetVerticalScroll(math.max(0,trayHeight-72))end
-        SetText(trayTitle,"Unassigned: "..unassigned.." present"..(absent>0 and (" · "..absent.." absent")or"")..(unmatched>0 and (" · "..unmatched.." unmatched")or"")..(ui.selected and " · Click a slot to move selected player"or""))
+        SetText(trayTitle,"Unassigned: "..unassigned.." present"..(absent>0 and (" · "..absent.." absent")or"")..(unmatched>0 and (" · "..unmatched.." unused")or"")..(ui.selected and " · Click a slot to move selected player"or""))
         local busy=Busy();local preview=state.preview
         for _,button in ipairs({loadButton,saveButton,importButton,reconcileButton,sortButton})do Enabled(button,not Locked())end
         if Locked() then sortMenu:Hide() end
@@ -490,9 +501,11 @@ function RA:CreateRaidGroupsPane(parent, kit)
         elseif not preview and applying.status=="complete" then message=(applying.reason or "Group changes confirmed.").." Review changes before another Apply."
         elseif not preview then message="Review changes before Apply."
         elseif (preview.operationCount or 0)==0 then message="Raid already matches. No live group changes to apply."
-        else message="Ready to apply: "..changes.." group changes · "..tostring(preview.operationCount).." moves/swaps." end
-        if preview and preview.canApply and not Locked() and #(preview.missing or {})>0 then message=message.." "..#preview.missing.." absent planned player(s) skipped." end
+        else message="Ready to move "..changes..(changes==1 and " player" or " players").." · "..tostring(preview.operationCount).." moves/swaps." end
+        if preview and preview.canApply and not Locked() and #(preview.missing or {})>0 then message=message.." "..#preview.missing.." not in raid skipped." end
+        if preview and preview.canApply and #(preview.unusedPlaceholders or {})>0 then message=message.." "..#preview.unusedPlaceholders.." unused template card(s) skipped." end
         if preview and preview.canApply and (preview.realmAliasCount or 0)>0 then message=message.." "..preview.realmAliasCount.." realm alias(es) matched to current raiders." end
+        if preview and (preview.mergedTrayDuplicates or 0)>0 then message=message.." "..preview.mergedTrayDuplicates.." duplicate tray card(s) combined locally." end
         if preview and (preview.mergedRealmAliases or 0)>0 then message=message.." "..preview.mergedRealmAliases.." redundant tray alias(es) merged locally; Save to update this layout." end
         ui.applyReason=message
         if not busy then
