@@ -131,6 +131,11 @@ function CreateFrame(kind, name, parent, templates)
         function r:SetTexture(v) self.texture = v end
         function r:SetColorTexture(...) self.color = {...} end
         function r:SetAlpha(v) self.alpha = v end
+        function r:SetVertexColor(...) self.vertexColor = {...} end
+        function r:SetTexCoord(...) self.texCoords = {...} end
+        function r:SetTextColor(...) self.textColor = {...} end
+        function r:SetJustifyH(v) self.justifyH = v end
+        function r:SetWordWrap(v) self.wordWrap = v end
         return r
     end
     function f:CreateTexture() return region() end
@@ -294,7 +299,7 @@ restricted=true;wheel:SetAttribute('state-rcp-wheel-context','ready');restricted
 begin();dispatch(clear,true);finish();check(#actions==before+1 and actions[#actions][1]=='worldmarker' and empty(wheel.overrides),'Clear failed to cancel wheel');before=#actions
 -- Pause only cosmetic polling; explicitly keep the armed-state cue honest.
 begin();point(1052,540);previewTick(11)
-check(activePolling()==0 and wheel:GetFrameRef('center').choice.text=='Preview paused; wheel armed','Preview timeout falsely claims disabled action')
+check(activePolling()==0 and wheel:GetFrameRef('center').caption.text=='Preview paused · wheel armed · Esc cancels','Preview timeout falsely claims disabled action')
 for _,slot in ipairs(wheel:GetFrameRef('center').slots)do check(slot.highlight.alpha==0,'Paused preview kept selected highlight')end
 dispatch(named.RCPArsenalWorldMarkerCancel,true);finish();check(#actions==before,'Paused preview cancellation placed')
 -- Unsafe same-base chords and distinct alternative wheel bases never steal

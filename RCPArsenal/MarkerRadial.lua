@@ -8,6 +8,7 @@ local status = "Optional wheel is off. Place next stays instant."
 local DEADZONE, RADIUS, SIZE, VISUAL_LIMIT = 28.01, 92, 282, 10
 local originX, originY, originScale, visualAge
 local originLeft, originBottom, originWidth, originHeight
+local hadSelection
 
 -- This action belongs only to WheelBinding. The primary cycle never calls it.
 local ROUTE_RELEASE = [[
@@ -114,15 +115,56 @@ local function Text(region,value)
 end
 local function Label(parent,size)
     local label=parent:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    if RA.ApplyFont then RA:ApplyFont(label,size,"BOLD",true) end
+    if RA.ApplyFont then RA:ApplyFont(label,size,"REGULAR",true) end
     return label
+end
+local fallbackColors={canvasDeep={.021,.022,.046,1},surface={.065,.070,.120,1},
+    surfaceHover={.108,.105,.175,1},text={.965,.955,.985,1},textSoft={.790,.765,.835,1},
+    lineStrong={.870,.765,.950,1}}
+local function Color(name)
+    return RA.Theme and RA.Theme.Colors[name] or fallbackColors[name]
+end
+local function Tint(texture,color,alpha)
+    texture:SetVertexColor(color[1],color[2],color[3],alpha or color[4] or 1)
+end
+local function ArtSize(region,width,height)
+    if RA.Theme and RA.Theme.SetSize then RA.Theme.SetSize(region,width,height)else region:SetSize(width,height)end
+end
+local function ArtPoint(region,...)
+    if RA.Theme and RA.Theme.SetPoint then RA.Theme.SetPoint(region,...)else region:SetPoint(...)end
+end
+local function Mask(parent,name,angle,layer,sublevel,size)
+    local texture=parent:CreateTexture(nil,layer,nil,sublevel)
+    ArtSize(texture,size or SIZE,size or SIZE);ArtPoint(texture,"CENTER",parent,"CENTER",0,0)
+    local path=(RA.Theme and RA.Theme.MediaPath or "Interface\\AddOns\\RCPArsenal\\Media\\")..name
+    if RA.SetVisualTexture then RA:SetVisualTexture(texture,path)else texture:SetTexture(path)end
+    -- Inverse clockwise rotation in image UV space (UL, LL, UR, LR). This
+    -- preserves the 282-unit art scale and the north/east/south/west mapping.
+    -- Padded transparent edges remain clear when UVs extend beyond the image.
+    local c,s=math.cos(angle or 0),math.sin(angle or 0)
+    texture:SetTexCoord(.5-(c+s)/2,.5+(s-c)/2,.5+(s-c)/2,.5+(s+c)/2,
+        .5+(c-s)/2,.5-(s+c)/2,.5+(c+s)/2,.5+(c-s)/2)
+    return texture
+end
+local function RefreshAccent()
+    if not center then return end
+    local accent=RA.Theme and RA.Theme:GetAccentEnd() or Color("text")
+    for _,slot in ipairs(center.slots)do Tint(slot.edge,accent,1)end
+end
+local function Selection(selected,returned)
+    for id,slot in ipairs(center.slots)do
+        local alpha=selected==id and 1 or 0
+        slot.icon:SetAlpha(selected and selected~=id and .72 or 1)
+        slot.highlight:SetAlpha(alpha);slot.edge:SetAlpha(alpha);slot.chevron:SetAlpha(alpha)
+        for _,corner in ipairs(slot.corners)do corner:SetAlpha(alpha)end
+    end
+    center.hubBorder:SetAlpha(returned and .95 or .52)
 end
 local function RecoveryCue()
     if not center then return end
     preview:SetScript("OnUpdate",nil)
-    for _,slot in ipairs(center.slots)do slot.highlight:SetAlpha(0);slot.icon:SetAlpha(0.35)end
-    Text(center.choice,"Preview paused; wheel armed")
-    Text(center.hint,"Right-click / Escape to cancel")
+    Selection(nil,false)
+    Text(center.caption,"Preview paused · wheel armed · Esc cancels")
 end
 local function UpdatePreview(_,elapsed)
     visualAge=visualAge+elapsed
@@ -139,12 +181,10 @@ local function UpdatePreview(_,elapsed)
     if not outside and dx*dx+dy*dy>DEADZONE*DEADZONE then
         selected=(math.floor((math.atan2(dx,dy)+math.pi/8)/(math.pi/4))%8)+1
     end
-    for id,slot in ipairs(center.slots)do
-        slot.icon:SetAlpha(selected and selected~=id and 0.45 or 1)
-        slot.highlight:SetAlpha(selected==id and 1 or 0)
-    end
-    Text(center.choice,outside and "Outside: cancel" or selected and RA.WorldMarkers.Definitions[selected].name or "Center: cancel")
-    Text(center.hint,outside and "Return inside or cancel" or selected and "Release to aim; click ground" or "Swipe to a marker")
+    if selected then hadSelection=true end
+    Selection(selected,not selected and (hadSelection or outside))
+    Text(center.caption,selected and RA.WorldMarkers.Definitions[selected].name.." · release to aim; click ground"
+        or (hadSelection or outside) and "Release, Esc or right-click to cancel" or "Swipe to choose · center cancels")
 end
 local function Create()
     wheel=CreateFrame("Button","RCPArsenalWorldMarkerWheel",UIParent,"SecureActionButtonTemplate,SecureHandlerBaseTemplate")
@@ -167,26 +207,45 @@ local function Create()
     -- 1 square, 2 triangle, 3 diamond, 4 cross, 5 star, 6 circle, 7 moon, 8 skull.
     center.cancelRegion=CreateFrame("Frame",nil,center)
     center.cancelRegion:SetSize(DEADZONE*2,DEADZONE*2);center.cancelRegion:SetPoint("CENTER");center.cancelRegion:EnableMouse(false)
-    if RA.Theme then RA.Theme:ApplyRounded(center.cancelRegion,{0.035,0.036,0.070,0.85},DEADZONE,"cancel") end
+    center.hub=Mask(center.cancelRegion,"RadialHub",0,"BACKGROUND",0,DEADZONE*2);Tint(center.hub,Color("canvasDeep"),.94)
+    center.hubBorder=Mask(center.cancelRegion,"RadialHubBorder",0,"BORDER",0,DEADZONE*2);Tint(center.hubBorder,Color("textSoft"),1)
+    center.origin=Mask(center.cancelRegion,"RadialHub",0,"ARTWORK",0,2);Tint(center.origin,Color("textSoft"),.6)
     center.slots={}
     for id,definition in ipairs(RA.WorldMarkers.Definitions)do
         local slot=CreateFrame("Frame",nil,center);slot:SetSize(42,42);slot:EnableMouse(false)
         local angle=(id-1)*math.pi/4
         slot:SetPoint("CENTER",center,"CENTER",math.sin(angle)*RADIUS,math.cos(angle)*RADIUS)
-        slot.highlight=slot:CreateTexture(nil,"BACKGROUND");slot.highlight:SetAllPoints()
-        slot.highlight:SetColorTexture(0.973,0.608,0.161,0.75);slot.highlight:SetAlpha(0)
+        slot.backing=Mask(center,"RadialSector",angle,"BACKGROUND",0);Tint(slot.backing,Color("surface"),.94)
+        slot.highlight=Mask(center,"RadialSelection",angle,"BACKGROUND",1);Tint(slot.highlight,Color("surfaceHover"),1)
+        slot.edge=Mask(center,"RadialSelectionEdge",angle,"BACKGROUND",2)
+        slot.chevron=Mask(center,"RadialChevron",angle,"ARTWORK",0,32);Tint(slot.chevron,Color("text"),1)
+        slot.chevron:ClearAllPoints()
+        ArtPoint(slot.chevron,"CENTER",center,"CENTER",math.sin(angle)*43.893,math.cos(angle)*43.893)
+        slot.corners={}
+        for _,x in ipairs({-1,1})do for _,y in ipairs({-1,1})do
+            for _,vertical in ipairs({false,true})do
+                local corner=slot:CreateTexture(nil,"OVERLAY")
+                ArtSize(corner,vertical and 1.5 or 6,vertical and 6 or 1.5)
+                ArtPoint(corner,"CENTER",slot,"CENTER",x*(vertical and 21 or 18.75),y*(vertical and 18.75 or 21))
+                local color=Color("text");corner:SetColorTexture(color[1],color[2],color[3],1)
+                slot.corners[#slot.corners+1]=corner
+            end
+        end end
         slot.icon=slot:CreateTexture(nil,"ARTWORK");slot.icon:SetSize(30,30);slot.icon:SetPoint("CENTER")
         local texture="Interface\\TargetingFrame\\UI-RaidTargetingIcon_"..definition.icon
         if RA.SetVisualTexture then RA:SetVisualTexture(slot.icon,texture)else slot.icon:SetTexture(texture)end
         center.slots[id]=slot
     end
-    center.choice,center.hint,center.help=Label(center,11),Label(center,9),Label(center,9)
-    center.choice:SetPoint("CENTER",center,"CENTER",0,10);center.hint:SetPoint("CENTER",center,"CENTER",0,-8)
-    center.help:SetPoint("BOTTOM",center,"BOTTOM",0,8);Text(center.help,"Right-click / Escape cancels")
+    center.caption=Label(center,12);ArtSize(center.caption,264,16)
+    ArtPoint(center.caption,"BOTTOM",center,"BOTTOM",0,2)
+    center.caption:SetJustifyH("CENTER");center.caption:SetWordWrap(false)
+    local color=Color("text");center.caption:SetTextColor(color[1],color[2],color[3],1)
+    RefreshAccent();Selection(nil,false)
     preview=CreateFrame("Frame",nil,UIParent) -- presentation only; no protected changes
     wheel.RCPWheelBeginPreview=function(_,x,y,scale,left,bottom,width,height)
         originX,originY,originScale,visualAge=x,y,scale,0
         originLeft,originBottom,originWidth,originHeight=left,bottom,width,height
+        hadSelection=false
         UpdatePreview(nil,0);preview:SetScript("OnUpdate",UpdatePreview)
     end
     wheel.RCPWheelEndPreview=function()preview:SetScript("OnUpdate",nil)end
@@ -271,5 +330,6 @@ local function RefreshEditorGuard()
     RA.WorldMarkers:SetInputSuppressed(editor and(editor:GetPending()~=nil or editor:GetHeldKey()~=nil)or false,"editor")
 end
 RA:RegisterCallback("MARKER_BINDINGS_CHANGED",RefreshEditorGuard)
+RA:RegisterCallback("ACCENT_THEME_CHANGED",RefreshAccent)
 RA:RegisterEvent("PLAYER_LEAVING_WORLD",function()if not Radial:Cancel()then RecoveryCue()end end)
 RA:RegisterEvent("PLAYER_ENTERING_WORLD",function()if not Radial:Cancel()then RecoveryCue()end end)
