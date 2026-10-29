@@ -43,9 +43,9 @@ local function compile(body, signature, control)
     return function(...)
         local previous = restricted
         restricted = true
-        local result = fn(...)
+        local first,second,third = fn(...)
         restricted = previous
-        return result
+        return first,second,third
     end
 end
 local anchor = {BOTTOMLEFT = {0, 0}, BOTTOM = {.5, 0}, BOTTOMRIGHT = {1, 0},
@@ -95,6 +95,7 @@ function CreateFrame(kind, name, parent, templates)
     function f:SetFrameStrata(v) guard(self); self.strata = v end
     function f:RegisterForClicks(...) guard(self); self.clicks = {...} end
     function f:RegisterEvent() end
+    function f:UnregisterEvent() end
     function f:SetScript(event, fn) self.scripts[event] = fn end
     function f:SetFrameRef(key, value) guard(self); self.refs[key] = value end
     function f:GetFrameRef(key) return self.refs[key] end
@@ -171,6 +172,7 @@ end
 local function dispatch(frame, down, button)
     button=button or 'LeftButton'
     local old = hardware; hardware = true
+    if frame.scripts.PreClick then frame.scripts.PreClick(frame,button,down) end
     for _, fn in ipairs(frame.wrappers.OnClick or {}) do
         if fn(frame, button, down) == false then hardware = old; return end
     end
@@ -269,13 +271,13 @@ for marker = 1, 8 do
 end
 resetCursor(); down(); move(1100, 540); move(960, 540)
 previous = #actions; up()
-check(#actions == previous+1 and actions[#actions][2]=='/wm [@cursor] 8' and cycle:GetAttribute('index')==2 and not cycle:GetAttribute('rcp-radial-held'), 'Return to center did not place the configured next marker')
+check(#actions == previous+1 and actions[#actions][2]=='/wm [@cursor] 4' and cycle:GetAttribute('index')==1 and not cycle:GetAttribute('rcp-radial-held'), 'Return to center did not place the configured next marker')
 previous=#actions
 for _, input in ipairs({'ESCAPE', 'BUTTON2'}) do
     resetCursor(); down(); move(960, 660)
     local target = cycle.overrides[input]
     dispatch(named[target[1]], true); dispatch(cancel, false); up()
-    check(#actions == previous and cycle:GetAttribute('index')==2 and empty(cycle.overrides) and not root:IsShown(), 'Cancel then release placed/advanced: ' .. input)
+    check(#actions == previous and cycle:GetAttribute('index')==1 and empty(cycle.overrides) and not root:IsShown(), 'Cancel then release placed/advanced: ' .. input)
 end
 -- Test all cancel modifier chords independently of the full-screen pointer
 -- path; CTRL-F9 commonly leaves Ctrl held during the right-click.
@@ -290,7 +292,7 @@ for mask=0,7 do
         check(target and target[1]==cancel.name,'Missing modified cancel override: '..prefix..input)
         local pending=timers[#timers]
         dispatch(named[target[1]],true);up();dispatch(cancel,false);up()
-        check(#actions==previous and cycle:GetAttribute('index')==2 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+        check(#actions==previous and cycle:GetAttribute('index')==1 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
             and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and pending.cancelled and activePolling()==0,
             'Modified cancel left a release action/state: '..prefix..input)
     end
@@ -304,7 +306,7 @@ for _,entry in ipairs(pointerCases) do
     move(entry[1],entry[2])
     for _,frame in ipairs(frames)do if frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame,0.05) end end
     dispatch(root,true,'RightButton')
-    check(#actions==previous and cycle:GetAttribute('index')==2 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
+    check(#actions==previous and cycle:GetAttribute('index')==1 and not root:IsShown() and not cycle:GetAttribute('rcp-radial-held')
         and cycle:GetAttribute('macrotext')==nil and empty(cycle.overrides) and activePolling()==0,'Full-screen right-click failed center/sector/outside cancellation')
     dispatch(root,false,'RightButton');up();up();fireTimer(pending,true)
     check(#actions==previous and not root:IsShown() and activePolling()==0,'Right-click or stale timer rearmed a later release')

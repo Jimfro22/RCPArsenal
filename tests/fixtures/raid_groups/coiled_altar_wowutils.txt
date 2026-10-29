@@ -1,0 +1,3 @@
+EncounterID:3429;Difficulty:Mythic;Name:Coiled Altar
+invitelist:Blazenpraize-Illidan,Vuldyn-Thrall,Koff-Ghostlands,Lightlizard-Illidan,Trollhameren-Mal'Ganis,Xfaeble-Ner'zhul,Brutalious-Ner'zhul,Primalwraith-Zul'jin,Artails-Illidan,Bigtuggin-Area52,Distresses-Illidan,Ravioliï-Tichondrius,Vandalxm-Tichondrius,Whiskeyz-Illidan,Yatzii-Zul'jin,Nullfoxs-Stormrage,Txxph-Area52,Tilar-Area52,Akrao-Zul'jin,Sedstealth-Illidan;
+Cooldown/reminder prose below the invitelist is intentionally ignored.

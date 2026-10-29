@@ -1,3 +1,11 @@
+# 0.15.3-alpha.24 owner test candidate
+
+Marker center/sector classification now uses the same circular 71-unit activation boundary (plus 0.01 unit numeric tolerance) for secure input and visuals, with a stable key-down origin and viewport/scale-change rejection. Automatic placement prefers inactive configured markers from a complete readable out-of-combat snapshot, then preserves configured wrap/reuse. In combat/unreadable state it uses bounded local issued history, not a global active-marker or placement-success guarantee. Manual sectors keep native reticle/ground-click and cancellation behavior.
+
+Raid Groups recognizes bounded realm spelling aliases without changing character accents or guessing short names. The exact Coiled Altar export, legacy saved alias/tray duplicates, current GUID freshness and 25/40-player full-group cases have focused regressions. Unassigned present players retain an explicit actionable blocker; absent cards remain in the template/tray and need not be deleted.
+
+No native every-third cadence, placement success or original-client identity dump is claimed. Owner Windows retesting remains required. CurseForge, tags and releases are not published by this correction.
+
 # 0.15.3-alpha.22 owner test candidate
 
 General now applies Personal and Raid tool switches immediately and shows all six Morning Brew addon rows with local state-specific actions. The staged Setup editor and Resume review footer are retired; legacy setup entry points open General. Personal Tools keeps collapsed reminder sections, short labels and hover help, and separates the editable visual threshold from fixed 35% sound/glow behavior.

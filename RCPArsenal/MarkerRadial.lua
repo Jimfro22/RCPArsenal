@@ -8,12 +8,17 @@ local generation, visualHeld, visualAge = 0, false, 0
 local originX, originY
 local bindingFirst, bindingSecond
 local status = "Marker wheel is off."
-local DEADZONE, RADIUS, DISPLAY_DELAY, VISUAL_LIMIT = 22, 92, 0.18, 10
+local DEADZONE, RADIUS, DISPLAY_DELAY, VISUAL_LIMIT = 71.01, 92, 0.18, 10
 
 -- Only the hardware CLICK handler selects/arms an action. Timing is entirely
 -- presentation; a valid center release uses the configured sequence, at any hold duration.
 local RESET = [[
     self:SetAttribute("rcp-radial-held", nil)
+    self:SetAttribute("rcp-origin-x", nil)
+    self:SetAttribute("rcp-origin-y", nil)
+    self:SetAttribute("rcp-origin-width", nil)
+    self:SetAttribute("rcp-origin-height", nil)
+    self:SetAttribute("rcp-origin-scale", nil)
     self:SetAttribute("macrotext", nil)
     self:ClearBindings()
     self:GetFrameRef("rcp-radial-root"):Hide()
@@ -29,6 +34,15 @@ local CLICK = [[
         self:SetAttribute("macrotext", nil)
         self:SetAttribute("rcp-radial-held", true)
         local root = self:GetFrameRef("rcp-radial-root")
+        local x,y = root:GetMousePosition()
+        local left,bottom,width,height = root:GetRect()
+        local scale=root:GetEffectiveScale()
+        if not x or not y or not left or not bottom or not width or not height or not scale or scale<=0 then self:RunAttribute("rcp-radial-reset");return false end
+        self:SetAttribute("rcp-origin-scale",scale)
+        self:SetAttribute("rcp-origin-width",width)
+        self:SetAttribute("rcp-origin-height",height)
+        self:SetAttribute("rcp-origin-x",x)
+        self:SetAttribute("rcp-origin-y",y)
         local center = self:GetFrameRef("rcp-radial-center")
         center:ClearAllPoints()
         center:SetPoint("CENTER", "$cursor", "BOTTOMLEFT", 0, 0)
@@ -53,20 +67,20 @@ local CLICK = [[
             self:SetBindingClick(true, prefix .. "ESCAPE", "RCPArsenalWorldMarkerCancel", "LeftButton")
             self:SetBindingClick(true, prefix .. "BUTTON2", "RCPArsenalWorldMarkerCancel", "LeftButton")
         end
-        local left, bottom = center:GetRect()
-        self:CallMethod("RCPRadialBeginVisual", left + 22, bottom + 22)
+        self:CallMethod("RCPRadialBeginVisual", left+x*width, bottom+y*height)
         return false
     end
     if not self:GetAttribute("rcp-radial-held") then return false end
     local root = self:GetFrameRef("rcp-radial-root")
-    local center = self:GetFrameRef("rcp-radial-center")
     local x, y = root:GetMousePosition()
+    local ox,oy = self:GetAttribute("rcp-origin-x"),self:GetAttribute("rcp-origin-y")
     local marker, centerRelease
-    if x and y then
-        local left, bottom, width, height = root:GetRect()
-        local cl, cb = center:GetRect()
-        local dx, dy = left + x * width - cl - 22, bottom + y * height - cb - 22
-        if math.abs(dx) > 22 or math.abs(dy) > 22 then
+    local left, bottom, width, height = root:GetRect()
+    if x and y and ox and oy and width and height
+        and width==self:GetAttribute("rcp-origin-width") and height==self:GetAttribute("rcp-origin-height")
+        and root:GetEffectiveScale()==self:GetAttribute("rcp-origin-scale") then
+        local dx, dy = (x-ox)*width, (y-oy)*height
+        if dx*dx+dy*dy > 71.01*71.01 then
             marker = (math.floor((math.atan2(dx, dy) + math.pi / 8) / (math.pi / 4)) % 8) + 1
         else
             centerRelease = true
@@ -74,18 +88,18 @@ local CLICK = [[
     end
     self:RunAttribute("rcp-radial-reset")
     if marker then
-        self:SetAttribute("macrotext", "/wm " .. marker)
+        local macro="/wm " .. marker
+        self:SetAttribute("macrotext",macro)
+        self:SetAttribute("rcp-issued-" .. marker,true)
+        self:SetAttribute("rcp-pending-marker",marker)
+        self:CallMethod("RCPMarkerTrace","sector",marker,0,macro)
     elseif centerRelease then
-        local count = self:GetAttribute("count") or 0
-        if count == 0 then return false end
-        local index = self:GetAttribute("index") or 1
-        local macro = self:GetAttribute("rcp-sequence-macro-" .. index)
-        if not macro then return false end
-        self:SetAttribute("macrotext", macro)
-        index = index + 1
-        if index > count then index = 1 end
-        self:SetAttribute("index", index)
+        local macro, marker, position = self:RunAttribute("rcp-next-sequence")
+        if not macro then self:CallMethod("RCPMarkerTrace","center-blocked",0,0,"");return false end
+        self:SetAttribute("macrotext",macro)
+        self:CallMethod("RCPMarkerTrace","center",marker,position,macro)
     else
+        self:CallMethod("RCPMarkerTrace","ignored",0,0,"")
         return false
     end
 ]]
@@ -147,7 +161,7 @@ local function UpdateVisual(_, elapsed)
     local scale = UIParent:GetEffectiveScale()
     local dx, dy = x / scale - originX, y / scale - originY
     local selected
-    if math.abs(dx) > DEADZONE or math.abs(dy) > DEADZONE then
+    if dx*dx+dy*dy > DEADZONE*DEADZONE then
         selected = (math.floor((math.atan2(dx, dy) + math.pi / 8) / (math.pi / 4)) % 8) + 1
     end
     for i, slot in ipairs(visual.slots) do

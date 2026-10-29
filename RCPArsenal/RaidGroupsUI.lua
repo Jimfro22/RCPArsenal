@@ -38,6 +38,7 @@ function RA:CreateRaidGroupsPane(parent, kit)
         GameTooltip:AddLine(role=="TANK" and "Tank" or role=="HEALER" and "Healer" or role=="DAMAGER" and "Damage" or "Role unknown",0.8,0.8,0.85)
         GameTooltip:AddLine("Current: "..(entry.liveGroup and ("Group "..entry.liveGroup) or entry.absentPlaceholder and "Not in current raid" or "Identity not verified"),0.8,0.8,0.85)
         GameTooltip:AddLine("Draft: "..(target and ("Group "..target) or "Unassigned"),0.8,0.8,0.85)
+        if entry.matchedFullName then GameTooltip:AddLine("Realm alias matched: "..Literal(entry.matchedFullName),0.8,0.8,0.85,true) end
         if entry.absentPlaceholder then GameTooltip:AddLine("Absent placeholder. Kept in this layout; skipped by Apply.",0.8,0.8,0.85,true)
         elseif entry.identityReason then GameTooltip:AddLine(Literal(entry.identityReason),1,0.65,0.25,true)
         elseif entry.unresolved then GameTooltip:AddLine("Unresolved identity. Right-click to match a raider.",1,0.65,0.25,true)
@@ -491,6 +492,8 @@ function RA:CreateRaidGroupsPane(parent, kit)
         elseif (preview.operationCount or 0)==0 then message="Raid already matches. No live group changes to apply."
         else message="Ready to apply: "..changes.." group changes · "..tostring(preview.operationCount).." moves/swaps." end
         if preview and preview.canApply and not Locked() and #(preview.missing or {})>0 then message=message.." "..#preview.missing.." absent planned player(s) skipped." end
+        if preview and preview.canApply and (preview.realmAliasCount or 0)>0 then message=message.." "..preview.realmAliasCount.." realm alias(es) matched to current raiders." end
+        if preview and (preview.mergedRealmAliases or 0)>0 then message=message.." "..preview.mergedRealmAliases.." redundant tray alias(es) merged locally; Save to update this layout." end
         ui.applyReason=message
         if not busy then
             if ui.feedback then message=message.." · "..ui.feedback
