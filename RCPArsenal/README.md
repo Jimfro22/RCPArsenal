@@ -1,4 +1,4 @@
-# RCP Arsenal — 0.15.3-alpha.22
+# RCP Arsenal — 0.15.3-alpha.24
 
 Open **`/rcp`** for Arsenal. General applies four tool switches immediately and shows local addon status/actions. Personal Tools follows it in the sidebar; raid tools, addon versions and Profiles & Recovery remain directly accessible. First neutral open shows General, then restores your last page. `/rcp setup` also opens General; there is no staged review or Save step. `/rcparsenal` is an alternate entry if another addon also uses `/rcp`; older Arsenal aliases still work.
 
@@ -53,3 +53,9 @@ The optional world-marker cycler is under **My tools → World markers** or `/rc
 Use the versioned **release ZIP**, not GitHub's automatic source archive. Replace only `Interface/AddOns/RCPArsenal`; preserve `RaidArsenalDB` SavedVariables. Interface remains 120100 pending exact target-client testing. Packaged version/build is 0.15.2-alpha.1, profile schema 19, ability catalog 6, readiness protocol 1.
 
 Offline Lua, packaging, and source reviews do not establish native rendering, secure hardware dispatch, taint, communication, resurrection acceptance, or combat behavior. Follow the release's Windows validation checklist before treating this alpha as accepted. External addons remain separately installed; none is bundled or controlled through an unverified adapter.
+
+## Alpha.24 marker and raid-layout correction
+
+The marker wheel keeps a center region out to the visible sectors' inner edge. Center release uses at-cursor placement; sector release still opens a reticle for your ground click. Automatic mode prefers inactive configured markers, then wraps/reuses when all are active. Readable activity is synchronized outside combat. During combat or unreadable state it uses the last snapshot and local issued choices, which can include an uncompleted/cancelled reticle until a safe resync. This is not a native placement acknowledgment. `/dump RCPArsenal.WorldMarkers:GetLastAction()` shows only the latest owned branch, marker, sequence position and issued macro for a retest.
+
+Raid Groups supports imported realm aliases differing by spaces, ASCII apostrophes or internal hyphens while retaining readable names. Matching still requires a unique fresh current identity and GUID. Redundant grouped/tray aliases from older saved layouts are merged locally and stored only on explicit Save. Deliberately unassigned current players still need an explicit slot; dropping one onto an absent card keeps the absent card in the tray. Importing, loading and reviewing never move the raid.

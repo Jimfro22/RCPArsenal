@@ -26,6 +26,7 @@ function CreateFrame(kind, name, parent, templates)
     check(not combat or not (templates and templates:find('Secure')), 'Protected frames must be created outside combat')
     local frame = {attrs = {}, scripts = {}, refs = {}, writes = 0, parent = parent}
     function frame:RegisterEvent(event) end
+    function frame:UnregisterEvent(event) end
     function frame:SetScript(event, fn) self.scripts[event] = fn end
     function frame:SetSize(w, h) self.width, self.height = w, h end
     function frame:SetPoint(...) end
@@ -39,6 +40,13 @@ function CreateFrame(kind, name, parent, templates)
         self.attrs[key] = value
     end
     function frame:GetAttribute(key) return self.attrs[key] end
+    function frame:RunAttribute(key,...)
+        local chunk=assert(loadstring('return function(self,...)\n'..self.attrs[key]..'\nend'));setfenv(chunk,{})
+        return chunk()(self,...)
+    end
+    function frame:CallMethod(method,...)
+        local before=restricted;restricted=false;self[method](self,...);restricted=before
+    end
     if name then _G[name] = frame; frames[name] = frame else events[#events + 1] = frame end
     return frame
 end
@@ -71,6 +79,7 @@ local function modified(frame, key)
     return frame:GetAttribute(key .. '1') or frame:GetAttribute(key)
 end
 local function click(frame, down)
+    if frame.scripts.PreClick then frame.scripts.PreClick(frame,'LeftButton',down) end
     restricted = true
     local allowed = frame.pre(frame, 'LeftButton', down)
     restricted = false
@@ -116,10 +125,11 @@ check(not RA.WorldMarkers:SetOrder({1}), 'Combat editing should require waiting'
 check(before == cycle.writes + clear.writes, 'Combat setter mutated protected attributes')
 local action, macro = click(cycle, true)
 check(action == 'macrotext' and macro == '/wm [@cursor] 7', 'Restricted combat cycle failed')
+local afterAction=cycle.writes+clear.writes
 RA:GetDB().worldMarkers.enabled = false -- External profile change; applying is deferred.
 RA:FireCallback('PROFILE_RESET')
 local effective, pending = RA.WorldMarkers:GetState()
-check(effective and pending and before + 2 == cycle.writes + clear.writes, 'Deferred change did not preserve honest effective state')
+check(effective and pending and afterAction == cycle.writes + clear.writes, 'Deferred change did not preserve honest effective state')
 combat = false
 event('PLAYER_REGEN_ENABLED')
 effective, pending = RA.WorldMarkers:GetState()

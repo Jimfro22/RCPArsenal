@@ -1880,7 +1880,7 @@ local function CreateWorldMarkersPane(parent)
         if pending then
             RA:SetVisualText(state, "Changes pending until combat ends. Current actions remain " .. (effective and "enabled." or "off."))
         elseif combat then
-            RA:SetVisualText(state, "Change setup after combat. "..(markers:IsRadialEnabled() and markers:GetModeHelp() or "Normal sequence: each press advances once; Blizzard checks placement."))
+            RA:SetVisualText(state, "Change setup after combat. "..(markers:IsRadialEnabled() and markers:GetModeHelp() or "Normal sequence uses the last readable activity snapshot and local issued history. Inactive markers first; reuse the order when all are active."))
         elseif not settings.enabled then
             RA:SetVisualText(state,"World markers off. Prepare your sequence, mode and bindings, then enable when ready.")
         elseif settings.radialEnabled==true then
@@ -1888,7 +1888,7 @@ local function CreateWorldMarkersPane(parent)
         elseif #order == 0 then
             RA:SetVisualText(state, "Add at least one marker to use the cycler. Place-next is inactive.")
         else
-            RA:SetVisualText(state, "Each keypress attempts the next slot, even if rejected. Enabling, order changes and clear restart at slot 1.")
+            RA:SetVisualText(state, "Inactive configured markers first, then wrap/reuse. Uses an out-of-combat activity snapshot or local issued history; attempts are not placement confirmations.")
         end
         RA:SetVisualText(permission, markers:GetPermissionText())
     end

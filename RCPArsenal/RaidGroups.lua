@@ -48,8 +48,13 @@ local function Identity(value)
     if not name or name:find("%s") then return nil end
     realm=realm:gsub("%s","")
     if realm=="" then return nil end
+    -- Imported display spellings may differ from native server strings. This
+    -- is our bounded realm-alias policy, not a claimed Blizzard algorithm.
+    -- Keep readable names; never strip character accents or realm Unicode.
+    local realmKey=realm:gsub("[%s%-%']","")
+    if realmKey=="" then return nil end
     local full=name.."-"..realm
-    return {name=name,realm=realm,fullName=full,key=full:lower()}
+    return {name=name,realm=realm,fullName=full,key=(name.."-"..realmKey):lower()}
 end
 local function Label(value)
     value=Text(value,80)
@@ -266,7 +271,10 @@ local function View()
         local entry=Copy(row);entry.missing=member==nil;entry.unresolved=row.key==nil
         if not member then entry.absentPlaceholder,entry.identityReason,entry.matchCount=AbsentPlaceholder(row,not liveError and live or nil) end
         entry.guid=member and member.guid or nil;entry.liveGroup=member and member.group or nil
-        if member then entry.class=member.class;entry.role=member.role;entry.online=member.online;entry.offline=not member.online end
+        if member then
+            entry.class=member.class;entry.role=member.role;entry.online=member.online;entry.offline=not member.online
+            if row.fullName:lower()~=member.fullName:lower() then entry.matchedFullName=member.fullName end
+        end
         view.entries[id]=entry;if member then represented[member.guid]=true end
     end
     if live then for _,member in ipairs(live.members) do if not represented[member.guid] then
@@ -523,7 +531,7 @@ function Groups:SaveLayout(name)
     if not store.items[name] and count>=MAX_LAYOUTS then return false,"At most 50 layouts can be saved." end
     local saved;saved,reason=SerializeLayout(draft,draft.boss,name);if not saved then return false,reason end
     store,reason=Store(true);if not store then return false,reason end
-    store.items[name]=saved;savedBaseline={name=name,key=LayoutKey(draft)}
+    store.items[name]=saved;draft.mergedRealmAliases=nil;if preview then preview.mergedRealmAliases=0 end;savedBaseline={name=name,key=LayoutKey(draft)}
     Emit();return true
 end
 function Groups:DeleteLayout(name)
@@ -574,6 +582,24 @@ function Groups:LoadLayout(name)
         model.tray[#model.tray+1]=entry.id
     end
     local baseline=LayoutKey(model)
+    -- Older imports could save one realm spelling in a group and its native
+    -- counterpart in the tray. Coalesce only that same fresh GUID's redundant
+    -- tray alias, never two group targets or an actually absent template card.
+    local assigned={}
+    for group=1,8 do for slot=1,5 do
+        local entry=model.entries[model.groups[group][slot]]
+        if entry and entry.guid then
+            if assigned[entry.guid] then return false,"Saved layout gives multiple group targets to "..entry.fullName..". Import a layout with one target for that player." end
+            assigned[entry.guid]=entry
+        end
+    end end
+    for index=#model.tray,1,-1 do
+        local entry=model.entries[model.tray[index]];local target=entry.guid and assigned[entry.guid]
+        if target and target.key==entry.key and target.fullName:lower()~=entry.fullName:lower() then
+            model.entries[entry.id]=nil;table.remove(model.tray,index)
+            model.mergedRealmAliases=(model.mergedRealmAliases or 0)+1
+        end
+    end
     AddLive(model)
     local entries=0;for _ in pairs(model.entries) do entries=entries+1 end
     if entries>MAX_ENTRIES then return false,"Layout and current raid exceed the entry limit." end
@@ -690,7 +716,11 @@ local function Targets(snapshot,view)
         local entry=view.entries[id]
         if not entry or used[id] then return nil,"Duplicate or invalid tray card." end
         used[id]=true
-        if entry.guid then return nil,"Every current raider needs a group target; the tray is not a bench action." end
+        if entry.guid then
+            local member=snapshot.byGuid[entry.guid]
+            if not member then return nil,"An unassigned player is no longer in this raid; Update raid and review again." end
+            return nil,member.fullName.." (currently Group "..member.group..") needs a target. Place this Unassigned card in a group slot; dropping it on an absent card retains that card in the tray. No player is moved until Apply."
+        end
         local absent,reason=AbsentPlaceholder(entry,snapshot)
         if not absent then return nil,reason end
         missing[#missing+1]=entry.fullName
@@ -741,16 +771,19 @@ function Groups:PrepareApply()
     local snapshot;snapshot,reason=Capture();Record(snapshot,reason)
     if not snapshot then Emit();return nil,reason end
     if uncertain then Emit();return nil,"A submitted subgroup result is still unresolved; refresh after it settles." end
-    local targets,missing=Targets(snapshot,View());if not targets then preview=nil;Emit();return nil,missing end
+    local view=View()
+    local targets,missing=Targets(snapshot,view);if not targets then preview=nil;Emit();return nil,missing end
     local plan;plan,reason=Plan(snapshot,targets);if not plan then preview=nil;Emit();return nil,reason end
     local changes={}
     for _,member in ipairs(snapshot.members) do changes[#changes+1]={guid=member.guid,fullName=member.fullName,currentGroup=member.group,targetGroup=targets[member.guid],changed=member.group~=targets[member.guid]} end
     local changed=0;for _,row in ipairs(changes) do if row.changed then changed=changed+1 end end
+    local aliases=0;for _,row in pairs(view.entries)do if row.matchedFullName then aliases=aliases+1 end end
     local canApply,why=snapshot.canApply,snapshot.reason
     if canApply then canApply,why=Capabilities(plan) end
     previewSerial=previewSerial+1
     preview={id="preview:"..previewSerial,draftRevision=draft.revision,fingerprint=snapshot.fingerprint,targets=targets,
-        changes=changes,missing=missing,changedCount=changed,operationCount=#plan,canApply=canApply,reason=why,plan=plan}
+        changes=changes,missing=missing,realmAliasCount=aliases,mergedRealmAliases=draft.mergedRealmAliases or 0,
+        changedCount=changed,operationCount=#plan,canApply=canApply,reason=why,plan=plan}
     draft.basis=snapshot.fingerprint;draft.stale=false;Emit();return Copy(preview)
 end
 local function CancelTimer(active)
