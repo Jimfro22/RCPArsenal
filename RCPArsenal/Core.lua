@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.27"
+RA.VERSION = "0.15.3-alpha.28"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -152,6 +152,7 @@ local DEFAULTS = {
         -- Local opt-in only. Do not put numeric order defaults here:
         -- CopyDefaults would refill deliberately removed/empty sequence slots.
         worldMarkers = { enabled = false, radialEnabled = false },
+        deathRecap = { enabled = false, autoOpen = true },
         personalTools = { autoRes = false, autoResInCombat = false, consumableReminder = false, healthThreshold = 40,
             reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion", reminderIconSize = 56, reminderCombat = "IN_COMBAT", reminderSound = true,
             reminderSoundChannel = "Master", reminderSoundChoice = "sound_6", reminderEmptyTextSize = 48, reminderShowOnCooldown = false, reminderSoundWhenEffectsMuted = false, reminderStoneGlow = true },
@@ -455,6 +456,9 @@ local function MigrateProfile(profile)
     profile.personalTools.autoRes = profile.personalTools.autoRes == true
     profile.personalTools.autoResInCombat = profile.personalTools.autoResInCombat == true
     profile.personalTools.consumableReminder = profile.personalTools.consumableReminder == true
+    profile.deathRecap = type(profile.deathRecap)=="table"and profile.deathRecap or {}
+    profile.deathRecap.enabled = profile.deathRecap.enabled==true
+    profile.deathRecap.autoOpen = profile.deathRecap.autoOpen~=false
     profile.personalTools.healthThreshold = math.max(1, math.min(99, tonumber(profile.personalTools.healthThreshold) or 40))
     local personal = profile.personalTools
     for key, default in pairs({ reminderStoneText = "Use Healthstone", reminderPotionText = "Use healing potion" }) do
@@ -916,6 +920,7 @@ function RA:ApplyImportedProfile(profile)
         profile.hudEnabled = current.hudEnabled
         profile.demoMode, profile.autoShowEncounter = current.demoMode, current.autoShowEncounter
         profile.personalTools, profile.readiness = current.personalTools, current.readiness
+        profile.deathRecap = current.deathRecap
         profile.scan = profile.scan or {}
         profile.scan.showStrip, profile.scan.demoPreview = current.scan.showStrip, current.scan.demoPreview
         profile.actions = profile.actions or {}

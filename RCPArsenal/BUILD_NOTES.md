@@ -1,3 +1,13 @@
+# 0.15.3-alpha.28 personal Death Recap test candidate
+
+Death Recap is a separate local opt-in, OFF by default. Enable it in Personal Tools. Preview is inert sample data; View last retains only the last frozen page in this login session. No HP/heal curve is synthesized. Recorded casts, last-alive facts and death-notification observations remain separate; charges, held state, opaque fields and stale inventory never become assumed ready or unused.
+
+Native records require a witnessed clean native-meter epoch, complete bounded alive baseline, explicit personal death ID delta, one unresolved own death and matching current/explicit session sets. Default recap selection is never used. Resets, late enable, ambiguity or unreadable data retain Unknown. Native synchronization and presentation remain client acceptance gates. Native and local clocks are not combined.
+
+The shared local supply cache serves Recap independently of the consumable reminder. The bell asks before enabling only the existing master. Share prepares public text for the native composer; it never sends automatically. Journal has no shipped verified mappings, so no book is shown. Existing marker code, media and optional-tool defaults are preserved. Profile/catalog/protocol remain 19/6/1; the personal defensive catalog has its own 2026-10-30.1 revision.
+
+GitHub test delivery is authorized after source/CI review. CurseForge, tags and releases remain held. Full limitations and test instructions: docs/DEATH_RECAP.md in the source checkout.
+
 # 0.15.3-alpha.26 owner test candidate
 
 The owner rejected alpha.25's native marker popup and icon behavior and chose instant placement plus a separate optional wheel key. The existing Place next action now always uses its original secure down-phase `/wm [@cursor] N` path. It never opens the wheel or installs wheel routes, even with the old radialEnabled setting on. Clear and saved native binding identities/keys remain intact. The new Wheel binding starts unbound; no chord is assigned or copied automatically.

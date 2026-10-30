@@ -1,0 +1,67 @@
+{
+  "revision": "2026-10-30.1",
+  "build": "12.1.5.70575",
+  "status": "exact_API_contract_plus_proposed_fail_closed_association; temporal_synchronization_requires_native_validation",
+  "api": {
+    "availability": "C_DamageMeter.IsDamageMeterAvailable() -> isAvailable:bool, failureReason:string; availability is not an instruction to enable/change native meter settings",
+    "currentDeaths": "C_DamageMeter.GetCombatSessionFromType(Enum.DamageMeterSessionType.Current, Enum.DamageMeterType.Deaths) -> session",
+    "explicitSessionDeaths": "C_DamageMeter.GetCombatSessionFromID(sessionID, Enum.DamageMeterType.Deaths) -> session",
+    "availableSessions": "C_DamageMeter.GetAvailableCombatSessions() -> {sessionID,name,durationSeconds?}[]; no documented current-ID field/order guarantee",
+    "duration": "C_DamageMeter.GetSessionDurationSeconds(sessionType) -> durationSeconds?; duration is not a death instant or GetTime-aligned clock",
+    "enums": {
+      "DamageMeterSessionType.Current": 1,
+      "DamageMeterSessionType.Overall": 0,
+      "DamageMeterSessionType.Expired": 2,
+      "DamageMeterType.Deaths": 9
+    },
+    "personalRows": "session.combatSources[]; isLocalPlayer:bool and deathRecapID:number are NeverSecret; require public true and positive integer respectively",
+    "otherFields": "sourceGUID/name ConditionalSecret; deathTimeSeconds/amounts not NeverSecret; not needed for ID association",
+    "explicitRecap": [
+      "C_DeathRecap.HasRecapEvents(recapID)",
+      "C_DeathRecap.GetRecapEvents(recapID)",
+      "C_DeathRecap.GetRecapLink(recapID)",
+      "C_DeathRecap.GetRecapMaxHealth(recapID)"
+    ]
+  },
+  "events": {
+    "DAMAGE_METER_COMBAT_SESSION_UPDATED": "UniqueEvent payload(type:DamageMeterType,sessionID:number). Native UI says overall plus current events occur; positive current event ID can bind current session. Reject0/unknown; corroborate with current snapshot when readable.",
+    "DAMAGE_METER_CURRENT_SESSION_UPDATED": "UniqueEvent, no payload; invalidate/rebaseline current alias epoch; not a death-ready signal",
+    "DAMAGE_METER_RESET": "UniqueEvent, no payload; invalidate all baselines/pending association",
+    "PLAYER_DEAD": "Own local death counter/notification only; no documented recapID payload",
+    "PLAYER_REGEN_ENABLED": "Wake one reserved OOC association attempt; does not itself prove meter data is fresh"
+  },
+  "bounds": {
+    "currentSessionOnly": true,
+    "maxRowsScanned": 128,
+    "maxPersonalBaselineIDs": 64,
+    "maxAssociationAttemptsPerDeath": 3,
+    "retainedPages": 1,
+    "noPerFramePolling": true,
+    "overflow": "Unknown; never assert complete set"
+  },
+  "algorithm": [
+    "On enable/clean meter epoch while alive, read complete current Deaths rows with public container/type guards. Store all personal positive recap IDs as baseline B. Empty personal set is known empty only after a complete readable scan. Late enable/reload, reset, secret containers, overflow, or missed prior own deaths leaves coverage incomplete.",
+    "Keep local meter epoch and all own PLAYER_DEAD notifications. Preserve unresolved-prior-death ambiguity across this epoch; do not forget it when a page retry expires. A new epoch or reset invalidates comparisons. Capture positive current session ID from current meter update event when available; bind it to the baseline epoch and crosscheck current-vs-explicit personal ID sets when readable. Never infer current sessionID by first/max available entry.",
+    "At own death freeze baseline B, meter epoch/sessionID, local death serial and generation. Accept at most one outstanding unmatched own death for this epoch. Multiple/missed/unresolved deaths mean association unverified.",
+    "At a bounded death/meter/OOC wake read only the same explicit sessionID when bound, otherwise current alias only if its epoch has not changed. Form full personal ID set S. Require exactly one new unaccepted ID in S minus B, no removed baseline IDs/reset/session switch, complete public scan, and exactly one unmatched own death. No newest-group, row-order or timestamp ranking.",
+    "If baseline not complete or previous personal deaths could arrive late, do not promote based solely on a one-ID delta. Keep association unverified; use clean next epoch/native test evidence to establish ingestion/event behavior.",
+    "Use the candidate recapID explicitly for EVERY C_DeathRecap getter. Native consumer passes source.deathRecapID to OpenDeathRecapUI, which in turn uses that explicit ID. Do not use default getter or parse/synthesize a link token. GetRecapLink(candidateID) is the token for that explicit record; optional default-token equality is only corroboration.",
+    "Require public HasRecapEvents(candidateID)==true, validate each native row field. If a readable destGUID contradicts frozen playerGUID reject; missing raw destGUID is not local proof, while typed meter isLocalPlayer supplies record identity. Preserve first native row before sorting. Amount/HP/clock fields remain individually Unknown when unsupported.",
+    "Reserve at least one of the total3 attempts for PLAYER_REGEN_ENABLED if in-combat reads are opaque. Meter events may wake/coalesce pending work but cannot restart the budget. Never cast, change meter settings, search all sessions, or poll each frame. Disable/new page/reset cancels stale work.",
+    "If any association condition is unproved, render Personal native record: association unverified or Current native recap unavailable. Do not label as guaranteed current death. This set/event protocol is stronger evidence than a changed default token, but API docs do not guarantee ingestion timing; native validation remains a release gate."
+  ],
+  "secretHandling": "GetCombatSessionFromType/ID are SecretWhenInCombat. Check issecretvalue and types before indexing, length, iteration, comparison, formatting, fingerprinting or arithmetic. NeverSecret leaf fields do not make an opaque parent collection traversable. OOC may still be missing/unsupported; Unknown remains Unknown.",
+  "clocks": "No GetTime comparisons with deathTimeSeconds or recap timestamp. Local death/window times are receipt times only. Native deathTimeSeconds is session-relative for UI and may be -1 in Overall. Use IDs/set transitions for association; native recap relative rows can use only readable same-record timestamps.",
+  "evidence": [
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterDocumentation.lua#L21",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterDocumentation.lua#L133",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterDocumentation.lua#L194",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterConstantsDocumentation.lua#L43",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DamageMeter/DamageMeterSessionWindow.lua#L193",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DamageMeter/DamageMeterSessionWindow.lua#L562",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DamageMeter/DamageMeterSessionWindow.lua#L967",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DamageMeter/DamageMeterEntry.lua#L593",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua#L317",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathRecapDocumentation.lua"
+  ]
+}

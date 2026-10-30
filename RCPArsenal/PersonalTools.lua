@@ -199,6 +199,7 @@ end
 
 local function SyncEventDemand()
     local enabled = Enabled("consumableReminder") == true
+    if RA.HealingSupplies and RA.HealingSupplies.SetConsumer then RA.HealingSupplies:SetConsumer("reminder",enabled) end
     for _, subscription in ipairs(reminderEvents) do subscription:SetEnabled(enabled) end
     if resurrectionEvent then resurrectionEvent:SetEnabled(Enabled("autoRes") == true) end
 end
@@ -480,7 +481,10 @@ function Tools:Refresh(refreshInventory)
     SyncEventDemand()
     CancelReadiness()
     -- Invalidate before visibility/life guards, without scanning hidden bags.
-    if refreshInventory ~= false then inventory, lastExpiry = nil, nil end
+    if refreshInventory ~= false then
+        inventory, lastExpiry = nil, nil
+        if RA.HealingSupplies and RA.HealingSupplies.InvalidateCache then RA.HealingSupplies:InvalidateCache() end
+    end
     local previousItem, previousReason, previousRes = selectedItem, reminderReason, resReason
     local previousSoundReady = soundSupplyReady
     soundSupplyReady = false
@@ -498,7 +502,9 @@ function Tools:Refresh(refreshInventory)
     elseif not BuildCurve(Threshold((Settings() or {}).healthThreshold)) then
         HideReminder("Native curve unavailable; reminder hidden.")
     else
-        if not inventory then inventory = RA.HealingSupplies:Snapshot() end
+        if not inventory then
+            inventory = RA.HealingSupplies.GetCached and RA.HealingSupplies:GetCached("reminder") or RA.HealingSupplies:Snapshot()
+        end
         local candidate, readiness, deadline, now = SelectCarried(inventory)
         -- SelectCarried prefers any positively ready candidate before its
         -- optional cooldown/unknown visual fallback. Audio never uses that

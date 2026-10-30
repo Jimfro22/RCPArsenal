@@ -111,3 +111,38 @@ function Supplies:Snapshot()
     result.itemID, result.kind, result.icon = chosen and chosen.id, chosen and chosen.kind, chosen and chosen.icon
     return result
 end
+
+-- Shared local cache. The explicit raid check still calls Snapshot directly.
+-- Optional consumers share one event-invalidated bags evaluation; rendering,
+-- health signals and cooldown signals never invalidate or enumerate bags.
+local consumers, cache, subscriptions = {}, nil, {}
+function Supplies:SetConsumer(key, enabled)
+    if key ~= "reminder" and key ~= "recap" then return end
+    consumers[key] = enabled == true or nil
+    local active = consumers.reminder == true or consumers.recap == true
+    for _, subscription in ipairs(subscriptions) do subscription:SetEnabled(active) end
+    if not active then cache = nil end
+end
+function Supplies:InvalidateCache()
+    cache = nil
+end
+function Supplies:GetCached(key)
+    if consumers[key] ~= true then return nil end
+    if not cache then
+        cache = self:Snapshot()
+        local ok, value = pcall(function() return GetTime() end)
+        if ok and not Secret(value) and type(value) == "number" and value == value and value >= 0 and value < math.huge then
+            cache.observedAt = value
+        end
+    end
+    return cache
+end
+if RA.RegisterOptionalEvent then
+    for _, event in ipairs({"BAG_UPDATE_DELAYED", "PLAYER_ENTERING_WORLD"}) do
+        subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event,function() Supplies:InvalidateCache() end)
+    end
+    subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent("ITEM_DATA_LOAD_RESULT",function(_,id,success)
+        id = Integer(id,1,2147483647)
+        if id and not Secret(success) and success == true and cache and cache.pending[id] then Supplies:InvalidateCache() end
+    end)
+end
