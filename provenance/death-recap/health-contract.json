@@ -1,0 +1,97 @@
+{
+  "revision": "2026-10-30.alpha29.hp.2",
+  "build": "12.1.5.70575",
+  "pin": "15881d522c44cd106d3d8660106ec9f9d2f44167",
+  "recommended_route": "Selected recorded-health bar/numeric value plus discrete native timepoints. Actual real snapshots are not a continuous health history.",
+  "verdict": {
+    "real_selected_event_health_bar": "YES conditionally: explicit accepted own recapID; public finite currentHP and same-record recap maxHealth. Native UI already computes this ratio.",
+    "real_event_sampled_health_ribbon": "YES to discrete recorded timepoints only when rawHP/max ratio is valid. Do not connect live native snapshots as a complete health history; retain gaps.",
+    "complete_continuous_HP_or_healing_history_from_recap": "NO verified source contract: no complete heal stream, per-event maximum or intrahit before/after semantics.",
+    "live_health_bar_without_secret_branching": "YES display-only via native StatusBar secret-capable setters; this is not a historical data API.",
+    "guaranteed_public_finite_history_from_live_curves": "NO: UnitHealth/Percent are declared secret; curves do not declassify. A bounded history would need new opt-in capture and native validation, outside current alpha29 preview fix."
+  },
+  "minimum_capture": {
+    "identity": "Reuse the existing explicit accepted own-personal recapID and association guards. Never use a newly selected/default or prior record as current.",
+    "getters": [
+      "events=C_DeathRecap.GetRecapEvents(recapID)",
+      "recapMaxHealth=C_DeathRecap.GetRecapMaxHealth(recapID)"
+    ],
+    "max_additional_api_calls_per_native_attempt": 1,
+    "max_events": 16,
+    "attempts": "Reuse existing <=3 native fetch attempts; no separate polling/retry subsystem.",
+    "field_guards": "Public plain parent/row; issecretvalue false before type/value inspection; finite numeric currentHP>=0 and finite recapMaxHealth>0. Do not map nil/secret/malformed to0.",
+    "scale_rule": "This is ONE recap-level max for every event, matching native UI. It is not verified per-event maximum health.",
+    "ratio_rule": "For a bar on the recap scale, require0<=currentHP<=recapMaxHealth. Use currentHP/recapMaxHealth. If out of scale, keep the valid raw HP readout but do not silently clamp it or imply100%.",
+    "partial_rule": "Keep damage/event data when HP is missing. A single bad HP field does not invalidate an otherwise accepted recap.",
+    "zero_rule": "Public0 is a recorded value; never append a zero endpoint merely because PLAYER_DEAD fired.",
+    "timing_rule": "Use only each event timestamp within the accepted native record; no assumed GetTime/live-sample alignment.",
+    "additional_scope_limits": "Existing verified explicit own recapID only. No new events/polling/session-association changes. Keep raw recordedHP independent of maxHealth."
+  },
+  "renderer_input_shape": {
+    "origin": "native_recap | example (Example must remain visible on every fictional fixture)",
+    "recapID": "accepted real ID; absent for Example",
+    "recapMaxHealth": "public number or null, frozen once for this record",
+    "snapshots": [
+      {
+        "nativeIndex": "original event index",
+        "timestamp": "same-record public timestamp or null",
+        "recordedHP": "public native currentHP or null",
+        "hpState": "observed | unknown | out_of_recap_scale",
+        "hpSemantics": "Health reported with this event; before/after-hit unspecified",
+        "scaleSemantics": "Fraction of recap maxHealth, not verified event-specific maxHealth"
+      }
+    ]
+  },
+  "product_copy": {
+    "bar": "Recorded health",
+    "detail": "Health reported with this event.",
+    "gap": "Health was not recorded for this event.",
+    "scale_tooltip": "Scaled to the max health supplied with this recap.",
+    "do_not_claim": [
+      "HP before the hit",
+      "HP after the hit",
+      "complete health history",
+      "healing received from positive HP deltas",
+      "a synthetic zero endpoint",
+      "real live data for an Example fixture"
+    ]
+  },
+  "live_signal_facts": {
+    "UnitHealth": "UnitHealth(player,false); SecretReturns=true; usePredicted defaults true, so false is required for an unpredicted observation.",
+    "UnitHealthPercent": "UnitHealthPercent(player,false,curve?); SecretReturns=true and SecretWhenCurveSecret=true; percentage can feed native display without Lua arithmetic.",
+    "UnitHealthMax": "SecretWhenUnitHealthMaxRestricted=true.",
+    "events": "UNIT_HEALTH/UNIT_MAXHEALTH have unitTarget only, no historical HP payload; SynchronousEvent/UniqueEvent are not a guarantee of one sample per hit/heal.",
+    "sinks": "StatusBar:SetValue/SetMinMaxValues accept secret arguments; GetValue/GetMinMaxValues return secret for BarValue aspect. Readback is not a public-data route.",
+    "curve": "CurveConstants.ScaleTo100 maps0..1 to0..100 for display; it does not reveal protected input.",
+    "history_limit": "No history object/getter is supplied by these verified APIs. Retaining/replaying opaque samples as display-only history requires a separately scoped native spike; no public numeric/export claim."
+  },
+  "native_acceptance_required": [
+    "Explicit current own recapID/association; nil/secret/zero/out-of-scale HP/max cases; show gaps without replacing values",
+    "Compare recorded snapshot/rawHP and native tooltip percent against the Blizzard recap for the same record; determine before/after with controlled hit/heal tests before ever adding that wording",
+    "Temporary max-health change verifies fixed recap denominator behavior; do not call it per-event percentage",
+    "Heal between damage records demonstrates that missing intermediate HP/heals cannot be reconstructed",
+    "If future live collection is authorized: bound own-player sampling/retention, verify usePredicted=false, capture-time/max changes, secret storage/render replay permissions and local/native clock association; no secret arithmetic/readback/export"
+  ],
+  "preview_constraint": "All alpha29 fictional examples are explicitly Arcane Mage(spec62). PrismaticBarrier235450; explicitly choose IceBlock45438 OR IceCold414658, not both; AlterTime342245; Healthstone and audited healing potion. This research creates no sample recorder or outgoing-DPS defensive classification.",
+  "evidence": {
+    "recap_percent": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua#L195",
+    "recap_tooltip": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua#L70",
+    "recap_scale_and_time": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua#L315",
+    "recap_api": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathRecapDocumentation.lua",
+    "live_health": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua#L1398",
+    "health_events": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua#L4182",
+    "statusbar_sinks": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleStatusBarAPIDocumentation.lua#L355",
+    "statusbar_readback": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleStatusBarAPIDocumentation.lua#L162",
+    "curve_scale": "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_SharedXMLBase/CurveConstants.lua#L8"
+  },
+  "review_gates": [
+    "PublicHP0 yields a real0 value, never nil by truthiness.",
+    "Missing/secret/negative/nonfiniteHP or missing/secret/nonpositive/nonfinite max never becomes0 or a guessed bar.",
+    "RawHP remains readable even without a valid max; HP>max never silently clamps to100%.",
+    "MissingHP/max does not reject otherwise valid damage rows.",
+    "Selection refresh resets numeric/bar state: switching rows cannot retain the previous HP.",
+    "Real ShowLast never trusts sample-looking fields as permission to consume fictional health/healing. Example origin is set only by explicit Preview path.",
+    "Native fields keep same-record timestamps and recap-level denominator caveat; no before/after language, damage subtraction, healing inference or local/native clock merge.",
+    "Root allowed only the data extraction/rendering extension; recorder/association/marker/media event behavior stays otherwise unchanged."
+  ]
+}

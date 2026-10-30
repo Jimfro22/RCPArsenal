@@ -1,3 +1,11 @@
+# 0.15.3-alpha.29 readable Death Recap test candidate
+
+Preview opens a fictional Arcane Mage encounter with a filled 33.3% selected-health bar, example damage/healing, Prismatic Barrier and readable item/defensive states. Example data is always labelled and isolated from recording, real history, inventory, settings and live actions. The 640×480 display uses shared fonts, colors and pooled native regions.
+
+An already verified explicit own recap ID can now supply public finite raw event health and one positive finite recap maximum per bounded attempt. Real recorded health shows a selected value/bar and discrete points only. Unknown clears selection, zero stays known, and above-max raw values stay readable without clamping. No continuous real history, heal, before/after-hit semantics or local/native clock alignment is inferred. Association, subscriptions, retries, default OFF, catalog and media are preserved.
+
+Offline assertions and packaging support source review; native font fit, event ingestion, identity, secret behavior, tooltip and taint acceptance remain open. GitHub source/test delivery only; CurseForge, tags and releases stay held. See docs/DEATH_RECAP.md.
+
 # 0.15.3-alpha.28 personal Death Recap test candidate
 
 Death Recap is a separate local opt-in, OFF by default. Enable it in Personal Tools. Preview is inert sample data; View last retains only the last frozen page in this login session. No HP/heal curve is synthesized. Recorded casts, last-alive facts and death-notification observations remain separate; charges, held state, opaque fields and stale inventory never become assumed ready or unused.
