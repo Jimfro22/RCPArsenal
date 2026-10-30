@@ -1,0 +1,88 @@
+{
+  "revision": "2026-10-30.1",
+  "module": "RA.DeathRecapCatalog",
+  "owner_priority": "No assumption is rendered/shared as confirmed readiness",
+  "retail_build": "12.1.5.70575",
+  "native_ui_commit": "15881d522c44cd106d3d8660106ec9f9d2f44167",
+  "roster": "spec-roster.json",
+  "catalog_status": "Bounded handoff catalog.json:68 verified identity/eligibility rows,18 disabled entries; full roster40; exhaustive=false. Extra exclusions in candidates-disabled.json.",
+  "entry_shape": {
+    "key": "stable identity",
+    "spellID": "public cast identity",
+    "name": "static display label",
+    "category": "major | minor",
+    "class": "class token",
+    "specs": "verified static eligibility IDs",
+    "knownSpellIDs": "exact learned/override identities accepted; no name-based aliasing",
+    "verified": "ID and class/spec eligibility verified, not readiness",
+    "evidence": "build-pinned source URLs",
+    "note": "talent/override/charge/held/resource/target constraints",
+    "eligibility": "additional verified conditions or explicit unknown",
+    "requiredTalentSpellIDs": "ALL additional modifiers must be positively selected/known; do not treat as alternative activation aliases."
+  },
+  "classification": {
+    "major": "Primary large survival button: immunity, large/broad mitigation, major health buffer or emergency survival heal; not inferred from duration alone.",
+    "minor": "Smaller/shorter, evasive/conditional protection or active mitigation; passive effects and pure movement/offense excluded.",
+    "exceptions": "Class/spec context and emergency healing classification are product choices, recorded per entry; not native facts or availability."
+  },
+  "runtime_gates": [
+    "Only verified identity rows may become tracked; current public class/spec must be in the row and exact current learned/override ID must be readable and known.",
+    "Unverified candidate disabled, excluded spec coverage Unknown. Never infer not known from secret/nil/error.",
+    "No row or classification implies available, carried, talented, unused or ready.",
+    "Spell identity changes on spec/talent/override changes invalidate cached observations.",
+    "Cap32 unique tracked spell identities per current spec; catalog membership is not a per-frame scan request.",
+    "Honor every row prerequisite. Fortifying Brew115203 additionally requires talent388917/resolved mapping; Fade586 requires373446; Earth Elemental198103 requires1279819. Unknown gate excludes confirmed availability."
+  ],
+  "observation_shape": {
+    "value": "typed public scalar or null",
+    "state": "observed | unknown | not_applicable",
+    "observedAt": "public local GetTime/monotonic time",
+    "context": "pull-baseline | cooldown-event | charge-event | interval | death-notification | bags-event",
+    "ageAtDeath": "public measured delta or null",
+    "reason": "explicit reason, including secret/missing/API failure/not observed/gap",
+    "origin": "native API and field name",
+    "identity": "spell/item/base/override/spec identity at measurement"
+  },
+  "independent_facts": [
+    "known",
+    "cooldown.isActive",
+    "cooldown.isEnabled",
+    "cooldown.isOnGCD with trusted event context",
+    "charges.current",
+    "charges.max",
+    "usability.isUsable",
+    "usability.insufficientPower",
+    "lossOfControl",
+    "carried",
+    "itemCount",
+    "itemCharges",
+    "successfulCast",
+    "auraCoverage"
+  ],
+  "rules": [
+    "No fixed-duration estimate becomes state.",
+    "Current post-death/out-of-combat state is distinct from frozen last-alive and death-notification observations.",
+    "GetSpellCooldown isActive/isEnabled are public fields; numeric timings may be secret. isOnGCD is trusted only in SPELL_UPDATE_COOLDOWN context.",
+    "Charge recharging does not imply zero charges; use public actual current count or Unknown.",
+    "isEnabled=false is held cooldown, not proof of ready.",
+    "Observed cast and readiness are independent. Cast may leave charges or reset; missing cast is not unused.",
+    "Actual cached bag data supports carried/absent only with complete readable coverage; stack count is not Healthstone charges.",
+    "IsUsableItem/IsSpellUsable at death is measured while dead; do not use as pre-hit eligibility proof.",
+    "No missing/secret/error => zero, false, none, unavailable or available. No secret arithmetic, sorting, concatenation for export or serialization.",
+    "Frozen observations and source clocks are never silently updated after death.",
+    "Saturated confirmed state requires its narrowly defined supported observation; Unknown distinct; dim keeps actual reason. Never label full pre-fatal usability as proven."
+  ],
+  "consumer_bounds": {
+    "tracked_spells_per_spec": 32,
+    "native_rows": 16,
+    "native_fetch_attempts_per_death": 3,
+    "retained_pages": 1,
+    "cast_ring": 64,
+    "observation_interval_seconds": 0.5,
+    "retention_seconds": 30
+  },
+  "source_docs": [
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/SpellSharedDocumentation.lua",
+    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/SpellBookDocumentation.lua"
+  ]
+}

@@ -10,6 +10,8 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open Addons & Versions")
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
     print("  |cff3aa7ff/rcp markers|r - configure the normal marker sequence, optional hold wheel and keys")
+    print("  |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
+    print("  |cff3aa7ff/rcp recappreview|r - inert sample; |cff3aa7ff/rcp recapstatus|r - safe local diagnostics")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
     print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
@@ -86,7 +88,15 @@ local function HandleSlash(raw)
     local command, rest = (raw or ""):match("^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
 
-    if command == "" or command == "config" then
+    if command=="recap"then
+        if not RA.DeathRecapUI:ShowLast()then RA:OpenConfig("MYTOOLS")end
+    elseif command=="recappreview"then RA.DeathRecapUI:Preview()
+    elseif command=="recapstatus"then
+        local state=RA.DeathRecap:GetDiagnostics()
+        RA:Print("Recap "..(state.optionalEnabled and"on"or"off").."; tracked="..state.trackedSpells.."; samples="..state.samples.."; nativeReads="..state.nativeReads.."; "..state.nativeStatus)
+        RA:Print("Meter reads="..state.association.reads.."; rows="..state.association.rows.."; clean baseline="..(state.association.baselineKnown and"yes"or"no").."; ticker="..(state.tickerActive and"active"or"off"))
+        RA:Print("Client "..(state.client.version or"Unknown").." build "..(state.client.build or"Unknown").." interface "..(state.client.interface or"Unknown").."; catalog "..(state.catalogBuild or"Unknown"))
+    elseif command == "" or command == "config" then
         RA:OpenConfig()
     elseif command == "general" then
         RA:OpenConfig("GENERAL")

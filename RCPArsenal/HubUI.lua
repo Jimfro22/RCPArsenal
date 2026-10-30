@@ -377,6 +377,7 @@ function RA:CreateHubPanes(panes, kit)
     local scroll=CreateFrame("ScrollFrame",nil,tools,"UIPanelScrollFrameTemplate")
     Point(scroll,"TOPLEFT",tools,"TOPLEFT",0,-62);Point(scroll,"BOTTOMRIGHT",tools,"BOTTOMRIGHT",-28,0)
     local body=CreateFrame("Frame",nil,scroll);Size(body,918,500);scroll:SetScrollChild(body)
+    local recapSettings=RA.DeathRecapUI and RA.DeathRecapUI:CreateSettings(body,kit)
     local PersonalLayout, expanded, configureOff, advancedGlow, styleOverlay, pickerSession
     local sections, disclosures = {}, {}
     local function CloseGlowPicker()
@@ -634,6 +635,11 @@ function RA:CreateHubPanes(panes, kit)
         end
         configuration:SetHeight(y)
         local total=show and configY+y+14 or configY+14
+        if recapSettings then
+            recapSettings:Refresh();recapSettings:ClearAllPoints()
+            Point(recapSettings,"TOPLEFT",body,"TOPLEFT",0,-total-14)
+            total=total+recapSettings:GetHeight()+28
+        end
         body:SetHeight(total)
         local viewport=scroll:GetHeight();if not viewport or viewport<=0 then viewport=598 end
         local current=scroll:GetVerticalScroll() or 0
