@@ -66,6 +66,12 @@ local function StopRecording()
     for _,subscription in ipairs(active)do subscription:SetEnabled(false)end
 end
 
+local function RecordedHealth(value,positive)
+    value=Public(value)
+    if type(value)~="number"or value~=value or value==math.huge or value==-math.huge
+        or value<0 or(positive and value==0)then return nil end
+    return value
+end
 local function NativePacket(recapID)
     stats.nativeReads=stats.nativeReads+1
     if not C_DeathRecap then return nil,"Native recap API unavailable" end
@@ -73,6 +79,7 @@ local function NativePacket(recapID)
     if has~=true then return nil,"native_events_unavailable"end
     local input=Table(Call(C_DeathRecap.GetRecapEvents,recapID))
     if not input or #input==0 then return nil,"Native rows unavailable" end
+    local recapMaxHealth=RecordedHealth(Call(C_DeathRecap.GetRecapMaxHealth,recapID),true)
     local rows={}
     for index=1,math.min(#input,Recap.LIMITS.rows)do
         local row=Table(input[index]);if not row then return nil,"Native row unreadable" end
@@ -82,14 +89,15 @@ local function NativePacket(recapID)
         local kind=String(row.event,40)
         local spell=ID(row.spellId)
         local amount=Number(row.amount,0,1e15)
-        -- Health is deliberately not collected: pre/post-hit semantics and
-        -- complete healing coverage are not established by the public schema.
+        -- Raw health belongs to this event; its before/after-hit semantics are
+        -- unspecified. The one recap max is a reference, not per-event history.
         local damage=kind=="SWING_DAMAGE"or kind=="RANGE_DAMAGE"or kind=="SPELL_DAMAGE"
             or kind=="SPELL_PERIODIC_DAMAGE"or kind=="ENVIRONMENTAL_DAMAGE"or kind=="DAMAGE_SHIELD"or kind=="DAMAGE_SPLIT"
         rows[#rows+1]={timestamp=timestamp,destGUID=destination,spellID=spell,kind=damage and"damage"or"unknown",
-            name=String(row.spellName,96),event=kind,amount=amount,nativeIndex=index}
+            name=String(row.spellName,96),event=kind,amount=amount,nativeIndex=index,
+            recordedHP=RecordedHealth(row.currentHP)}
     end
-    return {rows=rows,truncated=#input>Recap.LIMITS.rows}
+    return {rows=rows,truncated=#input>Recap.LIMITS.rows,recapMaxHealth=recapMaxHealth}
 end
 local function BuildEntries()
     local spec=ID(Call(GetSpecialization))
@@ -255,6 +263,7 @@ local function FetchNative(page,token)
             local maximum=0;for _,row in ipairs(packet.rows)do maximum=math.max(maximum,row.timestamp)end
             for _,row in ipairs(packet.rows)do row.nativeOffset=row.timestamp-maximum end
             page.native={rows=packet.rows,truncated=packet.truncated,token=packet.token,recapID=recapID,
+                recapMaxHealth=packet.recapMaxHealth,
                 association="Explicit personal death ID delta in a witnessed clean meter epoch; native synchronization testing pending",
                 clock="Native relative to latest retained native timestamp; not the local observation clock"}
             page.nativeStatus="Personal native record associated; native verification pending"

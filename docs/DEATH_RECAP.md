@@ -1,12 +1,15 @@
-# Personal Death Recap — alpha.28 test slice
+# Personal Death Recap — alpha.29 test slice
 
 Enable **Personal Tools → Death Recap** explicitly. New and existing profiles
 start OFF. Opening settings, Preview and View last never enables recording.
 The feature records only this player's mapped, learned active spells and local
 supported supplies. It works with the existing consumable reminder OFF.
 
-`/rcp recappreview` is a persistent **Sample preview** with inert Share/reminder
-actions. `/rcp recap` opens the last retained personal death in this login session
+`/rcp recappreview` opens a persistent **Example data · Arcane Mage** preview
+with inert Share/reminder actions. The fictional 2:12 encounter starts with a
+filled 33.3% selected-health bar. Hover damage, healing or an item to try the
+display. Its complete stepped health/healing history belongs only to Preview;
+it reads no character/recorder/inventory state and never enters real history. `/rcp recap` opens the last retained personal death in this login session
 or Personal Tools when none exists. `/rcp recapstatus` prints safe counters,
 association reason and guarded client build/interface alongside the audited
 catalog build. It does not send messages or inspect other players.
@@ -35,8 +38,21 @@ catalog build. It does not send messages or inspect other players.
    by source documentation and remains a client acceptance gate.
 5. The partial popup uses only readable same-record native timestamp offsets.
    Local cast receipt, encounter-start and death-notification clocks are not
-   placed on that axis. Missing healing says Not recorded; HP history/snapshots
-   remain unavailable. No damage subtraction, HP curve or healing is fabricated.
+   placed on that axis. The existing native latest-timestamp zero and original
+   killing-row identity remain separate. Real missing health/healing areas
+   collapse; one **Some details unavailable** hover explains the limits.
+6. After the existing explicit own recap-ID gate succeeds, one additional
+   `GetRecapMaxHealth(recapID)` read per native attempt supplies a positive public
+   finite recap reference. Each public finite nonnegative event `currentHP` is
+   retained independently as `recordedHP`; invalid/missing HP or max never rejects
+   good event/damage rows. Selected **Recorded health** is a raw value plus a
+   bar only when `0 <= recordedHP <= recapMaxHealth`. Known zero remains zero;
+   above-max values remain readable without a clamped bar. Missing selection
+   clears the prior value. Supported native points stay discrete with gaps.
+   Before/after-hit timing and per-event maximum health are unspecified. There
+   is no connected real HP history, inferred heal, damage subtraction, guessed
+   zero endpoint, new health event or new polling subsystem. Pinned consumer
+   evidence and field guards are in `provenance/death-recap/health-contract.json`.
 
 The last-alive tray uses separate charge-query status, current charge counts,
 held/enabled flags, cooldown facts, item remaining uses and cached carriage
@@ -44,6 +60,9 @@ timestamps. Unknown/opaque/error is distinct from supported absence. Inventory
 and readiness older than the 30s display window stay Unknown. Item rows describe
 each captured item ID, never infer that every family variant is cooling. All
 historical facts remain frozen; hovering never refreshes inventory/cooldowns.
+Visible states use **Used**, **Off cooldown**, **Cooldown**, **No item**, **Empty**,
+**No charges**, a known charge count or **Unknown**. Off cooldown is a recorded
+check, not a claim of pre-fatal castability. Unknown events keep neutral wording.
 
 The independently audited catalog covers 40 specs/13 classes with 68 verified
 identity/eligibility entries and 18 disabled candidates, build 12.1.5.70575.
@@ -70,6 +89,8 @@ Audit data and pinned evidence are in `provenance/death-recap/`.
   event, hover or frame-driven bag scans. Explicit raid checks retain their
   independent finite Snapshot operation.
 - Native association scans one session, at most 128 rows/64 personal IDs.
+  One additional explicit-ID max-health getter per accepted native attempt;
+  field sanitization covers the existing maximum of 16 rows.
   Three fetch attempts per death, reserving one OOC attempt when combat reads
   are opaque. No retries after disable/reset/new capture/resurrection.
 - Retention: one live last-alive sample, up to 64 own casts from 30s, one last
@@ -95,11 +116,16 @@ out-of-combat permission before explicit native navigation. Details is disabled
 until an actual advanced view exists. No automatic navigation after combat.
 
 Windows test: update the existing GitHub checkout, restart WoW and verify
-`/run print(RCPArsenal.VERSION)` reports alpha.28. Check Preview with recording
+`/run print(RCPArsenal.VERSION)` reports alpha.29. Check Preview with recording
 OFF; then enable before a new pull. Exercise one death, native meter unavailable,
 two deaths/combat resurrection, close/release/resurrection, View last, disable,
 both tools OFF, and reminder OFF with supplies carried/absent/on cooldown.
 Record `/rcp recapstatus` before/after, actual client build and screenshots.
+Compare raw HP and the fixed recap-max ratio against the same Blizzard recap.
+Exercise nil/secret/zero/out-of-scale HP and max, changing selected hits, temporary
+max-health changes and healing between records without reconstructing gaps.
+Check the fictional Arcane preview while recording remains OFF, its filled
+initial bar, healer/Barrier hover, inert actions and readable 640×480 fit.
 Check charges/resets, passive/override/talent variants, grouped event cycling,
 UI scales and light/dark scenes. Share/Journal/native event restrictions, meter
 identity and ingestion, font fit, tooltip, taint and performance need actual
