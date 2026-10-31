@@ -17,7 +17,7 @@ function R:BuildShareText(page,preview)
     if page.native then
         local fatal
         for _,row in ipairs(page.native.rows)do if row.nativeIndex==1 then fatal=row end end
-        local label=fatal and fatal.kind=="damage"and" Recorded hit: "or" Native record: "
+        local label=fatal and fatal.kind=="damage"and" Fatal hit: "or" Death record: "
         if fatal and fatal.name and not fatal.name:find("[|\r\n]")then text=text..label..fatal.name.."."
         elseif fatal and fatal.spellID then text=text..label.."spell "..fatal.spellID.."."end
         if fatal and fatal.amount then text=text.." Amount "..string.format("%.0f",fatal.amount).."."end

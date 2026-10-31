@@ -2,7 +2,7 @@ local _,RA=...
 local UI={};RA.DeathRecapUI=UI
 local R,T=RA.DeathRecap,RA.Theme
 local C=T.Colors
-local frame,share,bell,current,sample,examplePage
+local frame,share,bell,actionShield,current,sample,examplePage
 local Point,Size=T.SetPoint,T.SetSize
 local function Text(region,value)RA:SetVisualText(region,value or "")end
 local function Font(parent,size,weight,color)
@@ -33,7 +33,7 @@ local function Amount(value)
     end
     return tostring(value)
 end
-local tooltipOwner,tooltipBuilding,tooltipPlacing,tooltipHooked,tooltipRecap
+local tooltipOwner,tooltipBuilding,tooltipPlacing,tooltipHooked,tooltipRecap,tooltipNative
 local function Metric(value)
     if type(issecretvalue)~="function"then return nil end
     local ok,secret=pcall(issecretvalue,value)
@@ -74,58 +74,81 @@ function UI:TooltipRect(screen,panel,target,band,point,w,h)
     return best[1],best[2],(w>screen.right-24 or h>screen.top-24)and"oversize"or"fallback"
 end
 local function ClearTooltipTracking()
-    tooltipOwner=nil
+    tooltipOwner=nil;tooltipNative=false
     if tooltipRecap then tooltipRecap:Hide()end
     if frame then frame.tooltipPlacement=nil end
 end
 local function PositionTooltip()
-    if tooltipBuilding or tooltipPlacing or not tooltipOwner or not frame or not frame:IsShown()or not GameTooltip or not GameTooltip:IsShown()then return end
-    if GameTooltip.GetOwner and GameTooltip:GetOwner()~=tooltipOwner then ClearTooltipTracking();return end
+    if tooltipBuilding or tooltipPlacing or not tooltipOwner or not frame or not frame:IsShown()or not tooltipRecap or not tooltipRecap:IsShown()then return end
+    if tooltipNative and(not GameTooltip or not GameTooltip:IsShown())then return end
+    if tooltipNative and GameTooltip.GetOwner and GameTooltip:GetOwner()~=tooltipOwner then ClearTooltipTracking();return end
     tooltipPlacing=true
     local panel,target=Bounds(frame),Bounds(tooltipOwner)
     local sw,sh,ss=ReadMetric(UIParent,"GetWidth"),ReadMetric(UIParent,"GetHeight"),ReadMetric(UIParent,"GetEffectiveScale")
-    local tw,th,ts=ReadMetric(GameTooltip,"GetWidth"),ReadMetric(GameTooltip,"GetHeight"),ReadMetric(GameTooltip,"GetEffectiveScale")
+    local tw,th,ts=0,0,1
+    if tooltipNative then tw,th,ts=ReadMetric(GameTooltip,"GetWidth"),ReadMetric(GameTooltip,"GetHeight"),ReadMetric(GameTooltip,"GetEffectiveScale")end
     local rw,rh,rs=ReadMetric(tooltipRecap,"GetWidth"),ReadMetric(tooltipRecap,"GetHeight"),ReadMetric(tooltipRecap,"GetEffectiveScale")
-    if panel and target and sw and sh and ss and ss>0 and tw and th and tw>0 and th>0 and ts and ts>0 and rw and rh and rs and rs>0 and sw>0 and sh>0 then
-        local width,height=math.max(tw*ts,rw*rs),th*ts+6+rh*rs
+    if panel and target and sw and sh and ss and ss>0 and tw and th and(not tooltipNative or(tw>0 and th>0))and ts and ts>0 and rw and rh and rs and rs>0 and sw>0 and sh>0 then
+        local gap=tooltipNative and 6 or 0
+        local width,height=math.max(tw*ts,rw*rs),th*ts+gap+rh*rs
         local band={left=panel.left,right=panel.right,top=panel.top,bottom=panel.top-(132+(frame.shelfShift or 0))*panel.scale}
         local point=frame.healthPoint and frame.healthPoint:IsShown()and Bounds(frame.healthPoint)or nil
         local x,y,mode=UI:TooltipRect({right=sw*ss,top=sh*ss},panel,target,band,point,width,height)
-        GameTooltip:ClearAllPoints();GameTooltip:SetPoint("BOTTOMLEFT",UIParent,"BOTTOMLEFT",x/ts,(y+rh*rs+6)/ts)
+        if tooltipNative then GameTooltip:ClearAllPoints();GameTooltip:SetPoint("BOTTOMLEFT",UIParent,"BOTTOMLEFT",x/ts,(y+rh*rs+gap)/ts)end
         tooltipRecap:ClearAllPoints();tooltipRecap:SetPoint("BOTTOMLEFT",UIParent,"BOTTOMLEFT",x/rs,y/rs)
         frame.tooltipPlacement={left=x,bottom=y,right=x+width,top=y+height,mode=mode}
     else
-        GameTooltip:ClearAllPoints();GameTooltip:SetPoint("BOTTOM",frame,"TOP",0,12)
-        tooltipRecap:ClearAllPoints();tooltipRecap:SetPoint("TOPLEFT",GameTooltip,"BOTTOMLEFT",0,-6);frame.tooltipPlacement=nil
+        tooltipRecap:ClearAllPoints()
+        if tooltipNative then
+            GameTooltip:ClearAllPoints();GameTooltip:SetPoint("BOTTOM",frame,"TOP",0,12)
+            tooltipRecap:SetPoint("TOPLEFT",GameTooltip,"BOTTOMLEFT",0,-6)
+        else tooltipRecap:SetPoint("BOTTOM",frame,"TOP",0,12)end
+        frame.tooltipPlacement=nil
     end
-    GameTooltip:SetClampedToScreen(true);tooltipPlacing=false
+    if tooltipNative then GameTooltip:SetClampedToScreen(true)end;tooltipPlacing=false
 end
-local function RecapBox(lines,color)
+local function RecapBox(lines,color,heading)
     if not tooltipRecap then
         tooltipRecap=CreateFrame("Frame",nil,UIParent);tooltipRecap:SetFrameStrata("TOOLTIP");Surface(tooltipRecap,C.canvasDeep);T:ApplyRounded(tooltipRecap,C.lineStrong,8,"border","BORDER")
         tooltipRecap.lines={}
-        for i=1,16 do tooltipRecap.lines[i]=Font(tooltipRecap,i==1 and 13 or 12,i==1 and"BOLD"or"REGULAR");tooltipRecap.lines[i]:SetWordWrap(true)end
+        for i=1,16 do
+            local f=Font(tooltipRecap,i==1 and 13 or 12,i==1 and"BOLD"or"REGULAR")
+            f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0);tooltipRecap.lines[i]=f
+        end
     end
     frame.tooltipRecap=tooltipRecap
-    local width,count=220,math.min(16,math.max(0,#lines-1))
+    local first=heading and 1 or 2
+    local width,count=220,math.min(16,math.max(0,#lines-first+1))
     for i,f in ipairs(tooltipRecap.lines)do
         f:Hide()
         if i<=count then
-            local line=lines[i+1];local text=type(line)=="table"and line.text or line
+            local line=lines[i+first-1];local text=type(line)=="table"and line.text or line
             local tint=type(line)=="table"and line.color or color or C.textSoft
-            f:SetWidth(0);Text(f,text);f:SetTextColor(unpack(tint));width=math.max(width,(ReadMetric(f,"GetStringWidth")or 0)+20)
+            if heading and i==1 then tint=C.text end
+            f:SetHeight(0);f:SetWidth(0);Text(f,text);f:SetTextColor(unpack(tint))
+            width=math.max(width,(ReadMetric(f,"GetUnboundedStringWidth")or ReadMetric(f,"GetStringWidth")or 0)+20)
         end
     end
     width=math.min(360,width);local y=8
     for i=1,count do
-        local f=tooltipRecap.lines[i];f:SetWidth(width-20);Point(f,"TOPLEFT",tooltipRecap,"TOPLEFT",10,-y)
-        local h=ReadMetric(f,"GetStringHeight")or(i==1 and 16 or 15);Size(f,width-20,math.max(i==1 and 16 or 15,h));y=y+f:GetHeight()+3;f:Show()
+        local f=tooltipRecap.lines[i];f:SetWidth(width-20);f:SetHeight(0)
+        f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0);f:Show()
+        Point(f,"TOPLEFT",tooltipRecap,"TOPLEFT",10,-y)
+        -- Clear the previous pooled height before native wrap measurement.
+        -- Otherwise a formerly short row can ellipsize instead of growing.
+        local h=ReadMetric(f,"GetStringHeight")or(i==1 and 16 or 15)
+        h=math.ceil(math.max(i==1 and 16 or 15,h))+2;f:SetHeight(h);y=y+h+3
     end
     Size(tooltipRecap,width,math.max(24,y+5));tooltipRecap:Show()
 end
 local function Tooltip(button,lines,spellID,itemID,color)
+    if(share and share:IsShown())or(bell and bell:IsShown())then return end
     if not GameTooltip then return end
-    tooltipBuilding=true;tooltipOwner=button;GameTooltip:SetOwner(button,"ANCHOR_NONE")
+    local previousOwner,previousNative=tooltipOwner,tooltipNative
+    tooltipBuilding=true
+    if previousNative and GameTooltip.GetOwner and GameTooltip:GetOwner()==previousOwner then GameTooltip:Hide()end
+    tooltipOwner=button;tooltipNative=spellID~=nil or itemID~=nil
+    if tooltipNative then GameTooltip:SetOwner(button,"ANCHOR_NONE")end
     local function Native(fn,id)
         local called,value=pcall(fn,GameTooltip,id);if not called or type(issecretvalue)~="function"then return false end
         local checked,secret=pcall(issecretvalue,value);return checked and secret==false and value~=false
@@ -133,21 +156,21 @@ local function Tooltip(button,lines,spellID,itemID,color)
     local ok=false
     if spellID then ok=Native(GameTooltip.SetSpellByID,spellID)
     elseif itemID and GameTooltip.SetItemByID then ok=Native(GameTooltip.SetItemByID,itemID)end
-    if not ok then GameTooltip:SetText(lines[1]or"Details")end
-    -- No recap content is appended to Blizzard's tooltip.
-    RecapBox(lines,color);GameTooltip:Show();tooltipBuilding=false;PositionTooltip()
+    if tooltipNative and not ok then GameTooltip:SetText(lines[1]or"Details")end
+    -- Spell/item facts have a companion; ordinary help is one card.
+    RecapBox(lines,color,not tooltipNative);if tooltipNative then GameTooltip:Show()end;tooltipBuilding=false;PositionTooltip()
     if not tooltipHooked and GameTooltip.HookScript then
         tooltipHooked=true;GameTooltip:HookScript("OnSizeChanged",PositionTooltip)
-        GameTooltip:HookScript("OnHide",function()if not tooltipBuilding and not tooltipPlacing then ClearTooltipTracking()end end)
+        GameTooltip:HookScript("OnHide",function()if tooltipNative and not tooltipBuilding and not tooltipPlacing then ClearTooltipTracking()end end)
         GameTooltip:HookScript("OnTooltipCleared",function()
-            if not tooltipBuilding and not tooltipPlacing and tooltipOwner and GameTooltip.GetOwner and GameTooltip:GetOwner()~=tooltipOwner then ClearTooltipTracking()end
+            if tooltipNative and not tooltipBuilding and not tooltipPlacing and tooltipOwner and GameTooltip.GetOwner and GameTooltip:GetOwner()~=tooltipOwner then ClearTooltipTracking()end
         end)
     end
 end
 local function HideTooltip(target)
     if target and target~=tooltipOwner then return end
-    local owner=tooltipOwner;ClearTooltipTracking()
-    if owner and GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()==owner then GameTooltip:Hide()end
+    local owner,wasNative=tooltipOwner,tooltipNative;ClearTooltipTracking()
+    if wasNative and owner and GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()==owner then GameTooltip:Hide()end
 end
 local function Icon(parent,size)
     local b=CreateFrame("Button",nil,parent);Size(b,size,size);Surface(b,C.lineStrong)
@@ -169,6 +192,7 @@ local selected,model,domain,extraHeight,contentShift
 local memberChoices,renderRevision={},0
 local closing=false
 local TIER_GAP=100
+local BASE_HEIGHT,GRAPH_TOP,GRAPH_BOTTOM,GRAPH_HEIGHT=428,332,392,60
 local damagePool,supportPool,shelfPool,graphPool={},{},{},{}
 local function Place(region,point,relative,relativePoint,x,y)
     region:ClearAllPoints();Point(region,point,relative,relativePoint,x,y)
@@ -258,9 +282,9 @@ local function Journal(row,page)
     end)
     return ok,ok and"Journal opened"or"Journal entry unavailable"
 end
-local function Rect(pool,index,parent,x,y,w,h,color,alpha)
+local function Rect(pool,index,parent,x,y,w,h,color,alpha,layer)
     local t=pool[index]or parent:CreateTexture(nil,"ARTWORK");pool[index]=t
-    Size(t,math.max(1,w),math.max(1,h));Place(t,"TOPLEFT",parent,"TOPLEFT",x,-y);t:SetColorTexture(color[1],color[2],color[3],alpha or 1);t:Show();return t
+    Size(t,math.max(1,w),math.max(1,h));Place(t,"TOPLEFT",parent,"TOPLEFT",x,-y);t:SetColorTexture(color[1],color[2],color[3],alpha or 1);t:SetDrawLayer(layer or"ARTWORK");t:Show();return t
 end
 local function HidePool(pool)for _,obj in ipairs(pool)do obj:Hide()end end
 local function Segments(x,first,last,rects)
@@ -311,7 +335,7 @@ local function StopMotion()
 end
 function UI:Hide()
     if closing then return end;closing=true
-    StopMotion();HideTooltip();if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end;if bell then bell:Hide()end
+    StopMotion();HideTooltip();if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end;if bell then bell:Hide()end;if actionShield then actionShield:Hide()end
     if frame then
         frame:Hide();frame.selected,frame.selectedItem=nil,nil;frame.healthPanel:SetScript("OnEnter",nil)
         for _,b in ipairs(damagePool)do b.group=nil;b:SetScript("OnEnter",nil);b:SetScript("OnClick",nil);b:SetScript("OnMouseWheel",nil)
@@ -328,10 +352,13 @@ local function RefreshReminderSwitch()
     T:SetRoundedColor(b.track,enabled and C.activeDark or C.input,"base")
     Place(b.knob,enabled and"RIGHT"or"LEFT",b.track,enabled and"RIGHT"or"LEFT",enabled and-1 or 1,0)
     b.knob:SetVertexColor(enabled and 1 or .56,enabled and 1 or .55,enabled and 1 or .66,enabled and 1 or .85)
+    if tooltipOwner==b and not tooltipNative and tooltipRecap and tooltipRecap:IsShown()then
+        RecapBox({"Consumable reminder",enabled and"On · Click to turn off."or"Off · Click to turn on."},nil,true);PositionTooltip()
+    end
 end
 local function Ensure()
     if frame then return end
-    frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,440);Point(frame,"CENTER",UIParent,"CENTER",0,50)
+    frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,BASE_HEIGHT);Point(frame,"CENTER",UIParent,"CENTER",0,50)
     frame:SetFrameStrata("DIALOG");frame:SetClampedToScreen(true);frame:EnableMouse(true);Surface(frame,C.canvasDeep);T:ApplyRounded(frame,{.48,.34,.52,.65},8,"border","BORDER")
     frame.title=Label(frame,"Death Log",24,20,-18,142);RA:ApplyFont(frame.title,24,"BOLD",false)
     frame.context=Label(frame,"",13,162,-26,462,C.textSoft)
@@ -348,17 +375,21 @@ local function Ensure()
     frame.reminder.label=Font(frame.reminder,12);Place(frame.reminder.label,"LEFT",frame.reminder,"LEFT",0,0);Text(frame.reminder.label,"Reminder")
     frame.reminder.track=CreateFrame("Frame",nil,frame.reminder);Size(frame.reminder.track,40,20);Place(frame.reminder.track,"RIGHT",frame.reminder,"RIGHT",0,0);Surface(frame.reminder.track,C.input)
     frame.reminder.knob=frame.reminder.track:CreateTexture(nil,"OVERLAY");Size(frame.reminder.knob,18,18);RA:RegisterVisualTexture(frame.reminder.knob,T.Assets.SliderThumb,T.Assets.White)
-    frame.reminder:SetScript("OnClick",function()if ActionPage(current,IsExample())then RA.PersonalTools:SetOption("consumableReminder",not RA.PersonalTools:GetState().consumableReminder);RefreshReminderSwitch()end end)
-    frame.reminder:SetScript("OnEnter",function(self)Tooltip(self,{"Consumable reminder","Turns the actual Personal Tools reminder on or off; your other preferences stay saved."})end)
+    frame.reminder:SetScript("OnClick",function()if not(share and share:IsShown())and not(bell and bell:IsShown())and ActionPage(current,IsExample())then RA.PersonalTools:SetOption("consumableReminder",not RA.PersonalTools:GetState().consumableReminder);RefreshReminderSwitch()end end)
+    frame.reminder:SetScript("OnEnter",function(self)Tooltip(self,{"Consumable reminder",RA.PersonalTools:GetState().consumableReminder and"On · Click to turn off."or"Off · Click to turn on."})end)
     frame.reminder:SetScript("OnLeave",HideTooltip);RefreshReminderSwitch()
     for _,b in ipairs({frame.bell,frame.share})do
         if b.SetMotionScriptsWhileDisabled then b:SetMotionScriptsWhileDisabled(true)end
-        b:SetScript("OnEnter",function(self)Tooltip(self,{self==frame.bell and"Consumable reminder"or"Post to chat",self==frame.bell and"Turn the actual reminder on or off"or IsExample()and"Prepare a labelled fictional sample report in chat"or"Prepare a summary in the chat editor"})end)
+        b:SetScript("OnEnter",function(self)Tooltip(self,{self==frame.bell and"Consumable reminder"or"Post to chat",self==frame.bell and"Turn the healing-item reminder on or off"or"Open this report in chat"})end)
         b:SetScript("OnLeave",HideTooltip)
     end
     frame.info=CreateFrame("Button",nil,frame);Size(frame.info,16,20);Point(frame.info,"TOPLEFT",frame,"TOPLEFT",247,-23)
     frame.info.label=Label(frame.info,"i",12,4,0,12,C.textSoft)
-    frame.info:SetScript("OnEnter",function(self)Tooltip(self,{"Recorded details",frame.context.textValue or"Personal recap",current and current.native and current.native.truncated and"The native record exceeded the64-row capture limit; capture is partial."or"Captured event coverage may be incomplete.","Only captured facts are shown. Native event and local cooldown clocks cannot yet be aligned.","Healing and effect durations are not reconstructed. Heal-absorb history may be unavailable."})end);frame.info:SetScript("OnLeave",HideTooltip)
+    frame.info:SetScript("OnEnter",function(self)
+        local lines={"Encounter",IsExample()and"Fictional sample"or(frame.context.textValue or"Personal recap")}
+        if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
+        Tooltip(self,lines)
+    end);frame.info:SetScript("OnLeave",HideTooltip)
     frame.health=Label(frame,"Health",12,20,-76,125,C.textSoft);frame.percent=Label(frame,"—",20,137,-71,56,pink);RA:ApplyFont(frame.percent,20,"BOLD",false)
     frame.healthPanel=CreateFrame("Button",nil,frame);Size(frame.healthPanel,292,18);Point(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",194,-76)
     frame.healthTrack=frame.healthPanel:CreateTexture(nil,"BACKGROUND");frame.healthTrack:SetAllPoints(frame.healthPanel);frame.healthTrack:SetColorTexture(unpack(C.surfaceRaised))
@@ -373,14 +404,14 @@ local function Ensure()
         frame.absorbNative=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbNative:SetAllPoints(frame.absorb);frame.absorbNative:SetAtlas("RaidFrame-Absorb-Overlay");frame.absorbNative:SetVertexColor(unpack(amber))
     end
     frame.absorbEdge=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbEdge:SetColorTexture(amber[1],amber[2],amber[3],1)
-    frame.absorbLabel=Label(frame,"",11,348,-100,138,amber);frame.absorbLabel:SetJustifyH("RIGHT")
+    frame.absorbLabel=Label(frame,"",11,344,-100,154,amber);frame.absorbLabel:SetJustifyH("RIGHT");frame.absorbLabel:SetWordWrap(true);frame.absorbLabel:SetMaxLines(0)
     frame.shelf=Label(frame,"Cooldowns",12,510,-76,152,C.textSoft)
-    frame.shelfAge=Label(frame,"",11,510,-97,152,C.muted)
+    frame.shelfAge=Label(frame,"",10,510,-97,72,C.muted)
     frame.rail=frame:CreateTexture(nil,"ARTWORK");frame.rail:SetColorTexture(.58,.53,.65,.70)
     frame.ticks={};frame.tickLabels={};frame.tickMarks={};for i=1,6 do frame.ticks[i]=Font(frame,11,nil,C.textSoft);frame.tickMarks[i]=frame:CreateTexture(nil,"ARTWORK");frame.tickMarks[i]:SetColorTexture(unpack(C.lineStrong))end
     frame.fight=Label(frame,"",11,690,-177,170,C.textSoft);frame.fight:SetJustifyH("RIGHT")
     frame.death=Font(frame,11,"BOLD",pink);frame.death:Hide()
-    frame.graphLabel=Label(frame,"HP",11,20,-333,40,C.muted)
+    frame.graphLabel=Label(frame,"HP",11,20,-(GRAPH_TOP-17),40,C.muted)
     frame.graphBase=frame:CreateTexture(nil,"ARTWORK");frame.graphBase:SetColorTexture(unpack(C.lineStrong))
     frame.guide=CreateFrame("Frame",nil,frame);frame.guide.dashes={};for i=1,96 do local t=frame.guide:CreateTexture(nil,"ARTWORK");frame.guide.dashes[i]=t;t:Hide()end;frame.guide:Hide()
     frame.interval=frame:CreateTexture(nil,"BACKGROUND");frame.interval:SetColorTexture(pink[1],pink[2],pink[3],.04);frame.interval:Hide()
@@ -413,6 +444,21 @@ end
 local function State(row,example)
     return R:ClassifyRecordedCheck(row,not example and current.lastAlive and current.lastAlive.coverageEndedAt,example)
 end
+local function CooldownSlots(rows)
+    local slots,col,line,gap={},0,0,0
+    local itemCount=0;for _,row in ipairs(rows)do if row.kind then itemCount=itemCount+1 end end
+    local itemsStarted=false
+    for i,row in ipairs(rows)do
+        if row.kind and not itemsStarted then
+            itemsStarted=true
+            if itemCount<=7 and col>0 and 7-col<itemCount then col,line,gap=0,line+1,0 end
+            if col>0 then gap=6 end
+        end
+        slots[i]={x=590+col*38+gap,line=line}
+        col=col+1;if col==7 then col,line,gap=0,line+1,0 end
+    end
+    return slots
+end
 local function Shelf(page,example,time)
     Text(frame.shelf,"CDs");frame.shelfSource=example and"Preview death snapshot"or"Last recorded check"
     Text(frame.shelfAge,"")
@@ -420,7 +466,7 @@ local function Shelf(page,example,time)
     if not example then
         local youngest,oldest
         for _,row in ipairs(rows)do if row.observedAt and page.diedAt>=row.observedAt then local age=page.diedAt-row.observedAt;youngest=math.min(youngest or age,age);oldest=math.max(oldest or age,age)end end
-        Text(frame.shelfAge,youngest and(youngest==oldest and string.format("Check: %.1fs before notice",youngest)or string.format("Check: %.1f–%.1fs before notice",youngest,oldest))or"Not recorded")
+        Text(frame.shelfAge,youngest and(youngest==oldest and string.format("%.1fs pre-death",youngest)or string.format("%.1f–%.1fs pre-death",youngest,oldest))or"Not recorded")
     end
     for _,row in ipairs(rows)do local state=State(row,example);signature[#signature+1]=tostring(row.spellID or row.itemID or row.kind)..":"..tostring(state)end
     local key=table.concat(signature,";")
@@ -429,9 +475,10 @@ local function Shelf(page,example,time)
         local function Rank(row)return row.kind=="stone"and 10 or row.kind=="potion"and 11 or row.category=="major"and 0 or 1 end
         local ar,br=Rank(a),Rank(b);if ar==br then return(a.spellID or a.itemID or 0)<(b.spellID or b.itemID or 0)end;return ar<br
     end)
+    local slots=CooldownSlots(rows)
     for i,row in ipairs(rows)do
         local b=shelfPool[i]or Icon(frame,32);shelfPool[i]=b
-        local col,line=(i-1)%5,math.floor((i-1)/5);local x=663+col*37+(row.kind and 10 or 0)
+        local line,x=slots[i].line,slots[i].x
         Place(b,"TOPLEFT",frame,"TOPLEFT",x,-66-line*38);Artwork(b,row);Text(b.badge,"");b:Show()
         local state,detail=State(row,example);local shade=state==false and .4 or 1
         if state==nil then b.icon:SetVertexColor(.55,.65,.85);b.icon:SetAlpha(.8)else b.icon:SetVertexColor(shade,shade,shade);b.icon:SetAlpha(1)end
@@ -440,24 +487,15 @@ local function Shelf(page,example,time)
         b:SetScript("OnEnter",function(self)
             if current~=page or example~=IsExample()then return end
             local lines={row.name or(row.kind=="stone"and"Healthstone"or row.kind=="potion"and"Healing potion"or"Defensive"),detail}
-            if example then lines[#lines+1]="Recorded cooldown and stock only"
-            else
-                lines[#lines+1]="This is a separate recorded check, not a snapshot at the selected hit. A cooldown check is not a survival verdict."
-                if row.carriedAt then lines[#lines+1]=string.format("Bag scan: %.2fs before the death notice.",page.diedAt-row.carriedAt)end
-                if row.pendingAt then lines[#lines+1]="A later cast or update may have changed this check."end
-                if row.chargeReason=="restricted"or row.chargeCountStatus=="restricted"then lines[#lines+1]="Charge count was not provided by Blizzard."end
-                if row.observedAt then lines[#lines+1]=string.format("Separate check: %.2fs before the death notice.",page.diedAt-row.observedAt)end
-                if row.cooldown and row.cooldown~="unknown"then lines[#lines+1]="Last checked: "..(row.cooldown=="inactive"and"off cooldown"or row.cooldown=="held"and"cooldown on hold"or"cooldown active")end
+            if not example then
+                if row.observedAt then lines[#lines+1]=string.format("Checked %.1fs before death",page.diedAt-row.observedAt)end
                 if not row.kind then
                     local use=page.observedUses and page.observedUses[row.spellID]
-                    lines[#lines+1]=use and"Observed this fight: "..use.observedCount.." successful cast"..(use.observedCount==1 and""or"s")or"No successful use observed in this coverage; not proof of unused."
-                    if not(page.useCoverage and page.useCoverage.combatEntryObserved)or(page.useCoverage and(page.useCoverage.endedAt or(page.useCoverage.rejectedReceipts or 0)>0 or(page.useCoverage.lateReceipts or 0)>0))then lines[#lines+1]="Use coverage does not span the whole fight."end
+                    if use then lines[#lines+1]="Observed uses: "..use.observedCount end
                 end
-                if row.currentCharges~=nil then lines[#lines+1]="Charges in that check: "..row.currentCharges end
-                if row.countStatus=="restricted"then lines[#lines+1]="Stock was not provided by Blizzard."end
-                if row.usesStatus=="restricted"then lines[#lines+1]="Remaining uses were not provided by Blizzard."end
-                if row.physicalCount~=nil then lines[#lines+1]="Stock in that check: "..row.physicalCount end
-                if row.remainingUses~=nil then lines[#lines+1]="Uses in that check: "..row.remainingUses end
+                if row.currentCharges~=nil then lines[#lines+1]="Charges: "..row.currentCharges end
+                if row.physicalCount~=nil then lines[#lines+1]="Carried: "..row.physicalCount end
+                if row.remainingUses~=nil then lines[#lines+1]="Uses left: "..row.remainingUses end
             end
             Tooltip(self,lines,row.spellID,row.itemID)
         end)
@@ -473,7 +511,7 @@ local function Health(page,row,example)
         Text(frame.hp,Raw(hp)..(max and" / "..Raw(max)or""))
         if max and hp<=max then
             frame.healthBar:SetMinMaxValues(0,max);frame.healthBar:SetValue(hp);frame.healthBar:Show();Text(frame.percent,string.format("%.0f%%",hp/max*100))
-            Place(frame.healthPoint,"CENTER",frame,"TOPLEFT",X(row.nativeOffset),-338-extraHeight-(1-hp/max)*60);frame.healthPoint:Show()
+            Place(frame.healthPoint,"CENTER",frame,"TOPLEFT",X(row.nativeOffset),-GRAPH_TOP-extraHeight-(1-hp/max)*GRAPH_HEIGHT);frame.healthPoint:Show()
             local pointX=X(row.nativeOffset);Text(frame.pointPercent,string.format("%.0f%%",hp/max*100))
             local left=pointX+10+frame.pointPercent:GetStringWidth()>860
             Place(frame.pointPercent,left and"RIGHT"or"LEFT",frame.healthPoint,"CENTER",left and-10 or 10,10)
@@ -484,26 +522,24 @@ local function Health(page,row,example)
     if debt and max and hp and hp<=max then
         local width=math.min(292,debt/max*292);local start=math.max(0,(hp-debt)/max*292)
         Size(frame.absorb,math.min(width,292-start),14);Place(frame.absorb,"TOPLEFT",frame.healthPanel,"TOPLEFT",start,-2);frame.absorb:Show()
-        Hatch(math.min(width,292-start));Text(frame.absorbLabel,Amount(debt).." remaining");frame.absorbLabel:Show()
+        Hatch(math.min(width,292-start));Text(frame.absorbLabel,Amount(debt).." heal absorb remaining");frame.absorbLabel:Show()
     end
     frame.healthPanel:SetScript("OnEnter",function(self)
-        local lines={"Recorded health",hp~=nil and"Health reported with this event: "..Raw(hp)or"Health was not recorded for this event."}
-        if max then lines[#lines+1]="Scaled to the max health supplied with this recap: "..Raw(max)..". This is one recap reference."
-        else lines[#lines+1]=not example and page.native and page.native.recapMaxHealthStatus=="restricted"and"The recap maximum was not provided by Blizzard."or"A usable recap maximum was not recorded."end
-        if not example and row.fieldStatus and row.fieldStatus.hp=="restricted"then lines[#lines+1]="Health was not provided by Blizzard for this event."end
-        if not example then lines[#lines+1]="Before/after-hit timing is unspecified."end
-        if hp and max and hp>max then lines[#lines+1]="Outside the recap scale; no bar is drawn."end
-        if debt then lines[#lines+1]={text=Amount(debt).." remaining healing absorb; not extra HP or a protective shield.",color=amber}end
+        local lines={"Health",hp~=nil and(Raw(hp)..(max and" / "..Raw(max)or"").." health")or"Health not recorded for this event"}
+        if hp==nil and max then lines[#lines+1]="Max health: "..Raw(max)end
+        if hp and max and hp>max then lines[#lines+1]="Above the recorded health scale"end
+        if debt then lines[#lines+1]={text=Amount(debt).." heal absorb remaining",color=amber}end
         Tooltip(self,lines)
     end);frame.healthPanel:SetScript("OnLeave",HideTooltip)
 end
 local function Select(page,row,item,force)
     if page~=current or not row then return end
+    if not force and((share and share:IsShown())or(bell and bell:IsShown()))then return end
     if not force and selected==row and frame.selectedItem==item then return end
     selected=row;frame.selected=row;frame.selectedItem=item;Text(frame.health,"Health · "..At(row.nativeOffset));Health(page,row,IsExample());Shelf(page,IsExample(),row.nativeOffset)
-    Place(frame.guide,"TOPLEFT",frame,"TOPLEFT",X(row.nativeOffset),-130-(contentShift or 0));Size(frame.guide,1,268+extraHeight-(contentShift or 0));Guide(X(row.nativeOffset),130+(contentShift or 0),398+extraHeight);frame.guide:Show()
+    Place(frame.guide,"TOPLEFT",frame,"TOPLEFT",X(row.nativeOffset),-130-(contentShift or 0));Size(frame.guide,1,GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));Guide(X(row.nativeOffset),130+(contentShift or 0),GRAPH_BOTTOM+extraHeight);frame.guide:Show()
     for _,b in ipairs(damagePool)do if b.selectedBorder then b.selectedBorder:SetShown(b:IsShown()and b.group==item)end end
-    if item then Place(frame.interval,"TOPLEFT",frame,"TOPLEFT",X(item.first),-130-(contentShift or 0));Size(frame.interval,math.max(1,X(item.last)-X(item.first)),268+extraHeight-(contentShift or 0));frame.interval:Show()else frame.interval:Hide()end
+    if item then Place(frame.interval,"TOPLEFT",frame,"TOPLEFT",X(item.first),-130-(contentShift or 0));Size(frame.interval,math.max(1,X(item.last)-X(item.first)),GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));frame.interval:Show()else frame.interval:Hide()end
 end
 local function SelectedTooltip(b,page,target)
     local item=b.group;local row=item.rows[b.member or 1];local lines={item.mixed and"Mixed events"or row.name or"Recorded event"}
@@ -514,7 +550,7 @@ local function SelectedTooltip(b,page,target)
         local noun="hits";for _,member in ipairs(item.rows)do if member.kind~="damage"then noun="events";break end end
         lines[#lines+1]=total..(noun=="hits"and" damage"or" recorded").." · "..#item.rows.." "..noun
         for i=math.max(1,b.member-2),math.min(#item.rows,b.member+3)do
-            local member=item.rows[i];lines[#lines+1]=(i==b.member and"› "or"")..(item.mixed and(member.name or"Event")..": "or"")..(member.amount~=nil and Amount(member.amount)or"Amount unavailable")
+            local member=item.rows[i];lines[#lines+1]=(i==b.member and"› "or"")..(noun=="hits"and"Hit "or"Event ")..i..": "..(item.mixed and(member.name or"Event").." · "or"")..(member.amount~=nil and Amount(member.amount)or"Amount unavailable")
         end
     end
     if row.sourceName and row.hideCaster~=true and row.hideCasterStatus~="restricted"then lines[#lines+1]={text="Source: "..row.sourceName,color=C.textSoft}end
@@ -547,15 +583,20 @@ local function DrawGraph(page,example)
     frame.graphLabel:SetShown(#points>0);frame.graphBase:SetShown(#points>0)
     if #points==0 then return end
     local n,previous=0
+    local scale=ReadMetric(frame,"GetEffectiveScale")or 1
+    local stroke,accent=3/math.max(.1,scale),16/math.max(.1,scale)
     for _,point in ipairs(points)do
-        local x,y=X(point.offset),338+extraHeight+(1-point.hp/max)*60
+        local x,y=X(point.offset),GRAPH_TOP+extraHeight+(1-point.hp/max)*GRAPH_HEIGHT
         if example and previous then
             local color=point.hp>previous.hp and C.success or point.hp<previous.hp and pink or C.textSoft
-            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y,math.max(1,x-previous.x),2,C.textSoft)
-            n=n+1;Rect(graphPool,n,frame,x,math.min(previous.y,y),2,math.max(2,math.abs(previous.y-y)),color)
-            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y,math.max(1,x-previous.x),398+extraHeight-previous.y,C.textSoft,.04)
+            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y-stroke/2,math.max(1,x-previous.x),stroke,C.textSoft)
+            if previous.color~=C.textSoft and x>previous.x then
+                n=n+1;Rect(graphPool,n,frame,previous.x,previous.y-stroke/2,math.min(accent,x-previous.x),stroke,previous.color)
+            end
+            n=n+1;Rect(graphPool,n,frame,x-stroke/2,math.min(previous.y,y),stroke,math.max(stroke,math.abs(previous.y-y)),color)
+            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y,math.max(1,x-previous.x),GRAPH_BOTTOM+extraHeight-previous.y,C.textSoft,.04,"BACKGROUND")
         end
-        n=n+1;Rect(graphPool,n,frame,x-1,y-1,2,2,pink,.35);previous={x=x,y=y,hp=point.hp}
+        n=n+1;Rect(graphPool,n,frame,x-1,y-1,2,2,pink,.35);previous={x=x,y=y,hp=point.hp,color=previous and(point.hp>previous.hp and C.success or point.hp<previous.hp and pink or C.textSoft)or C.textSoft}
     end
 end
 local function PrepareSupportMarkers(page,example)
@@ -570,10 +611,11 @@ local function PrepareSupportMarkers(page,example)
         b.label=b.label or Font(b,13,"BOLD");b.label:SetJustifyH("CENTER");Place(b.label,"CENTER",b,"CENTER",0,0)
         b.color=entry.kind=="healing"and C.success or absorbBlue;b.label:SetTextColor(unpack(b.color))
         Text(b.label,entry.kind=="healing"and"+"..Amount(entry.amount)or Amount(entry.amount).." absorbed")
-        b.markerWidth=math.min(96,math.max(66,b.label:GetStringWidth()+8));b.label:SetWidth(b.markerWidth)
+        b.visualWidth=ReadMetric(b.label,"GetUnboundedStringWidth")or b.label:GetStringWidth()
+        b.markerWidth=math.max(28,b.visualWidth+8);b.label:SetWidth(b.visualWidth)
         local x=X(entry.row.nativeOffset);local lane=1
-        while laneEnds[lane]and x-b.markerWidth/2<laneEnds[lane]+6 do lane=lane+1 end
-        laneEnds[lane]=x+b.markerWidth/2;maxLane=math.max(maxLane,lane)
+        while laneEnds[lane]and x-b.visualWidth/2<laneEnds[lane]+6 do lane=lane+1 end
+        laneEnds[lane]=x+b.visualWidth/2;maxLane=math.max(maxLane,lane)
         b.entry,b.lane,b.timeX=entry,lane,x;Size(b,b.markerWidth,20);b.stems=b.stems or{}
         if entry.kind=="healing"then frame.healTargets[#frame.healTargets+1]=b end
     end
@@ -591,12 +633,19 @@ function UI:Render()
     for _,row in ipairs(model.rows)do domain.first=math.min(domain.first,row.nativeOffset);domain.last=math.max(domain.last,row.nativeOffset)end
     if domain.last-domain.first<.1 then domain.first=domain.last-.1 end
     local supportExtra=PrepareSupportMarkers(page,example);frame.supportExtra=supportExtra
-    local fightExtra=page.encounter and page.encounter.startedAt and 20 or 0;frame.fightSlotExtra=fightExtra
+    local elapsed=page.encounter and page.encounter.startedAt and page.diedAt-page.encounter.startedAt
+    Text(frame.fight,elapsed and string.format("Fight %d:%02d",math.floor(elapsed/60),math.floor(elapsed%60))or"")
+    local deathX=832;for _,row in ipairs(model.rows)do if row.nativeIndex==1 then deathX=X(row.nativeOffset);break end end
+    local fightExtra=0;local fightWidth=ReadMetric(frame.fight,"GetUnboundedStringWidth")or frame.fight:GetStringWidth()
+    if elapsed then for i=1,frame.supportMarkerCount do local b=frame.supportMarkers[i]
+        if b.timeX+b.visualWidth/2>deathX-fightWidth-4 and b.timeX-b.visualWidth/2<deathX+4 then fightExtra=20;break end
+    end end
+    frame.fightSlotExtra=fightExtra
     frame.coverage:SetShown(example);frame.info:Show()
     Text(frame.context,(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or""))
     frame.context.textValue=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
     RefreshReminderSwitch();frame.context:Hide();frame.share:SetEnabled(true);frame.share:SetAlpha(1);frame.bell:SetEnabled(true);frame.bell:SetAlpha(1)
-    local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/5)-1)*38;frame.shelfShift=shelfExtra
+    local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
     local tierEnd={-100,-100};local spanEnd={-math.huge,-math.huge};local secondTier=false
     for _,item in ipairs(model.items)do
         local x=(X(item.first)+X(item.last))/2;local tier
@@ -610,16 +659,14 @@ function UI:Render()
     for tier=1,2 do local right=832
         for i=#model.items,1,-1 do local item=model.items[i];if item.tier==tier then item.iconX=math.min(item.iconX,right);right=item.iconX-92 end end
     end
-    contentShift=shelfExtra;extraHeight=shelfExtra+supportExtra+fightExtra+(secondTier and TIER_GAP or 0);Size(frame,880,440+extraHeight)
+    contentShift=shelfExtra;extraHeight=shelfExtra+supportExtra+fightExtra+(secondTier and TIER_GAP or 0);Size(frame,880,BASE_HEIGHT+extraHeight)
     local viewWidth,viewHeight=UIParent:GetWidth(),UIParent:GetHeight()
-    if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(440+extraHeight)))end
+    if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(BASE_HEIGHT+extraHeight)))end
     local rail=202+shelfExtra+supportExtra+fightExtra;Place(frame.rail,"TOPLEFT",frame,"TOPLEFT",48,-rail);Size(frame.rail,784,1)
     for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;local x=X(time)
         Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=string.format("%s%.0fs",time<0 and"−"or"",math.abs(time));Text(frame.ticks[i],frame.tickLabels[i])
         Place(frame.tickMarks[i],"TOPLEFT",frame,"TOPLEFT",x,-rail+4);Size(frame.tickMarks[i],1,8)
     end
-    local elapsed=page.encounter and page.encounter.startedAt and page.diedAt-page.encounter.startedAt
-    Text(frame.fight,elapsed and string.format("Fight %d:%02d",math.floor(elapsed/60),math.floor(elapsed%60))or"")
     Place(frame.fight,"TOPRIGHT",frame,"TOPRIGHT",-20,-rail+25)
     frame.death:Hide()
     for _,row in ipairs(model.rows)do if row.nativeIndex==1 then
@@ -627,7 +674,7 @@ function UI:Render()
         for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;if math.abs(X(time)-x)<32 then Text(frame.ticks[i],"");frame.tickLabels[i]=""end end
     end end
     Place(frame.fight,"BOTTOMRIGHT",frame,"TOPLEFT",frame.deathX or 832,-rail+8)
-    Place(frame.graphLabel,"TOPLEFT",frame,"TOPLEFT",20,-321-extraHeight);Place(frame.graphBase,"TOPLEFT",frame,"TOPLEFT",48,-398-extraHeight);Size(frame.graphBase,784,1)
+    Place(frame.graphLabel,"TOPLEFT",frame,"TOPLEFT",20,-(GRAPH_TOP-17)-extraHeight);Place(frame.graphBase,"TOPLEFT",frame,"TOPLEFT",48,-GRAPH_BOTTOM-extraHeight);Size(frame.graphBase,784,1)
     frame.guide:Hide();frame.interval:Hide();frame.tombstone:Hide();frame.empty:SetShown(#rows==0)
     for index,item in ipairs(model.items)do
         local b=damagePool[index]or Icon(frame,46);damagePool[index]=b;b.group=item
@@ -650,7 +697,7 @@ function UI:Render()
         T:SetRoundedColor(b,item.fatal and C.danger or C.lineStrong,"base");b.selectedBorder:Hide()
         b.span=b.span or CreateFrame("Button",nil,frame);Size(b.span,math.max(1,last-first),12);Place(b.span,"CENTER",frame,"TOPLEFT",(first+last)/2,-spanY);b.scrubAvailable=item.count>1 and last>first;b.span:SetShown(b.scrubAvailable)
         local function ChooseMember(i,target)
-            if current~=page or example~=IsExample()or revision~=renderRevision then return end
+            if current~=page or example~=IsExample()or revision~=renderRevision or(share and share:IsShown())or(bell and bell:IsShown())then return end
             memberChoices[groupKey]=item.rows[i].nativeIndex;b.member=i;Select(page,item.rows[i],item);SelectedTooltip(b,page,target)
         end
         b.amountTarget=b.amountTarget or CreateFrame("Button",nil,frame);b.amountWidth=math.max(46,math.min(84,b.amount:GetStringWidth()+8));b.damageY=y;b.spanY=spanY;Size(b.amountTarget,b.amountWidth,22);Place(b.amountTarget,"BOTTOM",b,"TOP",0,12);b.amountTarget:Show()
@@ -671,7 +718,7 @@ function UI:Render()
         end)
         b.span:SetScript("OnLeave",function(self)self:SetScript("OnUpdate",nil);HideTooltip(self)end)
         b:SetScript("OnClick",function()if current~=page or example~=IsExample()or revision~=renderRevision or item.mixed then return end;local _,reason=Journal(item.rows[b.member],page);RA:Print(reason)end)
-        if item.fatal then Place(frame.tombstone,"CENTER",frame,"TOPLEFT",X(item.first),-398-extraHeight);frame.tombstone:Show()end
+        if item.fatal then Place(frame.tombstone,"CENTER",frame,"TOPLEFT",X(item.first),-GRAPH_BOTTOM-extraHeight);frame.tombstone:Show()end
     end
     -- Colliding scrub targets cannot unambiguously choose a group. Preserve
     -- their true brackets and use disjoint icon/amount + wheel access instead.
@@ -719,7 +766,7 @@ function UI:Render()
         frame.textExclusions[#frame.textExclusions+1]={left=right-width,right=right,top=rail-8-height,bottom=rail-8}
     end
     for i=1,frame.supportMarkerCount do local b=frame.supportMarkers[i];local y=181+shelfExtra+(b.lane-1)*20
-        frame.textExclusions[#frame.textExclusions+1]={left=b.timeX-b.markerWidth/2,right=b.timeX+b.markerWidth/2,top=y-10,bottom=y+10}
+        frame.textExclusions[#frame.textExclusions+1]={left=b.timeX-b.visualWidth/2,right=b.timeX+b.visualWidth/2,top=y-10,bottom=y+10}
     end
     for i=1,#model.items do local b=damagePool[i];b.stems=b.stems or{};Stem(b.stems,(X(b.group.first)+X(b.group.last))/2,rail,b.spanY,pink,.55,frame.textExclusions)end
     local support=example and page.supports or page.casts or{}
@@ -765,11 +812,30 @@ end
 function UI:Preview()
     self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();return true
 end
+local function HideActionShieldIfUnused()
+    if actionShield and not(share and share:IsShown())and not(bell and bell:IsShown())then actionShield:Hide()end
+end
+local function ShowActionShield()
+    if not actionShield then
+        actionShield=CreateFrame("Button",nil,frame);actionShield:SetAllPoints(frame)
+        actionShield:SetFrameStrata("DIALOG");actionShield:SetFrameLevel(frame:GetFrameLevel()+18);actionShield:EnableMouse(true)
+        local shade=actionShield:CreateTexture(nil,"BACKGROUND");shade:SetAllPoints(actionShield);shade:SetColorTexture(0,0,0,.25)
+        actionShield:SetScript("OnClick",function()
+            if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end
+            if bell then bell:Hide()end
+            actionShield:Hide()
+        end)
+        frame.actionShield=actionShield
+    end
+    actionShield:SetFrameLevel(frame:GetFrameLevel()+18);actionShield:Show()
+end
 function UI:OpenBell()
+    StopMotion();HideTooltip()
     if not ActionPage(current,IsExample())then return end
     if share then share:Hide()end
     if not bell then
-        bell=CreateFrame("Frame",nil,frame);Size(bell,350,110);Point(bell,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(bell,C.surface)
+        bell=CreateFrame("Frame",nil,frame);bell:SetFrameStrata("DIALOG");bell:SetFrameLevel(frame:GetFrameLevel()+20);bell:EnableMouse(true);Size(bell,350,110);Point(bell,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(bell,C.surface)
+        bell:SetScript("OnHide",HideActionShieldIfUnused)
         bell.title=Label(bell,"",12,12,-12,326)
         Label(bell,"Your threshold, sound and appearance stay saved.",10,12,-34,326,C.textSoft)
         bell.action=Button(bell,"ENABLE",100,function()
@@ -781,33 +847,35 @@ function UI:OpenBell()
     bell.page,bell.preview=current,IsExample();bell.desired=not RA.PersonalTools:GetState().consumableReminder
     Text(bell.title,bell.desired and"Turn the consumable reminder on?"or"Turn the consumable reminder off?")
     Text(bell.action.label,bell.desired and"ENABLE"or"DISABLE")
-    bell:Show()
+    bell:SetFrameLevel(frame:GetFrameLevel()+20);bell:Show();ShowActionShield()
 end
 function UI:OpenShare()
+    StopMotion();HideTooltip()
     if not ActionPage(current,IsExample())then return end
     if bell then bell:Hide()end
     if not share then
-        share=CreateFrame("Frame",nil,frame);Size(share,430,218);Point(share,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(share,C.surface)
-        share.copy=CreateFrame("EditBox",nil,share,"InputBoxTemplate");Size(share.copy,398,42);Point(share.copy,"TOPLEFT",share,"TOPLEFT",16,-14);share.copy:SetAutoFocus(false);share.copy:SetMultiLine(true)
-        RA:ApplyFont(share.copy,11,"REGULAR",false)
-        share.recipient=CreateFrame("EditBox",nil,share,"InputBoxTemplate");Size(share.recipient,250,24);Point(share.recipient,"TOPLEFT",share,"TOPLEFT",16,-106);share.recipient:SetAutoFocus(false);share.recipient:SetMaxLetters(80)
-        RA:ApplyFont(share.recipient,11,"REGULAR",false)
-        share.targetLabel=Label(share,"Whisper recipient",10,16,-87,250,C.muted)
-        share.status=Label(share,"Review in chat; this button never sends.",10,16,-141,398,C.textSoft)
+        share=CreateFrame("Frame",nil,frame);share:SetFrameStrata("DIALOG");share:SetFrameLevel(frame:GetFrameLevel()+20);share:EnableMouse(true);Size(share,440,250);Point(share,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(share,C.surface)
+        share:SetScript("OnHide",HideActionShieldIfUnused)
+        share.copy=CreateFrame("EditBox",nil,share);Size(share.copy,408,60);Point(share.copy,"TOPLEFT",share,"TOPLEFT",16,-16);share.copy:SetAutoFocus(false);share.copy:SetMultiLine(true);share.copy:SetTextInsets(10,10,8,8);share.copy:SetJustifyV("TOP");Surface(share.copy,C.input);T:ApplyRounded(share.copy,C.lineStrong,6,"border","BORDER")
+        RA:ApplyFont(share.copy,11,"REGULAR",false);share.copy:EnableMouse(true);share.copy:SetScript("OnEscapePressed",function(self)self:ClearFocus()end)
+        share.recipient=CreateFrame("EditBox",nil,share);Size(share.recipient,408,28);Point(share.recipient,"TOPLEFT",share,"TOPLEFT",16,-142);share.recipient:SetAutoFocus(false);share.recipient:SetMaxLetters(80);share.recipient:SetTextInsets(10,10,4,4);Surface(share.recipient,C.input);T:ApplyRounded(share.recipient,C.lineStrong,6,"border","BORDER")
+        RA:ApplyFont(share.recipient,11,"REGULAR",false);share.recipient:EnableMouse(true);share.recipient:SetScript("OnEscapePressed",function(self)self:ClearFocus()end)
+        share.targetLabel=Label(share,"Whisper recipient",10,16,-124,408,C.muted)
+        share.status=Label(share,"Review in chat, then send when ready.",10,16,-182,408,C.textSoft)
         local channels={"WHISPER","SAY","PARTY","RAID"}
         for index,channel in ipairs(channels)do
-            local b=Button(share,channel,92,function()share.channel=channel;share.recipient:SetShown(channel=="WHISPER");share.targetLabel:SetShown(channel=="WHISPER")end)
-            Point(b,"TOPLEFT",share,"TOPLEFT",16+(index-1)*100,-60)
+            local b=Button(share,channel,96,function()share.channel=channel;share.recipient:SetShown(channel=="WHISPER");share.targetLabel:SetShown(channel=="WHISPER")end)
+            Point(b,"TOPLEFT",share,"TOPLEFT",16+(index-1)*104,-88)
         end
         local open=Button(share,"OPEN CHAT",140,function()
             if not share:IsShown()or not ActionPage(share.page,share.preview)then return end
             local _,reason=R:PrepareShare(share.channel,share.recipient:GetText(),share.page,share.preview);Text(share.status,reason)
-        end);Point(open,"BOTTOMLEFT",share,"BOTTOMLEFT",16,12)
-        local close=Button(share,"CLOSE",92,function()share:Hide()end);Point(close,"BOTTOMRIGHT",share,"BOTTOMRIGHT",-16,12)
+        end);Point(open,"BOTTOMLEFT",share,"BOTTOMLEFT",16,16)
+        local close=Button(share,"CLOSE",96,function()share:Hide()end);Point(close,"BOTTOMRIGHT",share,"BOTTOMRIGHT",-16,16)
     end
     share.page,share.preview=current,IsExample()
     share.copy:SetText(R:BuildShareText(current,share.preview));share.channel="WHISPER";share.recipient:Show();share.targetLabel:Show()
-    Text(share.status,share.preview and"Fictional sample report. Review in chat, then submit yourself."or"Review in chat; this button never sends.");share:Show()
+    Text(share.status,share.preview and"Preview report. Review in chat, then send when ready."or"Review in chat, then send when ready.");share:SetFrameLevel(frame:GetFrameLevel()+20);share:Show();ShowActionShield()
 end
 function UI:CreateSettings(parent,kit)
     local group=CreateFrame("Frame",nil,parent);Size(group,918,112)
