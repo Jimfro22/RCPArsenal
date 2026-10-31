@@ -1,3 +1,13 @@
+# 0.15.3-alpha.33 screenshot-driven Death Log correction
+
+Recap rows clear pooled height constraints before final-width native wrap measurement, permit word/non-space wrapping and unlimited lines, and size the card from measured content. Non-spell help uses one concise card; native spell/item descriptions retain their separate companion. Shared tooltip ownership and cleanup remain guarded.
+
+Share and reminder dialogs use an explicit modal plane, opaque Arsenal surfaces, an input barrier and themed edit fields. Opening either clears old tooltips and stops chart hover tracking. The death summary explicitly says Fatal hit rather than appearing to report the currently inspected event. Preview report preparation and the actual synchronized reminder remain usable.
+
+Seven Preview CD slots fit one row. Support lanes use visible label bounds, and extra Fight spacing is reserved only for an actual endpoint collision. Normal Preview is880×428 instead of518high; real/dense shelves and genuine collisions still add bounded space. Graph strokes target3physical pixels, with16pixel known Preview color accents capped before the next sample; live HP stays discrete. The visible caption is80k heal absorb remaining, with a wider slot and unchanged raw HP/font size. Player help is concise; recapaudit retains the detailed diagnostics.
+
+Recorder, catalog, association, model, supply and personal-tool modules are byte-identical to alpha.32. No new polling, data inference, media or unrelated changes. Finite-height font, inherited-layer and layout contract checks improve offline coverage; they are not native visual acceptance. Fresh owner screenshots remain required. GitHub tester only; no CF/tag/release/install.
+
 # 0.15.3-alpha.32 Death Log interactive tester and evidence audit
 
 Private Preview now prepares an explicitly fictional report in the normal native chat composer; you review and submit. Its reminder control changes the real Personal Tools master on/off while keeping child preferences. A synchronized settings-style Reminder switch is shown beside the smaller !. Native spell/item tooltips remain intact; colored recap facts use a separate bordered box below, placed as one bounded stack with ownership-safe cleanup.

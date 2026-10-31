@@ -1,4 +1,4 @@
-# Death Log — alpha.32 interactive test build
+# Death Log — alpha.33 screenshot-correction test build
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -6,7 +6,7 @@ opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
 Its amounts, selected-time states, health curve, heals, durations and healing
 debt are fictional. `/rcp recap` opens the one retained personal page this login.
 
-The 880×440 display has one native time rail, grouped damage below it, support
+The compact 880px-wide display has one native time rail, grouped damage below it, support
 above it and a shallow HP graph. A collision tier adds100px; extra known shelf
 rows add38px each. It scales to the viewport. Hover a group span to select the
 nearest actual member; scroll to reach every member, including equal times.
@@ -141,7 +141,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.32; inspect Arcane preview
+Native owner test: pull main, restart WoW, verify alpha.33; inspect Arcane preview
 and group scrub/wheel/Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
@@ -179,3 +179,27 @@ false-unavailable and missing coverage separately over all eligible observations
 Offline checks and a compatibility pilot do not establish the requested90% native
 use/availability accuracy. Native rendering, tooltip reflow, event ordering and
 performance remain owner/client acceptance gates.
+
+Alpha.33 native screenshot correction
+-------------------------------------
+Normal private Preview is880×428. Its seven fixed CD slots share one row; actual
+wrapped shelves and support-label collisions retain their space. Conditional
+Fight spacing protects a killing-blow absorption without adding an empty row to
+every page. The graph and existing HP mapping move together; real samples remain
+discrete and no new heal or source inference is added.
+
+Pooled recap FontStrings reset old height and line limits before measuring at
+the final width. Word/non-space wrap and measured row height handle longer reused
+content. Native spell/item text stays separate; ordinary help uses one card.
+The share/reminder surfaces sit above content on an explicit modal plane with a
+mouse barrier, themed fields and no stale tooltip. Their actions still prepare
+chat for manual submission and change the actual reminder master only on click.
+Reports identify their Fatal hit; an inspected hit may be different.
+
+Native client verification: revisit short/long/grouped tooltips after a font
+refresh, inspect all wrapped lines and the native/companion gap at screen edges;
+open both dialogs and verify no art or hover from the underlying chart; inspect
+coral/green event accents, compact spacing, seven slots and the complete healing-
+absorb caption beside raw HP; prepare a labelled Preview report and toggle the
+actual reminder. The finite-height/inherited-level fixture catches the earlier
+input mistakes, but only current-client pixels confirm these corrections.

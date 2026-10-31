@@ -12,7 +12,34 @@ function methods:SetStartPoint(...)self.start={...}end
 function methods:SetEndPoint(...)self.finish={...}end
 function methods:SetFrameLevel(value)self.level=value end
 function methods:SetClipsChildren(value)self.clips=value end
+-- A finite-height model reproduces the native ellipsis contract. This is
+-- drawing-input coverage, not a replacement for the client screenshots.
+function methods:SetWordWrap(value)self.wordWrap=value end
+function methods:SetNonSpaceWrap(value)self.nonSpaceWrap=value end
+function methods:SetMaxLines(value)self.maxLines=value end
+function methods:SetFrameStrata(value)self.strata=value end
+function methods:GetFrameStrata()return self.strata or(self.parent and self.parent:GetFrameStrata())or'MEDIUM'end
+function methods:GetFrameLevel()return self.level or(self.parent and self.parent:GetFrameLevel()+1)or 0 end
+function methods:EnableMouse(value)self.mouseEnabled=value end
+function methods:SetTextInsets(...)self.textInsets={...}end
+function methods:SetJustifyH(value)self.justifyH=value end
+function methods:GetUnboundedStringWidth()
+ local width=0;for line in ((self.text or'')..'\n'):gmatch('(.-)\n')do width=math.max(width,#line*6)end;return width
+end
+function methods:GetStringHeight()
+ local natural=0;local width=self.width or 0
+ for line in ((self.text or'')..'\n'):gmatch('(.-)\n')do
+  natural=natural+((self.wordWrap and width>0)and math.max(1,math.ceil(#line*6/width))or 1)*(self.fontSize or 10)
+ end
+ if self.maxLines and self.maxLines>0 then natural=math.min(natural,self.maxLines*(self.fontSize or 10))end
+ self.measuredWithHeight=self.height or 0;self.naturalWrappedHeight=natural
+ return(self.height and self.height>0)and math.min(self.height,natural)or natural
+end
+GameTooltip:SetFrameStrata('TOOLTIP')
+local nativeCreateFrame=CreateFrame
+CreateFrame=function(kind,name,parent,template)local o=nativeCreateFrame(kind,name,parent);o.template=template;return o end
 function methods:SetColorTexture(...)self.color={...}end
+function methods:SetDrawLayer(value)self.drawLayer=value end
 function methods:EnableMouseWheel(v)self.wheel=v end
 function methods:GetValue()error('Historical UI read back a native bar value')end
 local tooltipSpell,tooltipItem,tooltipLines=nil,nil,{}
@@ -57,15 +84,15 @@ local function hover(index)
  for _,b in ipairs(hits())do for i,row in ipairs(b.group.rows)do if row.nativeIndex==index then b.member=i;b:Fire('OnEnter');return b end end end;error('Missing raw event '..index)
 end
 check(UISpecialFrames[1]=='RCPArsenalDeathRecap'and popup:GetScript('OnHide'),'Escape/nativehide cleanup missing')
-check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=440,'Composition lost Death Log hierarchy')
+check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=428,'Composition lost Death Log hierarchy')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Initial fatal health selection mismatch')
 check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated skull art')
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
 for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
- if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==1 and help:find('off cooldown',1,true)and help:find('45.00s',1,true)and help:find('not provided by Blizzard',1,true),'Age or secret charge erased public cooldown fact')end
- if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('55.00s',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
+ if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==1 and help:find('Off cooldown',1,true)and help:find('45.0s',1,true),'Age or secret charge erased public cooldown fact')end
+ if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
  if tooltipSpell==342245 then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
@@ -98,7 +125,7 @@ check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Ex
 check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
-U:OpenShare();check(button('OPEN CHAT'),'Private Preview report action missing')
+U:OpenShare();check(button('OPEN CHAT'),'Private Preview report action missing');button('CLOSE'):Fire('OnClick')
 popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeOffset==-4.2 and popup.healthPanel.selectedHP==336000 and popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example heal failed synchronized explicit snapshot')
 for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeOffset==-3.5 or popup.selected.nativeOffset==-1.8,'Example defensive failed to select its actual time');break end end
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
@@ -107,7 +134,7 @@ for _,b in ipairs(popup.healTargets)do check(not b.icon and b.label.text:sub(1,1
 -- Focused alpha31 presentation evidence. This proves drawing inputs/layers and
 -- decisions; only a native screenshot can confirm visible amber/ring pixels.
 U:Preview();local sever=hover(8)
-check(popup.hp.text=='128000 / 400000'and popup.hp.width==142 and popup.absorbLabel.width==138,'Debt replaced/moved numerical HP')
+check(popup.hp.text=='128000 / 400000'and popup.hp.width==142 and popup.absorbLabel.width>=154,'Debt replaced/moved numerical HP')
 check(popup.absorb:GetFrameLevel()>popup.healthBar:GetFrameLevel()and popup.absorb.clips and popup.absorbFill.color[4]>.1,'Debt layer lacks backing/clip/above-bar order')
 local stripes=0
 for _,line in ipairs(popup.hatches)do if line:IsShown()then
@@ -147,7 +174,7 @@ check(tooltipSpell==2061 and healHelp:find('+9k healing',1,true)and not healHelp
 check(popup.hp.text=='336000 / 400000'and not popup.absorb:IsShown(),'Leaving debt moved/erased health text or retained debt')
 local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
 check(popup.bell:IsEnabled()and popup.share:IsEnabled()and popup.bell.alpha==1,'Private Preview actions unavailable')
-tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('fictional sample report',1,true),'Preview report help lost provenance')
+tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Open this report in chat',1,true),'Report help is unclear')
 -- Exercise the actual placement callback with measured mock UI rectangles.
 local rects={};local oldLeft,oldBottom,oldScale=methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale
 function methods:GetLeft()return rects[self]and rects[self].left or oldLeft(self)end
@@ -227,6 +254,56 @@ for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()then for _,ste
 end end end end
 U:ShowLast();for _,marker in ipairs(popup.supportMarkers)do check(not marker:IsShown(),'Preview support leaked into real fixture');for _,stem in ipairs(marker.stems)do check(not stem:IsShown(),'Old support stem survived fewer markers')end end
 U:Preview()
+-- Alpha33: finite-height wrap, one-card help and explicit modal ordering.
+local oldSourceName=page.native.rows[1].sourceName
+local smallHeight,largeHeight
+for i,text in ipairs({'A',string.rep('Long',24),'A',string.rep('X',96)})do
+ page.native.rows[1].sourceName=text;U:ShowLast();hover(2)
+ local card=popup.tooltipRecap;local sourceRow
+ for _,f in ipairs(card.lines)do if f:IsShown()then
+  check(f.wordWrap and f.nonSpaceWrap and f.maxLines==0 and f.measuredWithHeight==0,'Pooled row measured with a stale height/wrap constraint')
+  check(f.height>=f.naturalWrappedHeight,'Wrapped text exceeds allocated row height')
+  if f.text:find('Source:',1,true)then sourceRow=f end
+ end end
+ check(sourceRow,'Source row disappeared')
+ if i==1 then smallHeight=card.height elseif i==2 then largeHeight=card.height;check(largeHeight>smallHeight and sourceRow.height>sourceRow.fontSize,'Long row did not expand after a short row')
+ elseif i==3 then check(card.height==smallHeight,'Short replacement did not shrink pooled card')
+ else check(card.height==largeHeight,'Long non-space token did not wrap after reuse')end
+end
+page.native.rows[1].sourceName=oldSourceName;U:Preview()
+check(popup.height==428 and popup.supportExtra==0 and popup.fightSlotExtra==0,'Normal Preview retained artificial shelf/support/timer height')
+local expectedSlots={590,628,666,704,742,786,824};local slotCount=0
+for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-66,'Seven fixed CD slots did not stay on one row')end
+check(slotCount==7,'Preview roster lost a CD slot')
+popup.reminder:Fire('OnEnter');check(not GameTooltip:IsShown()and popup.tooltipRecap:IsShown()and popup.tooltipRecap.lines[1].text=='Consumable reminder','Non-spell help is not a single card')
+local toggledFrom=db.personalTools.consumableReminder
+popup.reminder:Fire('OnClick');check(popup.tooltipRecap.lines[2].text==(db.personalTools.consumableReminder and'On · Click to turn off.'or'Off · Click to turn on.'),'Visible reminder help did not follow the setting')
+RA.PersonalTools:SetOption('consumableReminder',toggledFrom)
+local function checkModal(form)
+ check(form.mouseEnabled and form:GetFrameStrata()=='DIALOG'and popup.actionShield:IsShown()and popup.actionShield.mouseEnabled,'Modal lacks an input barrier')
+ for _,o in ipairs(objects)do if under(o,popup)and o~=popup and o~=form and not under(o,form)and not under(o,popup.actionShield)and o:IsVisible()and(o.kind=='Frame'or o.kind=='Button'or o.kind=='StatusBar'or o.kind=='EditBox')then
+  check(o:GetFrameLevel()<form:GetFrameLevel(),'Content draws above modal plane')
+ end end
+ for _,o in ipairs(objects)do if o~=form and under(o,form)and(o.kind=='Button'or o.kind=='EditBox')then check(o:GetFrameLevel()>form:GetFrameLevel(),'Modal control is below its background')end end
+end
+hover(8);U:OpenShare();local shareForm=button('OPEN CHAT').parent;checkModal(shareForm)
+check(not GameTooltip:IsShown()and not popup.tooltipRecap:IsShown(),'Opening share retained old tooltip')
+check(not shareForm.copy.template and not shareForm.recipient.template and shareForm.copy.textInsets[1]==10,'Native default editbox chrome/insets remained')
+check(shareForm.copy:GetText():find('Fatal hit: Venomfang',1,true),'Death summary was confused with selected hit')
+local heldSelection=popup.selected;popup.healTargets[1]:Fire('OnEnter');hover(2);check(popup.selected==heldSelection and not popup.tooltipRecap:IsShown(),'Underlying chart reacted through modal')
+popup.actionShield:Fire('OnClick');check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Outside click retained modal/barrier')
+U:OpenBell();checkModal(button('ENABLE',true).parent);button('CANCEL'):Fire('OnClick');check(not popup.actionShield:IsShown(),'Reminder close retained input barrier')
+U:Preview();hover(8);check(popup.absorbLabel.text=='80k heal absorb remaining'and popup.absorbLabel:GetUnboundedStringWidth()<=popup.absorbLabel.width and popup.hp.text=='128000 / 400000','Debt noun/state or HP value lost')
+local coralRuns,greenRuns=0,0
+for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==3 and o.width<=16 then
+ if o.color[1]==1 and o.color[2]==.46 then coralRuns=coralRuns+1 end
+ if o.color[1]==RA.Theme.Colors.success[1]and o.color[2]==RA.Theme.Colors.success[2]then greenRuns=greenRuns+1 end
+end end
+check(coralRuns>0 and greenRuns>0,'Observed Preview damage/heal accents have no horizontal run')
+local wrappedSource=popup.tooltipRecap.lines[1]
+RA:ApplyFont(wrappedSource,13,'BOLD',false);hover(8)
+check(wrappedSource.wordWrap and wrappedSource.nonSpaceWrap and wrappedSource.maxLines==0 and wrappedSource.measuredWithHeight==0,'Font refresh/return skipped local wrap layout')
+U:Preview()
 -- A killing-blow absorption stays at its timestamp below a separate timer slot.
 local savedFatalAbsorb=page.native.rows[4].absorbed;page.native.rows[4].absorbed=7000;U:ShowLast()
 local endpointMarker
@@ -283,6 +360,7 @@ for _,b in ipairs(hits())do
  for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[popup.selected.nativeIndex]=true end
 end
 for i=1,64 do check(seen[i],'Dense group lost constituent '..i)end
+U:OpenShare();checkModal(button('OPEN CHAT').parent);button('CLOSE'):Fire('OnClick')
 -- Three overlapping positive spans keep their true bracket intervals while
 -- ambiguous mouse frames are removed. Their distinct glyph/amount wheel paths
 -- still expose every constituent.
