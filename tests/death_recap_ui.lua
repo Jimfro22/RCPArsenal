@@ -6,10 +6,20 @@ function methods:GetScript(name)return self.scripts[name]end
 function methods:SetAlpha(v)check(type(v)=='number'and v==v and v>=0 and v<=1,'Invalid native alpha');self.alpha=v end
 function methods:SetVertexColor(r,g,b)self.rgb={r,g,b}end
 function methods:SetAtlas(atlas)self.atlas=atlas end
+function methods:CreateLine()return object('Line',nil,self)end
+function methods:SetThickness(value)self.thickness=value end
+function methods:SetStartPoint(...)self.start={...}end
+function methods:SetEndPoint(...)self.finish={...}end
+function methods:SetFrameLevel(value)self.level=value end
+function methods:SetClipsChildren(value)self.clips=value end
+function methods:SetColorTexture(...)self.color={...}end
 function methods:EnableMouseWheel(v)self.wheel=v end
 function methods:GetValue()error('Historical UI read back a native bar value')end
-local tooltipSpell,tooltipLines=nil,{}
-function GameTooltip:SetSpellByID(id)tooltipSpell=id end
+local tooltipSpell,tooltipItem,tooltipLines=nil,nil,{}
+function GameTooltip:SetSpellByID(id)tooltipSpell=id;tooltipItem=nil;self.nativeDescription='Native spell description '..id end
+function GameTooltip:SetItemByID(id)tooltipItem=id;tooltipSpell=nil;self.nativeDescription='Native item description '..id end
+function GameTooltip:SetOwner(owner,mode)self.owner,self.anchorMode=owner,mode end
+function GameTooltip:GetOwner()return self.owner end
 function GameTooltip:AddLine(line)tooltipLines[#tooltipLines+1]=line end
 UISpecialFrames={}
 local R,U=RA.DeathRecap,RA.DeathRecapUI
@@ -48,13 +58,13 @@ check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated 
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
 for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
- if help:find('Old unchanged check',1,true)then foundOld=true;check(b.icon.rgb[1]==1 and help:find('off cooldown',1,true)and help:find('45.00s',1,true)and help:find('not provided by Blizzard',1,true),'Age or secret charge erased public cooldown fact')end
- if help:find('Healthstone',1,true)then foundStock=true;check(b.icon.rgb[1]==1 and help:find('55.00s',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
- if help:find('On hold',1,true)then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
+ if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==1 and help:find('off cooldown',1,true)and help:find('45.00s',1,true)and help:find('not provided by Blizzard',1,true),'Age or secret charge erased public cooldown fact')end
+ if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('55.00s',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
+ if tooltipSpell==342245 then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
 local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
-tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Event 1/2',1,true),'Group moment not explicit')
+tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Selected 1/2',1,true),'Group moment not explicit')
 grouped:Fire('OnMouseWheel',-1);check(popup.selected.nativeIndex==3 and popup.healthPanel.selectedHP==80000,'Wheel did not select exact constituent HP')
 check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
 local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==3,'Journal click also cycled events')
@@ -70,13 +80,13 @@ local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
 for i=1,50 do hover(2);hover(3)end
 check(#objects==beforeFrames and #timers==beforeTimers and groupCalls==beforeGroups,'Hover allocated or regrouped')
 local fatal=page.native.rows[4];fatal.nativeOffset=-1;page.native.rows[5]={nativeIndex=5,nativeOffset=0,spellID=126,kind='unknown'}
-U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40 (notice)','Latest native time mislabeled as Death or clocks conflated')
+U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40 · death notice','Latest native time mislabeled as Death or clocks conflated')
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
 U:OpenBell();local enable=button('ENABLE');check(enable,'Live reminder confirmation missing')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
-check(popup.coverage:IsShown()and popup.coverage.text=='Example data'and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
+check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
 check(popup.healthPanel.selectedHP==128000 and popup.percent.text=='32%'and popup.absorb:IsShown()and popup.healthPanel.healAbsorb==80000,'Example default health/debt not coherent')
 check(popup.shelf.text=='Cooldowns · −2.30s','Example shelf not tied to exact selected moment')
 check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
@@ -88,6 +98,106 @@ for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
 local healerArtwork=0
 for _,b in ipairs(popup.healTargets)do check(not b.icon and b.label.text:sub(1,1)=='+','Healing regained large artwork')end
+-- Focused alpha31 presentation evidence. This proves drawing inputs/layers and
+-- decisions; only a native screenshot can confirm visible amber/ring pixels.
+U:Preview();local sever=hover(8)
+check(popup.hp.text=='128000 / 400000'and popup.hp.width==142 and popup.absorbLabel.width==138,'Debt replaced/moved numerical HP')
+check(popup.absorb:GetFrameLevel()>popup.healthBar:GetFrameLevel()and popup.absorb.clips and popup.absorbFill.color[4]>.1,'Debt layer lacks backing/clip/above-bar order')
+local stripes=0
+for _,line in ipairs(popup.hatches)do if line:IsShown()then
+ stripes=stripes+1;check(line.thickness==2 and line.start[3]>=0 and line.finish[3]<=popup.absorb.width and line.start[4]>=-14 and line.start[4]<=0 and line.finish[4]>=-14 and line.finish[4]<=0,'Hatch stroke escaped debt rectangle')
+end end
+check(stripes>1 and stripes<=40,'No bounded hatch geometry')
+check(popup.healthPoint.width==12 and #popup.healthPoint.discs==3 and popup.pointPercent.text=='32%','Selected ring/percentage missing')
+local dashed=0;for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then dashed=dashed+1;check(t.width==1 and t.height<=4,'Guide became solid')end end
+check(dashed>1 and dashed<=96,'Guide dashes not bounded')
+check(sever.selectedBorder:IsShown()and not sever.countBadge:IsShown(),'Singleton selected/count treatment wrong')
+local groupedPreview
+for _,b in ipairs(hits())do if #b.group.rows>1 then groupedPreview=b;break end end
+check(groupedPreview.countBadge:IsShown()and groupedPreview.countBadge.width>=24 and groupedPreview.countText.fontSize==11,'Count backing/legibility missing')
+local absorbed=hover(5);check(absorbed.absorbBadge:IsShown()and #absorbed.absorbBadge.lines==5 and absorbed.absorbBadge.recordedAmount==20000,'Positive recorded absorption lacks backed shield')
+local function cross(x,first,last,r)return x>r.left-2 and x<r.right+2 and first<r.bottom+2 and last>r.top-2 end
+for _,b in ipairs(hits())do for _,stem in ipairs(b.stems or{})do if stem:IsShown()then
+ local x,y=stem.points[1][4],-stem.points[1][5]
+ for _,r in ipairs(popup.textExclusions)do check(not cross(x,y,y+stem.height,r),'Connector crosses text/amount target')end
+end end end
+for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then
+ local x=popup.guide.points[1][4];local y=-popup.guide.points[1][5]-t.points[1][5]
+ for _,r in ipairs(popup.textExclusions)do check(not cross(x,y,y+t.height,r),'Selected dash crosses text')end
+end end
+local supportStems=0
+for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then check(obj.lines[3]and obj.lines[3]:IsShown(),'Aligned activation stem missing');supportStems=supportStems+1 end end
+check(supportStems==2 and #popup.healStems==2,'Preview support connections missing')
+tooltipLines={};hover(8);local single=table.concat(tooltipLines,' ')
+check(tooltipSpell==1299684 and GameTooltip.nativeDescription=='Native spell description 1299684','Native spell tooltip discarded')
+check(single:find('51k damage · −2.30s',1,true)and not single:find('1/1',1,true)and not single:find('combined',1,true)and not single:find('fictional',1,true),'Singleton tooltip retained boilerplate')
+tooltipLines={};popup.healTargets[1]:Fire('OnEnter');local healHelp=table.concat(tooltipLines,' ')
+check(tooltipSpell==2061 and healHelp:find('+9k healing · −4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
+check(popup.hp.text=='336000 / 400000'and not popup.absorb:IsShown(),'Leaving debt moved/erased health text or retained debt')
+local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
+check(not popup.bell:IsEnabled()and not popup.share:IsEnabled()and popup.bell.alpha>=.7,'Preview actions falsely enabled or illegible')
+tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Unavailable in Preview',1,true),'Disabled action lacks concise reason')
+-- Exercise the actual placement callback with measured mock UI rectangles.
+local rects={};local oldLeft,oldBottom,oldScale=methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale
+function methods:GetLeft()return rects[self]and rects[self].left or oldLeft(self)end
+function methods:GetBottom()return rects[self]and rects[self].bottom or oldBottom(self)end
+function methods:GetEffectiveScale()return rects[self]and rects[self].scale or oldScale(self)end
+local cases=0
+local function area(a,b)return math.max(0,math.min(a.right,b.right)-math.max(a.left,b.left))*math.max(0,math.min(a.top,b.top)-math.max(a.bottom,b.bottom))end
+for _,parentScale in ipairs({.8,1,1.25})do for _,panelScale in ipairs({.64,.8,1})do
+ local sw,sh=1920*parentScale,1080*parentScale
+ UIParent:SetSize(1920,1080);rects[UIParent]={left=0,bottom=0,scale=parentScale}
+ for _,corner in ipairs({'center','left','right','top','bottom'})do
+  local pw,ph=popup.width*panelScale,popup.height*panelScale
+  local px,py=(sw-pw)/2,(sh-ph)/2
+  if corner=='left'then px=12 elseif corner=='right'then px=sw-pw-12 elseif corner=='top'then py=sh-ph-12 elseif corner=='bottom'then py=12 end
+  rects[popup]={left=px/panelScale,bottom=py/panelScale,scale=panelScale}
+  local b=sever;rects[b]={left=(px+(b.group.iconX-23)*panelScale)/panelScale,bottom=(py+ph-(b.damageY+46)*panelScale)/panelScale,scale=panelScale}
+  GameTooltip:SetSize(280,260);rects[GameTooltip]={left=0,bottom=0,scale=.9}
+  b:Fire('OnEnter');local r=popup.tooltipPlacement
+  check(r and r.left>=12 and r.bottom>=12 and r.right<=sw-12 and r.top<=sh-12,'Tooltip escaped measured screen at non-unit scale')
+  local panel={left=px,right=px+pw,bottom=py,top=py+ph}
+  if r.mode=='outside'then check(area(r,panel)==0,'Claimed outside tooltip overlaps recap')end
+  local target={left=px+(b.group.iconX-23)*panelScale,right=px+(b.group.iconX+23)*panelScale,bottom=py+ph-(b.damageY+46)*panelScale,top=py+ph-b.damageY*panelScale}
+  check(area(r,target)==0,'Tooltip covers hovered event despite room')
+  local point=GameTooltip.points[#GameTooltip.points];check(math.abs(point[4]*.9-r.left)<.001 and math.abs(point[5]*.9-r.bottom)<.001,'Tooltip offsets mixed effective scales')
+  GameTooltip:SetSize(320,300);GameTooltip:Fire('OnSizeChanged');check(math.abs(popup.tooltipPlacement.right-popup.tooltipPlacement.left-288)<.001,'Native tooltip size change left stale placement')
+  b:Fire('OnLeave');check(not GameTooltip:IsShown()and popup.tooltipPlacement==nil,'Tooltip ownership/placement survived leave')
+  cases=cases+1
+ end
+end end
+check(cases==45 and not GameTooltip:GetScript('OnUpdate'),'Placement added polling or omitted scale/edge cases')
+rects={};methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale=oldLeft,oldBottom,oldScale;UIParent:SetSize(0,0)
+U:Preview()
+-- Another UI may acquire the shared native tooltip before recap cleanup runs.
+local foreign=CreateFrame('Frame',nil,UIParent)
+for _,operation in ipairs({'leave','hide','render'})do
+ local b=hover(8)
+ GameTooltip:SetOwner(foreign,'ANCHOR_RIGHT');GameTooltip:SetText('Foreign tooltip');GameTooltip:Show()
+ local beforePoint=GameTooltip.points[#GameTooltip.points];GameTooltip:Fire('OnSizeChanged')
+ check(GameTooltip.points[#GameTooltip.points]==beforePoint,'Resize moved another owner tooltip')
+ if operation=='leave'then b:Fire('OnLeave')elseif operation=='hide'then U:Hide()else U:Render()end
+ check(GameTooltip:IsShown()and GameTooltip:GetOwner()==foreign,'Recap '..operation..' hid another owner tooltip')
+ GameTooltip:Hide();U:Preview()
+end
+local own=hover(8);own:Fire('OnLeave');check(not GameTooltip:IsShown(),'Recap leave retained its own tooltip')
+local staleTargets={sever,sever.amountTarget}
+for _,b in ipairs(hits())do if b.span:IsShown()then staleTargets[#staleTargets+1]=b.span;break end end
+check(#staleTargets==3,'Stale leave fixture omitted span target')
+for _,older in ipairs(staleTargets)do
+ older:Fire('OnEnter');local newer=popup.healTargets[1];newer:Fire('OnEnter')
+ older:Fire('OnLeave')
+ check(GameTooltip:IsShown()and GameTooltip:GetOwner()==newer,'Stale leave hid a newer recap tooltip')
+ newer:Fire('OnLeave');check(not GameTooltip:IsShown(),'Stale leave cleared newer owner tracking')
+end
+local copyPage=page;page={id=13,diedAt=100,casts={},native={recapID=4,rows={}}}
+for i=1,12 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
+U:ShowLast();local unknownGroup
+for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
+check(unknownGroup,'Unknown-event density fixture lost its summary')
+tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tooltipLines,' ')
+check(unknownCopy:find(' events · ',1,true)and not unknownCopy:find(' hits · ',1,true),'Unknown event kinds became damage hits')
+page=copyPage;U:Preview()
 local oldJournal;local mapped
 for _,b in ipairs(hits())do if b.group.spellID==1285017 then mapped=b;break end end
 check(mapped,'Coiled preview mapping missing');oldJournal=mapped:GetScript('OnClick')

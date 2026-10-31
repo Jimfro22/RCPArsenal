@@ -1,8 +1,8 @@
-# Death Log — alpha.30 test build
+# Death Log — alpha.31 test build
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
-opens an isolated **Example data** Arcane Mage / The Coiled Altar / Mythic page.
+opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
 Its amounts, selected-time states, health curve, heals, durations and healing
 debt are fictional. `/rcp recap` opens the one retained personal page this login.
 
@@ -15,6 +15,21 @@ scrolling, with no overlapping invisible mouse targets. Tooltip distinguishes th
 combined amount from the selected event. Normal
 click opens a verified Journal entry; it never cycles events. There is no raw
 panel, toggle, instructional subheader or Details placeholder.
+
+Alpha.31 keeps the default Sever selection and retains it on leave. The selected
+HP uses a ring and percentage, the guide is dashed, and quiet graph marks preserve
+actual event positions. Count and recorded absorption badges have readable
+backing; the selected border remains distinct from the fatal-hit border. Native
+spell/item descriptions remain in tooltips, followed by compact recap details.
+Placement uses a 12 physical-pixel screen inset and gap and prefers outside the recap,
+with bounded edge/effective-scale fallback
+that protects the hovered target and HP/shelf where space allows. Geometry checks
+read only public UI bounds, never tooltip text or health widget values. Cleanup
+leaves foreign or newer target tooltips alone. Preview
+uses one provenance label; its reminder/chat actions stay inert and explain why.
+Synthetic healing debt uses clipped, explicitly layered native hatch lines while
+raw HP stays in its usual position. Native pixels, tooltip reflow and taint still
+require owner acceptance.
 
 Only confirmed same-spell/source-instance bursts merge semantically, with a
 provisional0.6s adjacent gap and1.5s total span. Other spells may interleave.
@@ -117,7 +132,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.30; inspect Arcane preview
+Native owner test: pull main, restart WoW, verify alpha.31; inspect Arcane preview
 and group scrub/wheel/Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
