@@ -1,3 +1,11 @@
+# 0.15.3-alpha.31 Death Log presentation polish
+
+The grouped rail is clearer, support activations align to their Preview clock, and damage amounts sit closer to their icons. The existing Sever selection persists after hover. A dashed guide, selected HP ring/percentage, quieter graph marks, backed count/shield badges and distinct fatal/selected borders improve inspection.
+
+Native spell/item tooltips retain their descriptions with compact recap details, including a Flash Heal heading. Bounded placement prefers outside the recap and accounts for screen edges and effective scale. The synthetic amber healing-debt hatch uses explicitly layered native lines; raw HP stays in place. One Preview label replaces repeated fixture text, and disabled actions remain readable and inert. Existing owned chat art is reused.
+
+Recorder, association, clocks, state/stock logic, catalog, markers and media bytes are unchanged. Real HP remains discrete; real support casts remain unaligned. No live healing-debt collection or new history is added. Native pixel/tooltip/taint acceptance remains open. GitHub test delivery only; no CurseForge, tag, release or install.
+
 # 0.15.3-alpha.30 Death Log test candidate
 
 One grouped Death Log composition, top HP/cooldown shelf, support above the shared rail, damage below and a shallow graph. Span hover selects an actual event; wheel reaches equal-time members; normal click retains guarded Journal navigation. Fatal/major hits remain separate. The Arcane/Mythic Coiled Altar Example is isolated and fully labelled.
