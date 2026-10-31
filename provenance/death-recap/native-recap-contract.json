@@ -1,6 +1,6 @@
 {
-  "revision": "2026-10-30.1",
-  "build": "12.1.5.70575",
+  "revision": "2026-10-31.alpha30.1",
+  "build": "12.1.5.70688",
   "api": {
     "namespace": "C_DeathRecap",
     "functions": {
@@ -52,15 +52,15 @@
     "No documented guaranteed GetTime alignment for recap timestamps; do not compare absolute recap timestamp to local death GetTime without validated clock relationship.",
     "With no provable new personal association within3 attempts, render Current native recap unavailable; preserve prior page as explicitly previous, never relabel it current.",
     "All consumed row/container/identity fields are checked public and correct type before branching/calculating/fingerprinting. Missing destination identity does not become player. Unknown amount/HP is not0.",
-    "Native rows cap16; if larger public table, mark truncated. Do not rank/sort unreadable fields. Keep native killing row identity before chronological UI reorder.",
+    "Alpha30 native rows cap64; if larger public table, mark truncated. Do not rank/sort unreadable fields. Keep native killing row identity before chronological UI reorder.",
     "GetRecapMaxHealth is one recap value, not per-event max HP. currentHP pre/post-hit semantics not documented. No synthetic HP/heal curve from damage totals.",
     "Three retries bound work but are not proof of availability; native data can remain absent, secret, stale or inaccessible."
   ],
   "ids_limit": "A changed link/ID is useful corroboration, not a documented eternal/global uniqueness guarantee. Recap lifetime and remote recipient access not guaranteed.",
   "evidence": [
-    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathRecapDocumentation.lua",
-    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathInfoDocumentation.lua",
-    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterDocumentation.lua",
-    "https://github.com/Gethe/wow-ui-source/blob/15881d522c44cd106d3d8660106ec9f9d2f44167/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua"
+    "https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathRecapDocumentation.lua",
+    "https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathInfoDocumentation.lua",
+    "https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/DamageMeterDocumentation.lua",
+    "https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_DeathRecap/Blizzard_DeathRecap.lua"
   ]
 }

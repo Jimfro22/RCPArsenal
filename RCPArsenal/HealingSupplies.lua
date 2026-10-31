@@ -116,6 +116,7 @@ end
 -- Optional consumers share one event-invalidated bags evaluation; rendering,
 -- health signals and cooldown signals never invalidate or enumerate bags.
 local consumers, cache, subscriptions = {}, nil, {}
+local cacheGeneration=0
 function Supplies:SetConsumer(key, enabled)
     if key ~= "reminder" and key ~= "recap" then return end
     consumers[key] = enabled == true or nil
@@ -124,12 +125,14 @@ function Supplies:SetConsumer(key, enabled)
     if not active then cache = nil end
 end
 function Supplies:InvalidateCache()
+    cacheGeneration=cacheGeneration+1
     cache = nil
 end
 function Supplies:GetCached(key)
     if consumers[key] ~= true then return nil end
     if not cache then
         cache = self:Snapshot()
+        cache.cacheGeneration=cacheGeneration
         local ok, value = pcall(function() return GetTime() end)
         if ok and not Secret(value) and type(value) == "number" and value == value and value >= 0 and value < math.huge then
             cache.observedAt = value
