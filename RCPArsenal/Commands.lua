@@ -11,7 +11,8 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
     print("  |cff3aa7ff/rcp markers|r - configure the normal marker sequence, optional hold wheel and keys")
     print("  |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
-    print("  |cff3aa7ff/rcp recappreview|r - inert sample; |cff3aa7ff/rcp recapstatus|r - safe local diagnostics")
+    print("  |cff3aa7ff/rcp recappreview|r - private tester; report and reminder controls work")
+    print("  |cff3aa7ff/rcp recapstatus|r or |cff3aa7ff/rcp recapaudit|r - safe local capture diagnostics")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
     print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
@@ -91,6 +92,28 @@ local function HandleSlash(raw)
     if command=="recap"then
         if not RA.DeathRecapUI:ShowLast()then RA:OpenConfig("MYTOOLS")end
     elseif command=="recappreview"then RA.DeathRecapUI:Preview()
+    elseif command=="recapaudit"then
+        local audit,reason=RA.DeathRecap:GetAvailabilityAudit()
+        if not audit then RA:Print(reason);return end
+        local function Scalar(value)return value==nil and"not recorded"or tostring(value)end
+        RA:Print("Audit build="..Scalar(audit.client and audit.client.build).."; spec="..Scalar(audit.specID).."; local death="..Scalar(audit.localDeathID).."; native recap="..Scalar(audit.nativeRecapID).."; rejected receipts="..Scalar(audit.coverage and audit.coverage.rejectedReceipts).."; late receipts="..Scalar(audit.coverage and audit.coverage.lateReceipts).."; encounter ended="..Scalar(audit.encounterEndObservation and audit.encounterEndObservation.observedAt))
+        RA:Print("Defensive audit: local death notice="..Scalar(audit.deathNoticeAt).."; coverage start="..Scalar(audit.coverage and audit.coverage.startedAt).."; combat entry observed="..Scalar(audit.coverage and audit.coverage.combatEntryObserved).."; coverage end="..Scalar(audit.coverage and audit.coverage.endedAt).."; reason="..Scalar(audit.coverage and audit.coverage.reason)..". These are recorded facts, not a readiness verdict.")
+        for _,event in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES"})do local context=audit.directSpellEvents and audit.directSpellEvents[event]
+            if context then
+                local text=event.." direct context at="..Scalar(context.observedAt)
+                for i,field in ipairs(context.payload)do text=text.."; arg"..i.."="..Scalar(field.value).." ("..field.status..")"end
+                RA:Print(text)
+            end
+        end
+        for _,spell in ipairs(audit.spells)do
+            local use=spell.use
+            RA:Print((spell.name or"Spell").." ["..spell.spellID.."] observed uses="..use.observedCount.."; first="..Scalar(use.firstSuccessfulUseAt).."; last="..Scalar(use.lastSuccessfulUseAt)..". Missing receipts do not prove unused. Shelf: "..spell.displayed.detail.." ("..spell.displayed.source..").")
+            for _,pair in ipairs({{"last alive",spell.lastAlive},{"death notice",spell.deathNotice}})do
+                local row=pair[2]or{}
+                RA:Print("  "..pair[1]..": at="..Scalar(row.observedAt).."; "..Scalar(row.source).."; enabled="..Scalar(row.isEnabled).."; active="..Scalar(row.isActive).."; GCD="..Scalar(row.isOnGCD).."; charges="..Scalar(row.currentCharges).."/"..Scalar(row.maxCharges).." ("..Scalar(row.chargeQuery).."); pending="..Scalar(row.pendingReason).."; query="..Scalar(row.cooldownQuery))
+                RA:Print("    field status: enabled="..Scalar(row.cooldownEnabledStatus).."; active="..Scalar(row.cooldownActiveStatus).."; charges="..Scalar(row.chargeCountStatus).."/"..Scalar(row.chargeReason).."; pending at="..Scalar(row.pendingAt).."; ended at="..Scalar(row.coverageEndedAt))
+            end
+        end
     elseif command=="recapstatus"then
         local state=RA.DeathRecap:GetDiagnostics()
         RA:Print("Recap "..(state.optionalEnabled and"on"or"off").."; tracked="..state.trackedSpells.."; samples="..state.samples.."; nativeReads="..state.nativeReads.."; "..state.nativeStatus)

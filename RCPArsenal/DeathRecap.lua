@@ -5,7 +5,7 @@ Recap.LIMITS = { spells=32, casts=64, samples=1, seconds=30, rows=64, attempts=3
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, generation, serial = nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
-local encounterContext
+local encounterContext;local encounterSerial=0
 local RefreshTicker
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
@@ -163,7 +163,7 @@ end
 local function SpellObservation(entry,time,reason)
     stats.spellQueries=stats.spellQueries+1
     local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,
-        known=entry.known,observedAt=time,source=reason,cooldown="unknown"}
+        known=entry.known,observedAt=time,source=reason,cooldown="unknown",cooldownGCDStatus="not-event-context"}
     local value,status=Query(C_Spell and C_Spell.GetSpellCooldown,entry.spellID)
     local info=Table(value);row.cooldownQuery=info and"public"or(status=="public"and"malformed"or status)
     if info then
@@ -174,7 +174,7 @@ local function SpellObservation(entry,time,reason)
         elseif row.isEnabled==true and row.isActive==true then
             row.cooldown="active"
             if reason=="cooldown-event" then
-                row.isOnGCD=Bool(info.isOnGCD)
+                row.isOnGCD=Bool(info.isOnGCD);row.cooldownGCDStatus=FieldStatus(info.isOnGCD,"boolean")
                 if row.isOnGCD==true then row.cooldown="gcd-only" end
             end
         end
@@ -190,7 +190,7 @@ local function SpellObservation(entry,time,reason)
         else charges=Table(value);row.chargeQuery=charges and"public"or"malformed"end
     end
     if charges then
-        row.chargesActive=Bool(charges.isActive)
+        row.chargesActive=Bool(charges.isActive);row.chargeActiveStatus=FieldStatus(charges.isActive,"boolean");row.maxChargesStatus=FieldStatus(charges.maxCharges,"number")
         row.maxCharges=ID(charges.maxCharges)
         row.currentCharges=Number(charges.currentCharges,0,100)
         row.chargeCountStatus=FieldStatus(charges.currentCharges,"number")
@@ -258,10 +258,10 @@ local function Observe(reason,death)
     end
     return sample
 end
-local function NewSession(reason)
+local function NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()then return end
     local entries,spec,class,overflow,unknown=BuildEntries()
-    session={entries=entries,specID=spec,class=class,casts={},startedAt=Now(),
+    session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
         playerGUID=String(Call(UnitGUID,"player")),coverage=reason,overflow=overflow,unknownKnown=unknown,
         encounter=Copy(encounterContext),eventAt={}}
 end
@@ -278,8 +278,8 @@ RefreshTicker=function()
         if Enabled()and Alive()and Combat()then Observe("interval",false)else StopRecording()end
     end)end
 end
-local function BeginCombat(reason)
-    StopRecording();NewSession(reason)
+local function BeginCombat(reason,combatEntryObserved)
+    StopRecording();NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()or not session then return end
     Observe("pull-baseline",false)
     for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
@@ -331,13 +331,64 @@ local function OnDeath()
     serial=serial+1
     local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,specID=session.specID,class=session.class,
         coverage=session.coverage,overflow=session.overflow,unknownKnown=session.unknownKnown,
-        encounter=Copy(session.encounter),knownEntries=Copy(session.entries),localSessionStartedAt=session.startedAt,lastAlive=Copy(session.lastAlive),
-        casts={},deathObservation=Observe("death-notification",true),
+        encounter=Copy(session.encounter),encounterEndObservation=Copy(session.encounterEndObservation),knownEntries=Copy(session.entries),localSessionStartedAt=session.startedAt,lastAlive=Copy(session.lastAlive),
+        casts={},observedUses=Copy(session.observedUses),directSpellEvents=Copy(session.directSpellEvents),useCoverage={startedAt=session.startedAt,combatEntryObserved=session.combatEntryObserved,
+            reason=session.coverage,endedAt=session.lastAlive and session.lastAlive.coverageEndedAt,rejectedReceipts=session.rejectedUseReceipts or 0,lateReceipts=session.lateUseReceipts or 0},deathObservation=Observe("death-notification",true),
         association=Association:Freeze(),nativeAttempts=0,nativeStatus="Waiting for a fresh personal native recap"}
     for _,cast in ipairs(session.casts)do if time-cast.observedAt<=Recap.LIMITS.seconds then page.casts[#page.casts+1]=Copy(cast)end end
     session.dead=true;last=page;Notify("death");FetchNative(page,generation)
 end
+function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
+    local suffix=example and" at this moment"or" when checked"
+    if row.pendingAt then return nil,"A later change was awaiting a new check"end
+    if coverageEnded then return nil,"Recording ended after this check"end
+    if row.kind then
+        if row.physicalCount==0 and row.remainingUses and row.remainingUses>0 then return nil,"The independent stock checks disagree"end
+        if row.familyAbsenceVerified or row.physicalCount==0 then return false,(row.itemID and"No stock of this item"or"No item in the complete bag check")..suffix end
+        if row.physicalCount and row.physicalCount>0 and row.remainingUses==0 then return false,"Empty"..suffix end
+        local stock=row.physicalCount and row.physicalCount>0 or row.remainingUses and row.remainingUses>0
+        if stock and row.cooldown=="inactive"then return true,"Off cooldown"..suffix end
+        if stock and row.cooldown=="active"then return false,"Cooldown active"..suffix end
+        return nil,row.cooldown=="inactive"and"Off cooldown when checked; stock was not confirmed"or"Item state was not fully recorded"
+    end
+    if row.cooldown=="held"then return false,"Cooldown on hold"..suffix end
+    if row.currentCharges and row.currentCharges>0 then return true,row.currentCharges..(row.currentCharges==1 and" charge"or" charges")..suffix end
+    if row.currentCharges==0 then return false,"No charges"..suffix end
+    if row.cooldown=="inactive"then return true,"Off cooldown"..suffix end
+    if row.cooldown=="active"and row.chargeQuery=="not_applicable"then return false,"Cooldown active"..suffix end
+    if row.cooldown=="gcd-only"then return nil,"A global cooldown was observed; other cooldown state was not established"end
+    if row.chargeReason=="restricted"or row.chargeCountStatus=="restricted"then return nil,"Charge count was not provided by Blizzard"end
+    if row.cooldownQuery=="restricted"or row.cooldownEnabledStatus=="restricted"or row.cooldownActiveStatus=="restricted"then return nil,"Cooldown state was not provided by Blizzard"end
+    return nil,row.cooldown=="active"and"Cooldown active when checked; charge count was not recorded"or row.cooldownQuery and"State check unavailable"or"Not recorded"
+end
 function Recap:GetPage()return last end
+-- Explicit local audit of captured public facts. No spell/item getters, polling
+-- or clock conversion; client metadata uses the existing one-time build read.
+function Recap:GetAvailabilityAudit()
+    if not last then return nil,"No personal death recorded this session"end
+    local audit={localDeathID=last.id,nativeRecapID=last.native and last.native.recapID,deathNoticeAt=last.diedAt,specID=last.specID,class=last.class,
+        directSpellEvents=Copy(last.directSpellEvents),client=Copy(self:GetDiagnostics().client),catalogRevision=(RA.DeathRecapCatalog or{}).revision,encounter=Copy(last.encounter),coverage=Copy(last.useCoverage),spells={}}
+    audit.encounterEndObservation=Copy(last.encounterEndObservation)
+    local fields={"observedAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus",
+        "cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason"}
+    local function Check(sample,id)
+        for _,row in ipairs(sample and sample.spells or{})do if row.spellID==id then
+            local out={};for _,key in ipairs(fields)do out[key]=row[key]end
+            out.coverageEndedAt=sample.coverageEndedAt
+            if row.observedAt and last.diedAt>=row.observedAt then out.ageBeforeDeathNotice=last.diedAt-row.observedAt end
+            return out
+        end end
+    end
+    for i=1,math.min(#(last.knownEntries or{}),self.LIMITS.spells)do
+        local entry=last.knownEntries[i];local use=last.observedUses and last.observedUses[entry.spellID]
+        local alive,death=Check(last.lastAlive,entry.spellID),Check(last.deathObservation,entry.spellID)
+        local displayed,detail=self:ClassifyRecordedCheck(alive or{},last.lastAlive and last.lastAlive.coverageEndedAt,false)
+        audit.spells[#audit.spells+1]={spellID=entry.spellID,name=entry.name,key=entry.key,lastAlive=alive,deathNotice=death,
+            displayed={state=displayed,detail=detail,source="lastAlive"},
+            use=use and Copy(use)or{observedCount=0,status="No successful use observed in this coverage"}}
+    end
+    return audit
+end
 function Recap:GetDiagnostics()
     if not clientBuild then
         clientBuild={}
@@ -381,7 +432,7 @@ end
 local function Passive(event,callback)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback)end
 local function Active(event,callback,unit)active[#active+1]=RA:RegisterOptionalEvent(event,callback,unit)end
 Passive("PLAYER_DEAD",OnDeath)
-Passive("PLAYER_REGEN_DISABLED",function()BeginCombat("Observed combat entry; bounded 30-second history")end)
+Passive("PLAYER_REGEN_DISABLED",function()BeginCombat("Observed combat entry; bounded 30-second history",true)end)
 Passive("PLAYER_REGEN_ENABLED",function()
     if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     StopRecording()
@@ -412,17 +463,33 @@ for _,event in ipairs({"PLAYER_SPECIALIZATION_CHANGED","TRAIT_CONFIG_UPDATED","S
     end)
 end
 Passive("ENCOUNTER_START",function(_,id,name,difficulty)
-    encounterContext={encounterID=ID(id),name=String(name,96),difficulty=ID(difficulty),startedAt=Now()}
+    encounterSerial=encounterSerial+1;encounterContext={auditEpoch=encounterSerial,encounterID=ID(id),name=String(name,96),difficulty=ID(difficulty),startedAt=Now()}
     if session then session.encounter=Copy(encounterContext)end
 end)
-Passive("ENCOUNTER_END",function()encounterContext=nil;if session then session.encounter=nil end end)
+Passive("ENCOUNTER_END",function(_,id)
+    local ended={encounterID=ID(id),observedAt=Now(),auditEpoch=encounterContext and encounterContext.auditEpoch}
+    if ended.auditEpoch and session and session.encounter and session.encounter.auditEpoch==ended.auditEpoch then session.encounterEndObservation=Copy(ended)end
+    if ended.auditEpoch and last and last.encounter and last.encounter.auditEpoch==ended.auditEpoch and last.encounter.encounterID==ended.encounterID and not last.encounterEndObservation then
+        last.encounterEndObservation=Copy(ended)
+    end
+    encounterContext=nil;if session then session.encounter=nil end
+end)
 Active("UNIT_SPELLCAST_SUCCEEDED",function(_,unit,_,spellID)
-    if String(unit,16)~="player"or not Alive()or not session then return end
-    local time=Now();spellID=ID(spellID);if not time or not spellID then return end
+    local ownUnit=String(unit,16)
+    if ownUnit~="player"then if ownUnit==nil and session then session.rejectedUseReceipts=(session.rejectedUseReceipts or 0)+1 end;return end
+    if not session then return end
+    if not Alive()then session.lateUseReceipts=(session.lateUseReceipts or 0)+1;return end
+    local time=Now();spellID=ID(spellID)
+    if not time or not spellID then session.rejectedUseReceipts=(session.rejectedUseReceipts or 0)+1;return end
     local tracked,trackedName,trackedItemUse=false,nil,false
     for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;break end end
     if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true;trackedItemUse=true end
     if not tracked then return end
+    if not trackedItemUse then
+        local use=session.observedUses[spellID]
+        if not use then use={spellID=spellID,observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=time};session.observedUses[spellID]=use end
+        use.observedCount=use.observedCount+1;use.lastSuccessfulUseAt=time
+    end
     session.casts[#session.casts+1]={spellID=spellID,name=trackedName,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
     if trackedItemUse then Pending("items",time,"item-cast-received")else Pending("spells",time,"cast-received",spellID)end
     stats.casts=stats.casts+1
@@ -442,8 +509,20 @@ for _,event in ipairs({"BAG_UPDATE_COOLDOWN","ACTION_USABLE_CHANGED","SPELL_UPDA
 end
 for _,pair in ipairs({{"SPELL_UPDATE_COOLDOWN","cooldown-event"},{"SPELL_UPDATE_CHARGES","charge-event"}})do
     local event,reason=pair[1],pair[2]
-    Active(event,function()
+    Active(event,function(_, ...)
         local time=Now();if not session or not time then return end
+        -- Retain the latest direct context before coalescing. Positional public
+        -- scalars are audit evidence, not assumed base/override identities.
+        local context=session.directSpellEvents[event]
+        if not context then context={event=event,payload={}};session.directSpellEvents[event]=context end
+        context.observedAt=time
+        for i=1,4 do
+            local raw=select(i,...);local value=Public(raw);local field=context.payload[i]or{};context.payload[i]=field
+            field.value=nil;field.status=FieldStatus(raw,"number")
+            if type(value)=="number"then field.value=Number(value);field.status=field.value and"public-number"or"malformed"
+            elseif type(value)=="boolean"then field.value=value;field.status="public-boolean"
+            elseif type(value)=="string"then field.value=String(value,96);field.status=field.value and"public-string"or"malformed"end
+        end
         if session.eventAt[reason]and time-session.eventAt[reason]<.1 then
             Pending("spells",time,"pending-"..reason)
             stats.coalescedEvents=(stats.coalescedEvents or 0)+1

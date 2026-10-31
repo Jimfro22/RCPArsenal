@@ -1,4 +1,4 @@
-# Death Log — alpha.31 test build
+# Death Log — alpha.32 interactive test build
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -11,22 +11,26 @@ above it and a shallow HP graph. A collision tier adds100px; extra known shelf
 rows add38px each. It scales to the viewport. Hover a group span to select the
 nearest actual member; scroll to reach every member, including equal times.
 Ambiguous positive spans and equal-time ticks keep true brackets but use icon/amount
-scrolling, with no overlapping invisible mouse targets. Tooltip distinguishes the
-combined amount from the selected event. Normal
+scrolling, with no overlapping invisible mouse targets. The companion recap box gives grouped totals and a bounded per-hit breakdown;
+the existing health readout identifies the selected moment. Normal
 click opens a verified Journal entry; it never cycles events. There is no raw
 panel, toggle, instructional subheader or Details placeholder.
 
-Alpha.31 keeps the default Sever selection and retains it on leave. The selected
+Alpha.32 defaults to death and retains subsequent selection on leave. The selected
 HP uses a ring and percentage, the guide is dashed, and quiet graph marks preserve
 actual event positions. Count and recorded absorption badges have readable
 backing; the selected border remains distinct from the fatal-hit border. Native
-spell/item descriptions remain in tooltips, followed by compact recap details.
+spell/item descriptions remain intact; compact colored recap details use a separate
+bordered companion box beneath the native tooltip. No event time or instruction
+footer is added to either surface.
 Placement uses a 12 physical-pixel screen inset and gap and prefers outside the recap,
 with bounded edge/effective-scale fallback
 that protects the hovered target and HP/shelf where space allows. Geometry checks
 read only public UI bounds, never tooltip text or health widget values. Cleanup
 leaves foreign or newer target tooltips alone. Preview
-uses one provenance label; its reminder/chat actions stay inert and explain why.
+uses one quiet provenance label. Its report action prepares explicitly fictional
+text in the native composer; the user reviews and submits. Reminder is a real
+synchronized master toggle, preserving child preferences.
 Synthetic healing debt uses clipped, explicitly layered native hatch lines while
 raw HP stays in its usual position. Native pixels, tooltip reflow and taint still
 require owner acceptance.
@@ -63,7 +67,7 @@ notice. It is not a snapshot at the selected native hit. Its hover identifies
 independent cooldown/charge/stock observations and pending/coverage gaps. Cast
 receipts remain inspectable as untimed icons; no guessed native connector or
 effect duration is attached. The Example alone demonstrates one shared synthetic
-clock and complete selected-time state. Full local histories, aura lifecycle and
+clock; its CD shelf is fixed to death while health/event selection changes. Full local histories, aura lifecycle and
 boss-heal-absorb collection are deferred until useful alignment/capability passes.
 
 Remaining boss healing debt is different from protective damage absorption.
@@ -103,7 +107,9 @@ candidates, shared with the reminder. At existing observations there are at most
 cooldown/charge pairs. Only the known active catalog subset is observed.
 
 Retention is one last-alive sample, one separate death-notification sample,
-64 own cast receipts from30s and64 native rows; no new full state history.
+64 own cast receipts from30s and64 native rows. A separate at-most32-entry
+observed-use map retains count and first/last successful activation for this
+coverage epoch. No full state history is added.
 There are at most3 native attempts,1 extra recap-max getter and2 guarded GetTime
 reads per actual native event read. The accepted page stores one scalar clock
 summary. Presentation examines at most256 inputs for oversize triage, retains64,
@@ -122,9 +128,12 @@ for review, never an automatic offset or native acceptance certificate.
 
 Actions and acceptance
 ----------------------
-Reminder `!` preserves the existing confirmation and child preferences. Post to
+Reminder `!` opens an explicit on/off action; the adjacent Reminder switch stays
+synchronized with the real Personal Tools setting and preserves child preferences. Post to
 chat prepares only the normal native composer with channel/recipient/restriction
-guards; the user submits. Preview cannot run live Share/reminder callbacks.
+guards; the user submits. Private Preview can prepare a clearly labelled fictional report and change the
+actual reminder master through explicit clicks. Replaced/closed-page callbacks
+remain inert. Preview itself does not enable recording or change preferences.
 
 Four private Coiled Altar Example Journal relationships are verified in current
 client data. Click checks private page identity, out-of-combat status, instance1320,
@@ -132,7 +141,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.31; inspect Arcane preview
+Native owner test: pull main, restart WoW, verify alpha.32; inspect Arcane preview
 and group scrub/wheel/Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
@@ -141,3 +150,32 @@ tooltips, input/taint and actual CPU/memory/frame spikes. Screenshot QA preserve
 54 incoming rows and29 separate shield credits across three references; rounded
 screenshot values are not native packets or exact HP loss. No actual-log/API parity
 or native acceptance is claimed. GitHub test delivery only; noCF/tag/release work.
+
+Defensive-use and availability audit
+------------------------------------
+`/rcp recapaudit` prints local captured facts only; it sends no report. It includes
+client/spec/death identity, witnessed combat-entry coverage, ended/rejected/late
+receipt gaps, per-spell observed use, the displayed last-alive verdict and the
+separate fresh death-notification query, field/charge status, pending changes and
+latest direct cooldown/charge event context. Reopening uses frozen observations;
+no live countdown or static base-cooldown estimate is substituted. The metadata
+can include a later matching encounter-end observation without changing frozen
+spell/item/HP facts. A successful use two minutes earlier stays in the bounded
+summary after it expires from the short timeline. No receipt means no observed
+use in that coverage, never proof of unused.
+
+Current learned Arcane candidates include Barrier, Alter Time, Block or Cold,
+Mirror Image and Greater Invisibility. Actual known/override/non-passive checks
+decide the roster. Trigger110960 and Alter Time return342247 are not counted as
+initial activation families. No fixed damage-reduction or effect-duration claim
+is added for the new utility candidates.
+
+During normal play, compare all learned candidates with independent action-bar
+and bag evidence: unused ready, immediate use, earlier use that recovered, GCD,
+Alter Time phases, current Block/Cold identity, and item stock/uses/cooldown.
+Compare the two local checks while dead in the ongoing pull and after combat.
+Post-death flags are not automatically the final pre-hit state. Score false-ready,
+false-unavailable and missing coverage separately over all eligible observations.
+Offline checks and a compatibility pilot do not establish the requested90% native
+use/availability accuracy. Native rendering, tooltip reflow, event ordering and
+performance remain owner/client acceptance gates.
