@@ -1,5 +1,5 @@
 {
-  "revision": "2026-10-30.alpha29.hp.2",
+  "revision": "2026-10-31.alpha30.hp.1",
   "build": "12.1.5.70575",
   "pin": "15881d522c44cd106d3d8660106ec9f9d2f44167",
   "recommended_route": "Selected recorded-health bar/numeric value plus discrete native timepoints. Actual real snapshots are not a continuous health history.",
@@ -17,7 +17,7 @@
       "recapMaxHealth=C_DeathRecap.GetRecapMaxHealth(recapID)"
     ],
     "max_additional_api_calls_per_native_attempt": 1,
-    "max_events": 16,
+    "max_events": 64,
     "attempts": "Reuse existing <=3 native fetch attempts; no separate polling/retry subsystem.",
     "field_guards": "Public plain parent/row; issecretvalue false before type/value inspection; finite numeric currentHP>=0 and finite recapMaxHealth>0. Do not map nil/secret/malformed to0.",
     "scale_rule": "This is ONE recap-level max for every event, matching native UI. It is not verified per-event maximum health.",
@@ -93,5 +93,6 @@
     "Real ShowLast never trusts sample-looking fields as permission to consume fictional health/healing. Example origin is set only by explicit Preview path.",
     "Native fields keep same-record timestamps and recap-level denominator caveat; no before/after language, damage subtraction, healing inference or local/native clock merge.",
     "Root allowed only the data extraction/rendering extension; recorder/association/marker/media event behavior stays otherwise unchanged."
-  ]
+  ],
+  "alpha30_scope": "Selected public native HP remains unchanged; bounded rows64. No new health/history collector; independent native/local clocks. Two scalar GetTime brackets around existing native read only."
 }

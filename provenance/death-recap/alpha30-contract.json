@@ -1,0 +1,66 @@
+{
+  "revision": "2026-10-31.alpha30.1",
+  "build": "12.1.5.70688",
+  "pin": "d07eb00237d8891f153215db98a5df880a26cfe5",
+  "native_rows": 64,
+  "native_attempts": 3,
+  "native_extra_calls_per_events_read": {
+    "GetTime": 2,
+    "GetRecapMaxHealth": 1
+  },
+  "source_instance": "Unverified. sourceName/hideCaster are independently guarded display fields; no sourceGUID consumer contract. Real same-instance grouping is disabled.",
+  "quantities": "Separate public amount,absorbed,overkill,resisted,blocked,currentHP;no cumulative HP-loss formula or shield ownership inference.",
+  "clock": "No verified conversion. Real shelf Last recorded check;Example selectedtime only. Scalar diagnostic never enables automatic mapping.",
+  "deferred": [
+    "Full state history",
+    "Aura lifecycle/defensive durations",
+    "Real healing stream",
+    "Historical boss healing-absorb quantities/presence",
+    "Control-effect or survival analysis"
+  ],
+  "grouping": {
+    "nearby_seconds": 0.6,
+    "max_span_seconds": 1.5,
+    "max_rows": 64,
+    "oversize_inspection": 256,
+    "native_input_is_already_capped": true,
+    "mixed": "Counted neutral item;sorted actual constituents;no single-spell art;fatal/major never merged;transition cuts preserved"
+  },
+  "state_quality": [
+    "Independent public cooldown/charges/count/uses",
+    "Actual query/cache time and generation",
+    "Pending cast/coalescer gaps and ended combat coverage",
+    "No age-only expiry or generic usability gating",
+    "Restricted,error,unsupported and unrecorded stay distinct"
+  ],
+  "preview_journal": {
+    "dungeon": 3429,
+    "encounter": 2883,
+    "instance": 1320,
+    "map": 3004,
+    "difficulty": 16,
+    "root": 35058,
+    "mappings": {
+      "1285017": [
+        36846,
+        1283832
+      ],
+      "1306906": [
+        35594,
+        1282287
+      ],
+      "1299684": [
+        36254,
+        1299680
+      ],
+      "1283290": [
+        35590,
+        1283290
+      ]
+    },
+    "manual_only": true,
+    "identity_OOC_context_section_relationship_rechecked": true
+  },
+  "screenshot_fixture": "Three owner PNGs transcribed for density;54 incoming and29 credit rows kept separate. No native field/clock/HP-loss contract from screenshots.",
+  "native_acceptance": "Open:ongoing-pull and after-combat Arcane/Coiled tests,clock,field accessibility,pixels,taint,CPU/RAM/frame spikes."
+}

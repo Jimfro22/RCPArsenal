@@ -1,7 +1,7 @@
 local _, RA = ...
 local Recap = {}
 RA.DeathRecap = Recap
-Recap.LIMITS = { spells=32, casts=64, samples=1, seconds=30, rows=16, attempts=3, interval=.5 }
+Recap.LIMITS = { spells=32, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, generation, serial = nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
@@ -17,6 +17,25 @@ local function Public(value)
     local ok, secret = pcall(issecretvalue,value)
     if not ok or secret ~= false then return nil end
     return value
+end
+local function Query(fn,...)
+    if type(fn)~="function"then return nil,"unsupported"end
+    local ok,value=pcall(fn,...);if not ok then return nil,"API-error"end
+    if type(issecretvalue)~="function"then return nil,"trust-check-unavailable"end
+    local checked,secret=pcall(issecretvalue,value)
+    if not checked then return nil,"trust-check-failed"elseif secret==true then return nil,"restricted"elseif secret~=false then return nil,"trust-check-failed"end
+    if value==nil then return nil,"nil-returned"end
+    return value,"public"
+end
+local function FieldStatus(value,kind)
+    if type(issecretvalue)~="function"then return "trust-check-unavailable"end
+    local ok,secret=pcall(issecretvalue,value)
+    if not ok or secret~=true and secret~=false then return "trust-check-failed"end
+    if secret then return "restricted"end
+    if value==nil then return "not-recorded"end
+    if type(value)~=kind then return "malformed"end
+    if kind=="number"and(value~=value or value==math.huge or value==-math.huge or value<0)then return "malformed"end
+    return "public"
 end
 local function Number(value,low,high)
     value=Public(value)
@@ -77,9 +96,13 @@ local function NativePacket(recapID)
     if not C_DeathRecap then return nil,"Native recap API unavailable" end
     local has=Bool(Call(C_DeathRecap.HasRecapEvents,recapID))
     if has~=true then return nil,"native_events_unavailable"end
+    local readBefore=Now()
     local input=Table(Call(C_DeathRecap.GetRecapEvents,recapID))
+    local readAfter=Now()
     if not input or #input==0 then return nil,"Native rows unavailable" end
-    local recapMaxHealth=RecordedHealth(Call(C_DeathRecap.GetRecapMaxHealth,recapID),true)
+    local maxValue,maxStatus=Query(C_DeathRecap.GetRecapMaxHealth,recapID)
+    local recapMaxHealth=RecordedHealth(maxValue,true)
+    if maxStatus=="public"and recapMaxHealth==nil then maxStatus="malformed"end
     local rows={}
     for index=1,math.min(#input,Recap.LIMITS.rows)do
         local row=Table(input[index]);if not row then return nil,"Native row unreadable" end
@@ -95,9 +118,14 @@ local function NativePacket(recapID)
             or kind=="SPELL_PERIODIC_DAMAGE"or kind=="ENVIRONMENTAL_DAMAGE"or kind=="DAMAGE_SHIELD"or kind=="DAMAGE_SPLIT"
         rows[#rows+1]={timestamp=timestamp,destGUID=destination,spellID=spell,kind=damage and"damage"or"unknown",
             name=String(row.spellName,96),event=kind,amount=amount,nativeIndex=index,
-            recordedHP=RecordedHealth(row.currentHP)}
+            recordedHP=RecordedHealth(row.currentHP),sourceName=String(row.sourceName,96),hideCaster=Bool(row.hideCaster),
+            sourceConfirmed=false,hideCasterStatus=FieldStatus(row.hideCaster,"boolean"),absorbed=Number(row.absorbed,0,1e15),overkill=Number(row.overkill,0,1e15),
+            resisted=Number(row.resisted,0,1e15),blocked=Number(row.blocked,0,1e15),school=ID(row.school),
+            avoidable=Bool(row.avoidable),deadly=Bool(row.deadly),
+            fieldStatus={hp=FieldStatus(row.currentHP,"number"),source=FieldStatus(row.sourceName,"string"),
+                absorbed=FieldStatus(row.absorbed,"number"),overkill=FieldStatus(row.overkill,"number")}}
     end
-    return {rows=rows,truncated=#input>Recap.LIMITS.rows,recapMaxHealth=recapMaxHealth}
+    return {rows=rows,truncated=#input>Recap.LIMITS.rows,recapMaxHealth=recapMaxHealth,recapMaxHealthStatus=maxStatus,readBefore=readBefore,readAfter=readAfter}
 end
 local function BuildEntries()
     local spec=ID(Call(GetSpecialization))
@@ -136,9 +164,11 @@ local function SpellObservation(entry,time,reason)
     stats.spellQueries=stats.spellQueries+1
     local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,
         known=entry.known,observedAt=time,source=reason,cooldown="unknown"}
-    local info=Table(Call(C_Spell and C_Spell.GetSpellCooldown,entry.spellID))
+    local value,status=Query(C_Spell and C_Spell.GetSpellCooldown,entry.spellID)
+    local info=Table(value);row.cooldownQuery=info and"public"or(status=="public"and"malformed"or status)
     if info then
         row.isEnabled,row.isActive=Bool(info.isEnabled),Bool(info.isActive)
+        row.cooldownEnabledStatus,row.cooldownActiveStatus=FieldStatus(info.isEnabled,"boolean"),FieldStatus(info.isActive,"boolean")
         if row.isEnabled==false then row.cooldown="held"
         elseif row.isEnabled==true and row.isActive==false then row.cooldown="inactive"
         elseif row.isEnabled==true and row.isActive==true then
@@ -154,8 +184,8 @@ local function SpellObservation(entry,time,reason)
     if C_Spell and type(C_Spell.GetSpellCharges)=="function"then
         local got,value=pcall(C_Spell.GetSpellCharges,entry.spellID)
         local secretOK,isSecret=pcall(issecretvalue,value)
-        if not got then row.chargeQuery="error"
-        elseif not secretOK or isSecret~=false then row.chargeQuery="unreadable"
+        if not got then row.chargeQuery="error";row.chargeReason="API-error"
+        elseif not secretOK or isSecret~=false then row.chargeQuery="unreadable";row.chargeReason=secretOK and isSecret==true and"restricted"or"trust-check-failed"
         elseif value==nil then row.chargeQuery="not_applicable"
         else charges=Table(value);row.chargeQuery=charges and"public"or"malformed"end
     end
@@ -163,42 +193,43 @@ local function SpellObservation(entry,time,reason)
         row.chargesActive=Bool(charges.isActive)
         row.maxCharges=ID(charges.maxCharges)
         row.currentCharges=Number(charges.currentCharges,0,100)
+        row.chargeCountStatus=FieldStatus(charges.currentCharges,"number")
         if row.currentCharges and (row.currentCharges~=math.floor(row.currentCharges)
             or not row.maxCharges or row.currentCharges>row.maxCharges)then row.currentCharges=nil end
     end
     return row
+end
+local function Stock(itemID,uses)
+    stats.stockQueries=(stats.stockQueries or 0)+1
+    local value,status=Query(C_Item and C_Item.GetItemCount,itemID,false,uses,false,false)
+    local count=Number(value,0,100000)
+    if count and count==math.floor(count)then return count,"public"end
+    return nil,status=="public"and"malformed"or status
 end
 local function SupplyObservations(time,reason,death)
     local snapshot=RA.HealingSupplies:GetCached("recap")
     local result={}
     for _,kind in ipairs({"stone","potion"})do
         local candidates={}
-        for _,candidate in ipairs(snapshot and snapshot.candidates or {})do
-            if candidate.kind==kind then candidates[#candidates+1]=candidate end
-        end
+        for _,candidate in ipairs(snapshot and snapshot.candidates or{})do if candidate.kind==kind then candidates[#candidates+1]=candidate end end
         if #candidates==0 then candidates[1]={kind=kind}end
         for _,candidate in ipairs(candidates)do
-            local row={kind=kind,category=kind,source=reason,observedAt=time,cooldown="unknown",
-                itemID=candidate.id,icon=candidate.icon}
+            local row={kind=kind,category=kind,source=reason,observedAt=time,cooldown="unknown",itemID=candidate.id,icon=candidate.icon}
             if snapshot then
                 row.carried=candidate.id and true or snapshot[kind];row.carriedAt=snapshot.observedAt
-                row.partial=snapshot.partial or snapshot.candidatesTruncated
-                if row.carried==true and row.itemID then
-                    row.remainingUses=Number(Call(C_Item and C_Item.GetItemCount,row.itemID,false,true,false,false),0,100000)
-                    if row.remainingUses and row.remainingUses~=math.floor(row.remainingUses)then row.remainingUses=nil end
+                row.cacheGeneration=snapshot.cacheGeneration;row.partial=snapshot.partial or snapshot.candidatesTruncated
+                row.familyAbsenceVerified=not candidate.id and snapshot[kind]==false and not snapshot.candidatesTruncated
+                if row.itemID then
+                    row.physicalCount,row.countStatus=Stock(row.itemID,false);row.countAt=time
+                    row.remainingUses,row.usesStatus=Stock(row.itemID,true);row.usesAt=time
                     if C_Item and type(C_Item.GetItemCooldown)=="function"then
                         stats.itemQueries=stats.itemQueries+1
                         local ok,start,duration,enabled=pcall(C_Item.GetItemCooldown,row.itemID)
-                        start,duration,enabled=Number(start),Number(duration),Bool(enabled)
-                        row.enableCooldownTimer=enabled
-                        if ok and enabled==true and start and duration then
-                            row.cooldown=(duration==0 or start+duration<=time)and"inactive"or"active"
-                        end
-                        if not death and type(C_Item.IsUsableItem)=="function"then
-                            local got,usable,noMana=pcall(C_Item.IsUsableItem,row.itemID)
-                            if got then row.usable,row.insufficientPower=Bool(usable),Bool(noMana)end
-                        end
-                    end
+                        row.cooldownQuery=ok and"public"or"API-error"
+                        row.cooldownStartStatus,row.cooldownDurationStatus=FieldStatus(start,"number"),FieldStatus(duration,"number")
+                        start,duration,enabled=Number(start),Number(duration),Bool(enabled);row.enableCooldownTimer=enabled
+                        if ok and enabled==true and start and duration then row.cooldown=(duration==0 or start+duration<=time)and"inactive"or"active"end
+                    else row.cooldownQuery="unsupported"end
                 end
             end
             result[#result+1]=row
@@ -206,13 +237,18 @@ local function SupplyObservations(time,reason,death)
     end
     return result
 end
+local function Pending(domain,time,reason,spellID)
+    if not session or not session.lastAlive then return end
+    local rows=domain=="items"and session.lastAlive.supplies or session.lastAlive.spells
+    for _,row in ipairs(rows)do if not spellID or row.spellID==spellID then row.pendingAt=row.pendingAt or time;row.pendingReason=reason end end
+end
 local function Observe(reason,death)
     local time=Now();if not session or not time or (not death and not Alive())then return nil end
     local sample={observedAt=time,source=reason,spells={},supplies=SupplyObservations(time,reason,death)}
     stats.samples=stats.samples+1
     for index,entry in ipairs(session.entries)do
         local previous=session.lastAlive and session.lastAlive.spells[index]
-        if previous and ((reason=="item-event"or reason=="bags-event")or (reason=="interval" and previous.cooldown~="active"and previous.cooldown~="gcd-only"and previous.chargesActive~=true))then
+        if previous and not previous.pendingAt and ((reason=="item-event"or reason=="bags-event")or (reason=="interval" and previous.cooldown~="active"and previous.cooldown~="gcd-only"and previous.chargesActive~=true))then
             sample.spells[#sample.spells+1]=Copy(previous)
         else sample.spells[#sample.spells+1]=SpellObservation(entry,time,reason)end
     end
@@ -263,9 +299,18 @@ local function FetchNative(page,token)
             local maximum=0;for _,row in ipairs(packet.rows)do maximum=math.max(maximum,row.timestamp)end
             for _,row in ipairs(packet.rows)do row.nativeOffset=row.timestamp-maximum end
             page.native={rows=packet.rows,truncated=packet.truncated,token=packet.token,recapID=recapID,
-                recapMaxHealth=packet.recapMaxHealth,
+                recapMaxHealth=packet.recapMaxHealth,recapMaxHealthStatus=packet.recapMaxHealthStatus,
+                clockDiagnostic={localClock="GetTime",localSessionStartedAt=page.localSessionStartedAt,localDeathNoticeAt=page.diedAt,
+                    nativeReadLocalBefore=packet.readBefore,nativeReadLocalAfter=packet.readAfter,nativeFirstTimestamp=packet.rows[1].timestamp,
+                    nativeMaximumTimestamp=maximum,nativeRowCount=#packet.rows,nativeTimestampStatus="public-finite-number"},
                 association="Explicit personal death ID delta in a witnessed clean meter epoch; native synchronization testing pending",
                 clock="Native relative to latest retained native timestamp; not the local observation clock"}
+            local minimum=maximum
+            for _,row in ipairs(packet.rows)do
+                minimum=math.min(minimum,row.timestamp)
+                if row.nativeIndex==1 then page.native.clockDiagnostic.nativeFatalTimestamp=row.timestamp end
+            end
+            page.native.clockDiagnostic.nativeMinimumTimestamp=minimum
             page.nativeStatus="Personal native record associated; native verification pending"
             page.nativeReason="associated_personal_id";Notify("native");return
         end
@@ -286,7 +331,7 @@ local function OnDeath()
     serial=serial+1
     local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,specID=session.specID,class=session.class,
         coverage=session.coverage,overflow=session.overflow,unknownKnown=session.unknownKnown,
-        encounter=Copy(session.encounter),lastAlive=Copy(session.lastAlive),
+        encounter=Copy(session.encounter),knownEntries=Copy(session.entries),localSessionStartedAt=session.startedAt,lastAlive=Copy(session.lastAlive),
         casts={},deathObservation=Observe("death-notification",true),
         association=Association:Freeze(),nativeAttempts=0,nativeStatus="Waiting for a fresh personal native recap"}
     for _,cast in ipairs(session.casts)do if time-cast.observedAt<=Recap.LIMITS.seconds then page.casts[#page.casts+1]=Copy(cast)end end
@@ -307,6 +352,7 @@ function Recap:GetDiagnostics()
     result.retainedSamples=session and session.lastAlive and 1 or 0;result.retainedCasts=session and #session.casts or 0
     result.catalogOverflow=session and session.overflow or false
     result.association=Association:GetDiagnostics()
+    result.nativeClock=last and last.native and Copy(last.native.clockDiagnostic)or nil
     result.nativeStatus=last and last.nativeStatus or "No personal death recorded this session"
     return result
 end
@@ -337,6 +383,7 @@ local function Active(event,callback,unit)active[#active+1]=RA:RegisterOptionalE
 Passive("PLAYER_DEAD",OnDeath)
 Passive("PLAYER_REGEN_DISABLED",function()BeginCombat("Observed combat entry; bounded 30-second history")end)
 Passive("PLAYER_REGEN_ENABLED",function()
+    if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     StopRecording()
     if last and not last.native and last.nativeAttempts<Recap.LIMITS.attempts then
         if fetchTimer then fetchTimer:Cancel();fetchTimer=nil end
@@ -372,11 +419,12 @@ Passive("ENCOUNTER_END",function()encounterContext=nil;if session then session.e
 Active("UNIT_SPELLCAST_SUCCEEDED",function(_,unit,_,spellID)
     if String(unit,16)~="player"or not Alive()or not session then return end
     local time=Now();spellID=ID(spellID);if not time or not spellID then return end
-    local tracked=false
-    for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;break end end
-    if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true end
+    local tracked,trackedName,trackedItemUse=false,nil,false
+    for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;break end end
+    if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true;trackedItemUse=true end
     if not tracked then return end
-    session.casts[#session.casts+1]={spellID=spellID,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
+    session.casts[#session.casts+1]={spellID=spellID,name=trackedName,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
+    if trackedItemUse then Pending("items",time,"item-cast-received")else Pending("spells",time,"cast-received",spellID)end
     stats.casts=stats.casts+1
     while #session.casts>Recap.LIMITS.casts or time-session.casts[1].observedAt>Recap.LIMITS.seconds do table.remove(session.casts,1)end
 end,"player")
@@ -385,6 +433,7 @@ for _,event in ipairs({"BAG_UPDATE_COOLDOWN","ACTION_USABLE_CHANGED","SPELL_UPDA
     Active(event,function()
         local time=Now();if not session or not time then return end
         if session.itemEventAt and time-session.itemEventAt<.1 then
+            Pending("items",time,"pending-item-update")
             if not eventTimer and C_Timer and C_Timer.NewTimer then
                 eventTimer=C_Timer.NewTimer(.1,function()eventTimer=nil;if Enabled()and Alive()and Combat()then Observe("coalesced-events",false)end end)
             end
@@ -396,6 +445,7 @@ for _,pair in ipairs({{"SPELL_UPDATE_COOLDOWN","cooldown-event"},{"SPELL_UPDATE_
     Active(event,function()
         local time=Now();if not session or not time then return end
         if session.eventAt[reason]and time-session.eventAt[reason]<.1 then
+            Pending("spells",time,"pending-"..reason)
             stats.coalescedEvents=(stats.coalescedEvents or 0)+1
             if not eventTimer and C_Timer and C_Timer.NewTimer then
                 eventTimer=C_Timer.NewTimer(.1,function()

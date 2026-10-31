@@ -1,3 +1,11 @@
+# 0.15.3-alpha.30 Death Log test candidate
+
+One grouped Death Log composition, top HP/cooldown shelf, support above the shared rail, damage below and a shallow graph. Span hover selects an actual event; wheel reaches equal-time members; normal click retains guarded Journal navigation. Fatal/major hits remain separate. The Arcane/Mythic Coiled Altar Example is isolated and fully labelled.
+
+Real capture retains64 public rows and independent source/mitigation fields. Source names do not establish a common instance. Real HP is discrete; real shelf is Last recorded check with actual ages because clock alignment is unverified. Age-only expiry and usability gating are removed; stock/uses/cooldown/charges/pending gaps remain independent. One bounded scalar clock summary uses existing reads. Full aura/absorb/state histories are deferred. No HP/heal reconstruction, control-effect analysis or survival verdict. DefaultOFF, association, reminder behavior, unrelated systems and media are preserved. Profile/catalog/protocol19/6/1.
+
+Native owner acceptance remains open. See docs/DEATH_RECAP.md. GitHub test delivery only; noCF/tag/release work.
+
 # 0.15.3-alpha.29 readable Death Recap test candidate
 
 Preview opens a fictional Arcane Mage encounter with a filled 33.3% selected-health bar, example damage/healing, Prismatic Barrier and readable item/defensive states. Example data is always labelled and isolated from recording, real history, inventory, settings and live actions. The 640×480 display uses shared fonts, colors and pooled native regions.

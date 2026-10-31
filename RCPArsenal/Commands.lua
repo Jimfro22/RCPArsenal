@@ -95,6 +95,12 @@ local function HandleSlash(raw)
         local state=RA.DeathRecap:GetDiagnostics()
         RA:Print("Recap "..(state.optionalEnabled and"on"or"off").."; tracked="..state.trackedSpells.."; samples="..state.samples.."; nativeReads="..state.nativeReads.."; "..state.nativeStatus)
         RA:Print("Meter reads="..state.association.reads.."; rows="..state.association.rows.."; clean baseline="..(state.association.baselineKnown and"yes"or"no").."; ticker="..(state.tickerActive and"active"or"off"))
+        local clock=state.nativeClock
+        if clock then
+            local function Scalar(value)return type(value)=="number"and tostring(value)or"not recorded"end
+            RA:Print("Clock diagnostic (unvalidated): GetTime session="..Scalar(clock.localSessionStartedAt).."; death notice="..Scalar(clock.localDeathNoticeAt).."; read="..Scalar(clock.nativeReadLocalBefore)..".."..Scalar(clock.nativeReadLocalAfter))
+            RA:Print("Native timestamps first="..Scalar(clock.nativeFirstTimestamp).."; min="..Scalar(clock.nativeMinimumTimestamp).."; max="..Scalar(clock.nativeMaximumTimestamp).."; fatal="..Scalar(clock.nativeFatalTimestamp).."; rows="..Scalar(clock.nativeRowCount))
+        end
         RA:Print("Client "..(state.client.version or"Unknown").." build "..(state.client.build or"Unknown").." interface "..(state.client.interface or"Unknown").."; catalog "..(state.catalogBuild or"Unknown"))
     elseif command == "" or command == "config" then
         RA:OpenConfig()

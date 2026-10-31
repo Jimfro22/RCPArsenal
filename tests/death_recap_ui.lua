@@ -1,183 +1,178 @@
--- Actual addon modules and UI callbacks in the existing native-region fixture.
--- This checks decisions/layout inputs; it is not native rendering or taint QA.
+-- Actual modules and native-region callbacks; offline decisions, not WoW pixels.
 local f=assert(io.open('tests/hub.lua'));local source=f:read('*a');f:close()
 source=source:sub(1,assert(source:find('check(db.schemaVersion == 19',1,true))-1)
 source=source..[=[
 function methods:GetScript(name)return self.scripts[name]end
-function methods:SetAlpha(value)check(type(value)=='number' and value==value and value>=0 and value<=1,'Invalid native alpha argument');self.alpha=value end
-function methods:GetValue()error('Recap read back a native bar value')end
+function methods:SetAlpha(v)check(type(v)=='number'and v==v and v>=0 and v<=1,'Invalid native alpha');self.alpha=v end
+function methods:SetVertexColor(r,g,b)self.rgb={r,g,b}end
+function methods:SetAtlas(atlas)self.atlas=atlas end
+function methods:EnableMouseWheel(v)self.wheel=v end
+function methods:GetValue()error('Historical UI read back a native bar value')end
 local tooltipSpell,tooltipLines=nil,{}
 function GameTooltip:SetSpellByID(id)tooltipSpell=id end
-function GameTooltip:AddLine(line)table.insert(tooltipLines,line)end
+function GameTooltip:AddLine(line)tooltipLines[#tooltipLines+1]=line end
+UISpecialFrames={}
 local R,U=RA.DeathRecap,RA.DeathRecapUI
-check(not db.deathRecap.enabled and db.deathRecap.autoOpen and not named.RCPArsenalDeathRecap,'Default OFF eagerly built popup')
-local page={id=10,diedAt=100,casts={{spellID=871,observedAt=99}},native={rows={
-    {spellID=123,name='Earlier',kind='damage',nativeOffset=-4.5,nativeIndex=2,amount=10000000000000},
-    {spellID=124,name='Fatal',kind='damage',nativeOffset=-4.4,nativeIndex=1,amount=200},
-    {spellID=125,name='Unclassified',kind='unknown',nativeOffset=0,nativeIndex=3}}},
-    lastAlive={supplies={{kind='potion',carried=false,carriedAt=1,observedAt=99.9,cooldown='unknown'}},spells={
-        {spellID=871,name='Zero charges',category='major',observedAt=99.9,isEnabled=true,cooldown='inactive',chargeQuery='public',maxCharges=2,currentCharges=0},
-        {spellID=23920,name='Opaque charges',category='minor',observedAt=99.9,isEnabled=true,cooldown='inactive',chargeQuery='unreadable'},
-        {spellID=1234,name='Positive narrow fact',category='minor',observedAt=99.9,isEnabled=true,cooldown='inactive',chargeQuery='not_applicable'}}}}
-R.GetPage=function()return page end
-local stateGetter=R.GetState
-R.GetState=function(self)local s=stateGetter(self);s.hasPage=page~=nil;return s end
-local function under(obj,ancestor)
-    while obj do if obj==ancestor then return true end;obj=obj.parent end
+local groupCalls=0;local originalGroup=RA.DeathLogModel.Group;RA.DeathLogModel.Group=function(self,...)groupCalls=groupCalls+1;return originalGroup(self,...)end
+check(not db.deathRecap.enabled and not named.RCPArsenalDeathRecap,'DefaultOFF created UI')
+local page={id=10,diedAt=100,class='MAGE',specID=62,encounter={name='Example real encounter',startedAt=0},casts={{spellID=235450,observedAt=99}},
+ native={recapID=1,recapMaxHealth=100000,rows={
+ {nativeIndex=2,nativeOffset=-4.5,spellID=123,name='Tick',kind='damage',amount=100,recordedHP=90000,sourceConfirmed=true,sourceKey='A'},
+ {nativeIndex=3,nativeOffset=-4.3,spellID=123,name='Tick',kind='damage',amount=100,recordedHP=80000,sourceConfirmed=true,sourceKey='A'},
+ {nativeIndex=4,nativeOffset=-3.5,spellID=124,name='Major',kind='damage',amount=200000,recordedHP=70000},
+ {nativeIndex=1,nativeOffset=0,spellID=125,name='Fatal',kind='damage',amount=100,recordedHP=0}}},
+ lastAlive={observedAt=99.9,spells={
+ {spellID=45438,name='Zero charges',category='major',observedAt=99.9,cooldown='inactive',chargeQuery='public',maxCharges=2,currentCharges=0},
+ {spellID=342245,name='On hold',category='minor',observedAt=99.9,cooldown='held',chargeQuery='public',currentCharges=1,maxCharges=2},
+ {spellID=235450,name='Old unchanged check',category='minor',observedAt=55,cooldown='inactive',chargeQuery='unreadable',chargeReason='restricted'}},
+ supplies={{kind='stone',itemID=5512,carried=true,carriedAt=45,observedAt=99.9,physicalCount=1,remainingUses=1,cooldown='inactive',usable=false},
+ {kind='potion',itemID=241304,observedAt=99.9,physicalCount=0,cooldown='inactive'}}}}
+local pageReads=0
+R.GetPage=function()pageReads=pageReads+1;return page end
+local getter=R.GetState;R.GetState=function(self)local s=getter(self);s.hasPage=page~=nil;return s end
+local function under(obj,ancestor)while obj do if obj==ancestor then return true end;obj=obj.parent end end
+local function button(label,hidden)
+ for _,obj in ipairs(objects)do if obj.label and obj.label.text==label and under(obj,named.RCPArsenalDeathRecap)and(hidden or obj:IsVisible())then return obj end end
 end
-local function button(label,visible)
-    for _,obj in ipairs(objects)do
-        if obj.label and obj.label.text==label and under(obj,named.RCPArsenalDeathRecap)and(visible==false or obj:IsVisible())then return obj end
-    end
+check(U:ShowLast(),'Real log unavailable');local popup=named.RCPArsenalDeathRecap
+local function hits()local out={};for _,obj in ipairs(objects)do if obj.parent==popup and obj.group and obj:IsVisible()then out[#out+1]=obj end end;return out end
+local function shelves()local out={};for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==32 and obj:IsVisible()then out[#out+1]=obj end end;return out end
+local function hover(index)
+ for _,b in ipairs(hits())do for i,row in ipairs(b.group.rows)do if row.nativeIndex==index then b.member=i;b:Fire('OnEnter');return b end end end;error('Missing raw event '..index)
 end
-local function tray()
-    local out={};for _,obj in ipairs(objects)do if obj.parent==named.RCPArsenalDeathRecap and obj.icon and obj.width==32 and obj:IsVisible()then out[#out+1]=obj end end;return out
+check(UISpecialFrames[1]=='RCPArsenalDeathRecap'and popup:GetScript('OnHide'),'Escape/nativehide cleanup missing')
+check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=440,'Composition lost Death Log hierarchy')
+check(popup.shelf.text=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
+check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Initial fatal health selection mismatch')
+check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated skull art')
+check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
+local foundOld,foundStock,foundHold=false,false,false
+for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
+ if help:find('Old unchanged check',1,true)then foundOld=true;check(b.icon.rgb[1]==1 and help:find('off cooldown',1,true)and help:find('45.00s',1,true)and help:find('not provided by Blizzard',1,true),'Age or secret charge erased public cooldown fact')end
+ if help:find('Healthstone',1,true)then foundStock=true;check(b.icon.rgb[1]==1 and help:find('55.00s',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
+ if help:find('On hold',1,true)then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
-check(U:ShowLast(),'View last refused recorded data')
-local popup=named.RCPArsenalDeathRecap
-check(popup.width==640 and popup.height<480 and not popup.keyboard and not popup.focus,'Popup geometry/focus capture changed')
-check(popup.hp.text=='' and not popup.healthPanel:IsShown() and not popup.healing:IsShown() and popup.damage.text=='Events','Unknown HP/event kind became health/damage')
-local rows=tray();check(#rows==4,'Observation tray lost rows')
-check(rows[1].stateLabel.text=='Unknown' and rows[1].icon.alpha==.7,'Old absence became current unavailable')
-check(rows[2].stateLabel.text=='No charges' and rows[2].icon.alpha==.35,'Zero charges became positive fact')
-check(rows[3].stateLabel.text=='Unknown' and rows[3].icon.alpha==.7,'Opaque charge query became positive fact')
-check(rows[4].stateLabel.text=='Off cooldown','Verified narrow cooldown fact missing')
-tooltipLines={};rows[1]:Fire('OnEnter')
-local itemHelp=table.concat(tooltipLines,' ')
-check(itemHelp:find('99.0s',1,true),'Absence tooltip omitted actual bag-cache age')
-check(not itemHelp:find('Source:',1,true) and not itemHelp:find('Native cooldown',1,true) and not itemHelp:find('Frozen last-alive',1,true),'Normal tooltip retained developer provenance dump')
-local grouped
-for _,obj in ipairs(objects)do if obj.parent==popup and obj.group and #obj.group.rows==2 then grouped=obj end end
-check(grouped and grouped.group.rows[grouped.selected].nativeIndex==1,'Group did not preserve/select native killing row')
-grouped:Fire('OnEnter');check(tooltipSpell==124 and popup.guide:IsShown(),'Selected native tooltip/guide missing')
-check(#grouped.amount.text<12 and grouped.amount.width==82,'Large amount not bounded/compacted')
-grouped:Fire('OnClick');check(tooltipSpell==123 and grouped.group.rows[grouped.selected].nativeIndex==2,'Cycling kept stale tooltip/selection')
-check(grouped.group.rows[1].nativeOffset==-4.5 and grouped.group.rows[2].nativeOffset==-4.4 and popup.axis.text=='−4.5s','Renderer rebased native time to the killing row')
-check(popup.axisEnd.points[1][4]==584 and popup.axisEnd.text=='Death','Axis endpoint uses proportional whitespace')
--- Preview must close live popovers and execution-time callbacks must recheck.
-db.personalTools.consumableReminder=false
-U:OpenBell();local enable=button('ENABLE');check(enable and enable:IsVisible(),'Live reminder confirmation absent')
-local saved={};for key,value in pairs(db.personalTools)do saved[key]=value end
-local beforePage=R:GetPage();local diagnostics=R:GetDiagnostics();U:Preview()
-check(not enable:IsVisible() and popup.coverage.text=='Example data · Arcane Mage','Preview inherited live confirmation or lacks sample label')
-enable:Fire('OnClick')
-check(not db.personalTools.consumableReminder and R:GetPage()==beforePage,'Stale live callback in sample changed settings/history')
-for key,value in pairs(saved)do check(db.personalTools[key]==value,'Preview changed child preferences')end
-check(R:GetDiagnostics().samples==diagnostics.samples and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview queried recorder/native model')
-U:OpenShare();check(not button('OPEN CHAT'),'Sample opened live share')
-
--- Explicit Preview alone owns its fictional health/heal arrays.
-check(popup.width==640 and popup.height==480 and popup.fight.text=='Fight 2:12','Example geometry or encounter clock incorrect')
-check(popup.instruction.text=='Hover a hit or item for details','Player instruction missing')
-check(popup.healthPanel.selectedHP==33300 and popup.healthPanel.selectedMax==100000 and popup.healthPanel.selectedRatio==.333 and popup.healthBar:IsShown(),'Preview did not open a filled exact last-nonfatal bar')
-check(popup.hp.text:find('33,300',1,true) and popup.hp.text:find('33.3%',1,true) and popup.hp.text:find('-1.0s',1,true),'Exact example health/percent/time unreadable')
-rows=tray();local ids={};local labels={'Off cooldown','No item','Used','Off cooldown','Cooldown'}
-for i,b in ipairs(rows)do ids[b.icon.__raSpellID or 0]=true;check(b.stateLabel.text==labels[i] and b.stateLabel.fontSize==11,'Example state copy/font/order wrong')end
-check(#rows==5 and rows[3].icon.alpha==1,'Example Mage defensive tray missing/used barrier faded')
-local expectedIDs={5512,241304,235450,342245,45438}
-for i,b in ipairs(rows)do
-    tooltipSpell=nil;tooltipLines={};b:Fire('OnEnter')
-    if i>=3 then check(tooltipSpell==expectedIDs[i],'Example defensive identity is not the chosen Arcane fixture')end
-    check(b.points[1][5]==-414 and b.height==32 and b.stateLabel.points[1][5]==-4,'Footer clipped the intended bottom margin')
-end
-check(popup.divider.points[1][5]==-385 and popup.details.height==28,'Example footer geometry drifted')
-local function hits()
-    local out={};for _,obj in ipairs(objects)do if obj.parent==popup and obj.group and obj:IsVisible()then out[#out+1]=obj end end;return out
-end
-local function hoverHit(nativeIndex)
-    for _,b in ipairs(hits())do for i,row in ipairs(b.group.rows)do if row.nativeIndex==nativeIndex then b.selected=i;b:Fire('OnEnter');return b end end end
-    error('Missing hit '..nativeIndex)
-end
-local fixtureIDs={};for _,b in ipairs(hits())do for _,row in ipairs(b.group.rows)do fixtureIDs[row.spellID]=true end end
-check(fixtureIDs[12294] and fixtureIDs[686] and fixtureIDs[172] and fixtureIDs[116858],'Example damage fixture incomplete')
-hoverHit(1);check(popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown() and popup.hp.text:find('0.0%',1,true),'Known example fatal zero became missing')
-hoverHit(2);check(popup.healthPanel.selectedHP==68000,'Example hit failed to select exact HP')
-local frameCount,timerCount=#objects,#timers
-for i=1,50 do hoverHit(4)end
-check(#objects==frameCount and #timers==timerCount,'Hover allocated frames or timers')
-for _,obj in ipairs(objects)do if under(obj,popup)then check(obj.scripts.OnUpdate==nil,'Recap added a frame poller')end end
-local reads=0;local oldGetPage=R.GetPage;R.GetPage=function()reads=reads+1;return page end
-U:Preview();check(reads==0,'Preview read real history');R.GetPage=oldGetPage
--- A real page carrying plausible fixture fields must remain real. Only the
--- accepted native HP fields and fixed recap denominator may drive its display.
+check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
+local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
+tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Event 1/2',1,true),'Group moment not explicit')
+grouped:Fire('OnMouseWheel',-1);check(popup.selected.nativeIndex==3 and popup.healthPanel.selectedHP==80000,'Wheel did not select exact constituent HP')
+check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
+local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==3,'Journal click also cycled events')
+hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==3,'Redraw forgot group constituent')
+local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==3,'Stale render action changed selection')
+-- Scrub is bounded pointer input while hovering only; stationary pointer cannot
+-- undo wheel choice. No re-grouping or periodic capture is attached to it.
+local x=300+48+(.5/5)*784;GetCursorPosition=function()return x,400 end
+grouped.span:Fire('OnEnter');check(popup.selected.nativeIndex==2,'Span scrub missed exact nearest event')
+grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==3,'Stationary scrub undid wheel selection')
+x=x+32;grouped.span:Fire('OnUpdate');grouped.span:Fire('OnLeave');check(grouped.span:GetScript('OnUpdate')==nil,'Pointer tracker survived leave')
+local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
+for i=1,50 do hover(2);hover(3)end
+check(#objects==beforeFrames and #timers==beforeTimers and groupCalls==beforeGroups,'Hover allocated or regrouped')
+local fatal=page.native.rows[4];fatal.nativeOffset=-1;page.native.rows[5]={nativeIndex=5,nativeOffset=0,spellID=126,kind='unknown'}
+U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40 (notice)','Latest native time mislabeled as Death or clocks conflated')
+fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
+-- Preview identity and complete synthetic selected-time display.
+local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
+U:OpenBell();local enable=button('ENABLE');check(enable,'Live reminder confirmation missing')
+local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
+check(popup.coverage:IsShown()and popup.coverage.text=='Example data'and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
+check(popup.healthPanel.selectedHP==128000 and popup.percent.text=='32%'and popup.absorb:IsShown()and popup.healthPanel.healAbsorb==80000,'Example default health/debt not coherent')
+check(popup.shelf.text=='Cooldowns · −2.30s','Example shelf not tied to exact selected moment')
+check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
+for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
+check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
+U:OpenShare();check(not button('OPEN CHAT'),'Preview opened live composer')
+popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeOffset==-4.2 and popup.healthPanel.selectedHP==336000 and popup.shelf.text=='Cooldowns · −4.20s','Example heal failed synchronized explicit snapshot')
+for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeOffset==-3.5 or popup.selected.nativeOffset==-1.8,'Example defensive failed to select its actual time');break end end
+RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
+local healerArtwork=0
+for _,b in ipairs(popup.healTargets)do check(not b.icon and b.label.text:sub(1,1)=='+','Healing regained large artwork')end
+local oldJournal;local mapped
+for _,b in ipairs(hits())do if b.group.spellID==1285017 then mapped=b;break end end
+check(mapped,'Coiled preview mapping missing');oldJournal=mapped:GetScript('OnClick')
+local opens,loads,selectedContext=0,0,{}
+EncounterJournal_LoadUI=function()loads=loads+1 end
+EJ_SelectInstance=function(id)selectedContext.instance=id end;EJ_SetDifficulty=function(id)selectedContext.difficulty=id end;EJ_SelectEncounter=function(id)selectedContext.encounter=id end
+EJ_GetEncounterInfo=function()return 'The Coiled Altar','',2883,35058,nil,1320,3429,3004 end
+local wrongSection=false
+C_EncounterJournal={GetSectionInfo=function(id)
+ check(selectedContext.difficulty==16 and selectedContext.encounter==2883,'Section validated in old Journal context')
+ if id==35058 then return {spellID=1,firstChildSectionID=36846,filteredByDifficulty=false}end
+ return {spellID=wrongSection and 1285017 or 1283832,filteredByDifficulty=false}
+end}
+local function Navigate(d,i,e,s)opens=opens+1;check(d==16 and i==1320 and e==2883 and s==36846,'Journal tuple wrong')end
+EncounterJournal_OpenJournal=nil;EncounterJournal_LoadUI=function()loads=loads+1;EncounterJournal_OpenJournal=Navigate end
+local member=mapped.member;oldJournal();check(opens==1 and mapped.member==member,'Normal click failed exact section relationship or also cycled')
+wrongSection=true;oldJournal();check(opens==1,'DamageID incorrectly accepted as section spellID');wrongSection=false
+combat=true;local loadCount=loads;oldJournal();check(loads==loadCount and opens==1,'Combat click loaded/navigated Journal');combat=false
+EncounterJournal_LoadUI=function()loads=loads+1;combat=true end;oldJournal();check(opens==1,'Deferred combat check missing');combat=false
+EncounterJournal_LoadUI=function()loads=loads+1 end
+-- Real-looking fixture fields cannot activate the synthetic data path.
 local realPage=page
-page={id=11,diedAt=100,sample=true,origin='example',maxHealth=100000,
-    healthPoints={{offset=-4.5,hp=92000},{offset=0,hp=0}},heals={{offset=-1,hp=77000}},casts={},
-    native={recapID=5,recapMaxHealth=1000,rows={
-        {nativeIndex=2,nativeOffset=-4.5,spellID=123,kind='damage',amount=50,recordedHP=750,exampleHP=92000},
-        {nativeIndex=3,nativeOffset=-3,spellID=124,kind='damage',amount=50,exampleHP=77000},
-        {nativeIndex=4,nativeOffset=-1,spellID=125,kind='damage',amount=50,recordedHP=1200},
-        {nativeIndex=1,nativeOffset=0,spellID=126,kind='damage',amount=50,recordedHP=0}}},
-    lastAlive={supplies={},spells={{spellID=871,category='major',observedAt=99.9,isEnabled=true,cooldown='active',chargeQuery='not_applicable',exampleState='Used'}}}}
-U:ShowLast();check(popup.coverage.text=='Some details unavailable' and not popup.healing:IsShown() and popup.health.text=='Recorded health','Real page adopted fictional origin/healing')
-check(popup.healthPanel.selectedHP==0,'Initial native selection did not match the killing event');hoverHit(2)
-check(popup.healthPanel.selectedHP==750 and popup.healthPanel.selectedRatio==.75,'Public native snapshot/recap max did not drive real bar')
-check(tray()[1].stateLabel.text=='Cooldown','Real state adopted fictional override')
-local function markCount()
-    local n=0;for _,obj in ipairs(objects)do if obj.parent==popup and obj.kind=='Texture' and obj:IsVisible() and obj.width==5 and obj.height==5 then n=n+1 end end;return n
-end
-check(markCount()==2,'Native ribbon connected/interpolated gaps or out-of-scale HP')
-hoverHit(3);check(not popup.healthBar:IsShown() and not popup.healthTrack:IsShown() and popup.healthPanel.selectedHP==nil and popup.hp.text=='Recorded health: Unknown','Unknown row retained prior bar/value')
-tooltipLines={};popup.healthPanel:Fire('OnEnter');local help=table.concat(tooltipLines,' ');check(help:find('Health was not recorded for this event.',1,true) and help:find('1,000',1,true) and not help:find('maximum health value was not recorded',1,true),'Unknown HP misreported a valid max as missing')
-hoverHit(4);check(popup.healthPanel.selectedHP==1200 and not popup.healthBar:IsShown() and popup.hp.text=='1,200','Out-of-scale HP was lost or clamped')
-hoverHit(1);check(popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Real public zero was treated as missing')
-local private=setmetatable({},{__tostring=function()error('Secret HP stringified')end})
-issecretvalue=function(value)return rawequal(value,private)end
-local invalid={false,private,-1,0/0,math.huge,-math.huge,'42',{}}
-for _,value in ipairs(invalid)do
-    page.native.rows[1].recordedHP=value;U:ShowLast();hoverHit(2)
-    check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown(),'Invalid HP became a known value')
-end
+page={id=11,diedAt=100,sample=true,origin='example',maxHealth=400000,healthPoints={{offset=-5,hp=400000}},heals={{offset=-1,amount=9000}},supports={{offset=-2,finish=0,spellID=235450}},
+ native={recapID=2,recapMaxHealth=1000,rows={{nativeIndex=2,nativeOffset=-1,spellID=123,kind='damage',amount=10,recordedHP=750,exampleHP=99999},{nativeIndex=3,nativeOffset=-.7,spellID=124,kind='damage',amount=10},{nativeIndex=4,nativeOffset=-.5,spellID=125,kind='damage',amount=10,recordedHP=1200},{nativeIndex=1,nativeOffset=0,spellID=126,kind='damage',amount=10,recordedHP=0}}},
+ casts={},knownEntries={{spellID=235450,name='Known without observation',category='minor'}}}
+U:ShowLast();oldJournal();check(opens==1,'Stale preview callback navigated')
+check(not popup.coverage:IsShown()and not popup.absorb:IsShown()and popup.shelf.text=='Last recorded check','Real page adopted sample fields')
+for _,b in ipairs(popup.healTargets)do check(not b:IsVisible(),'Synthetic heals leaked into real page')end
+for _,obj in ipairs(objects)do if obj.width==30 and obj.parent==popup and obj.icon then check(not obj:IsVisible(),'Synthetic defensive interval/use leaked')end end
+hover(2);check(popup.healthPanel.selectedHP==750 and popup.percent.text=='75%','Native selected raw health wrong')
+hover(3);check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown(),'Missing row retained stale HP')
+tooltipLines={};popup.healthPanel:Fire('OnEnter');local help=table.concat(tooltipLines,' ');check(help:find('1000',1,true)and help:find('not recorded for this event',1,true),'Missing HP erased valid denominator')
+hover(4);check(popup.healthPanel.selectedHP==1200 and not popup.healthBar:IsShown()and popup.hp.text:find('1200',1,true),'Out-of-scale raw HP clamped/lost')
+local secret=setmetatable({},{__tostring=function()error('Secret formatted')end});issecretvalue=function(value)return rawequal(value,secret)end
+for _,value in ipairs({false,secret,-1,0/0,math.huge,-math.huge,'750',{}})do page.native.rows[1].recordedHP=value;U:ShowLast();hover(2);check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown(),'Bad HP became public value')end
 page.native.rows[1].recordedHP=750
-for _,value in ipairs({false,private,0,-1,0/0,math.huge,-math.huge,'1000',{}})do
-    page.native.recapMaxHealth=value;U:ShowLast();hoverHit(2)
-    check(popup.healthPanel.selectedHP==750 and popup.hp.text=='750' and not popup.healthBar:IsShown() and markCount()==0,'Invalid denominator lost raw HP or invented scale')
-end
-page.native.recapMaxHealth=nil;U:ShowLast();hoverHit(2)
-check(popup.healthPanel.selectedHP==750 and not popup.healthBar:IsShown(),'Missing denominator lost raw HP')
-page.native.recapID=nil;U:ShowLast();check(not popup.healthPanel:IsShown(),'Unidentified page supplied native health')
--- The initial bar and grouped icon must refer to the same killing event.
-page.native.recapID=5;page.native.recapMaxHealth=1000
-page.native.rows={
-    {nativeIndex=2,nativeOffset=-4.5,spellID=123,kind='damage',amount=10,recordedHP=750},
-    {nativeIndex=1,nativeOffset=-4.4,spellID=124,kind='damage',amount=10,recordedHP=200},
-    {nativeIndex=3,nativeOffset=0,spellID=125,kind='unknown'}}
-U:ShowLast();local initialGroup=hits()[1]
-check(initialGroup.group.rows[initialGroup.selected].nativeIndex==1 and popup.healthPanel.selectedHP==200,'Initial grouped icon and health value describe different events')
--- All sixteen bounded records remain reachable, including collapsed groups.
-page.native.rows={};for i=1,16 do page.native.rows[i]={nativeIndex=i,nativeOffset=(i-16)*.001,spellID=100+i,kind='damage',amount=i}end
+for _,value in ipairs({false,secret,0,-1,0/0,math.huge,'1000',{}})do page.native.recapMaxHealth=value;U:ShowLast();hover(2);check(popup.healthPanel.selectedHP==750 and not popup.healthBar:IsShown(),'Bad max erased raw HP or supplied bar')end
+-- Every one of64retained rows is reachable even at identical times. Mixed
+-- sums have no single spell artwork; fatal and largest preceding stay separate.
+page.native.recapMaxHealth=1000;page.native.rows={}
+for i=1,64 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1,spellID=100+i,kind='damage',amount=i,recordedHP=i}end
 U:ShowLast();local seen={}
-for _,b in ipairs(hits())do for i=1,#b.group.rows do b:Fire('OnClick');seen[b.group.rows[b.selected].nativeIndex]=true end end
-for i=1,16 do check(seen[i],'Grouped hit lost member '..i)end
-page=realPage;U:ShowLast()
-
-U:ShowLast();U:OpenShare();local open=button('OPEN CHAT');check(open,'Live public composer dialog absent')
-local composerCalls=0
-check(C_ChatInfo.HasRestrictions==nil,'Fixture invented an unsupported chat query')
-C_ChatInfo.InChatMessagingLockdown=function()return false end
-C_SocialRestrictions={CanSendChat=function()return true end}
-local box={SetAttribute=function(self,key,value)self[key]=value end}
-ChatFrame_OpenChat=function(text)composerCalls=composerCalls+1;check(not text:find('10000000000000',1,true),'Unselected/unknown event serialized as fatal')end
-ChatEdit_GetActiveWindow=function()return box end;ChatEdit_UpdateHeader=function()end
-U:Preview();open:Fire('OnClick');check(composerCalls==0,'Stale live Share callback acted in preview')
-U:ShowLast();U:OpenBell();enable=button('ENABLE');enable:Fire('OnClick')
-check(db.personalTools.consumableReminder,'Explicit real confirmation did not enable existing reminder')
-for key,value in pairs(saved)do if key~='consumableReminder'then check(db.personalTools[key]==value,'Bell changed child option')end end
+for _,b in ipairs(hits())do
+ if b.group.last==b.group.first then check(not b.span:IsShown()and b.span:GetScript('OnEnter')==nil,'Equal-time group kept a colliding scrub hitbox')end
+ if b.group.mixed then check(b.group.spellID==nil and not b.icon:IsShown(),'Mixed sum uses single-spell artwork')end
+ for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[popup.selected.nativeIndex]=true end
+end
+for i=1,64 do check(seen[i],'Dense group lost constituent '..i)end
+-- Three overlapping positive spans keep their true bracket intervals while
+-- ambiguous mouse frames are removed. Their distinct glyph/amount wheel paths
+-- still expose every constituent.
+page={id=12,diedAt=100,casts={},native={recapID=3,recapMaxHealth=1000,rows={}}}
+local nextIndex=2
+for group=1,3 do for member=1,3 do
+ page.native.rows[#page.native.rows+1]={nativeIndex=nextIndex,nativeOffset=-5+group*.2+(member-1)*.5,spellID=600+group,sourceKey='fixture-'..group,sourceConfirmed=true,kind='damage',amount=1}
+ nextIndex=nextIndex+1
+end end
+page.native.rows[#page.native.rows+1]={nativeIndex=nextIndex,nativeOffset=-1.2,spellID=700,kind='damage',amount=1000}
+page.native.rows[#page.native.rows+1]={nativeIndex=1,nativeOffset=0,spellID=701,kind='damage',amount=1}
+U:ShowLast();local disabled=0;local overlapSeen={}
+for _,b in ipairs(hits())do
+ if b.group.count>1 and not b.scrubAvailable then disabled=disabled+1;check(not b.span:IsShown()and b.span:GetScript('OnMouseWheel')==nil,'Ambiguous span still intercepts neighbor')end
+ for i=1,#b.group.rows do b.amountTarget:Fire('OnMouseWheel',-1);overlapSeen[popup.selected.nativeIndex]=true end
+end
+check(disabled>=2,'Overlapping positive-span component did not use fallback')
+for i=1,11 do check(overlapSeen[i],'Fallback lost constituent '..i)end
+page=realPage
+local savedSpells=page.lastAlive.spells;page.lastAlive.spells={}
+for i=1,12 do page.lastAlive.spells[i]={spellID=500+i,name='Shelf '..i,observedAt=99,cooldown='inactive',category='minor'}end
+U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.points[1][5]-popup.guide.height==popup.graphBase.points[1][5],'Wrapped shelf left guide crossing its icons')
+page.lastAlive.spells=savedSpells
+U:ShowLast();U:OpenShare();local open=button('OPEN CHAT');check(open,'Live share absent')
+local composerCalls=0;C_ChatInfo.InChatMessagingLockdown=function()return false end;C_SocialRestrictions={CanSendChat=function()return true end}
+local box={SetAttribute=function(self,k,v)self[k]=v end};ChatFrame_OpenChat=function()composerCalls=composerCalls+1 end;ChatEdit_GetActiveWindow=function()return box end;ChatEdit_UpdateHeader=function()end
+U:Preview();open:Fire('OnClick');check(composerCalls==0,'Stale composer callback acted in Preview')
+U:ShowLast();U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Explicit live reminder confirmation failed')
 RA.PersonalTools:SetOption('consumableReminder',false)
--- Manual close/life events and disabled auto-open cannot resurrect the popup.
-db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check(popup:IsShown(),'Death opt-in auto popup did not show')
-U:Hide();RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')
-U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','life');check(not popup:IsShown()and R:GetPage()==beforePage,'Resurrection did not close/preserve')
-db.deathRecap.autoOpen=false;U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','death');check(not popup:IsShown(),'Auto-open OFF retained previous page popup')
--- Explicit sharing is guarded, prepares only native text and never sends.
-local ok,reason=R:PrepareShare('WHISPER','',page);check(not ok and composerCalls==0,'Blank whisper target accepted')
-ok=R:PrepareShare('WHISPER','Friend-Realm',page);check(ok and composerCalls==1 and box.chatType=='WHISPER'and box.tellTarget=='Friend-Realm','Native composer/recipient incorrect')
-ok=R:PrepareShare('SAY',nil,page);check(ok and composerCalls==2 and box.chatType=='SAY','Supported API-only surface did not prepare native chat')
-C_ChatInfo.InChatMessagingLockdown=function()return true end
-check(not R:PrepareShare('SAY',nil,page)and composerCalls==2,'Chat lockdown bypassed')
-check(not R:GetJournalMapping(nil,nil)and not R:OpenJournal(page,page.native.rows[1]),'Missing Journal mapping navigated')
-check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent messages or inspected raid')
-cleanErrors()
-nativePrint('PASS: '..checks..' actual death recap UI/preview/charge/group/share/lifecycle assertions (offline; native visuals pending)')
+db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check(popup:IsShown(),'Auto popup missing')
+popup:Hide();check(not popup.selected,'Native hide did not clear private selected context');RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')
+U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','life');check(not popup:IsShown()and page==beforePage,'Life event discarded history or kept popup')
+db.deathRecap.autoOpen=false;U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','death');check(not popup:IsShown(),'AutoopenOFF retained popup')
+local ok=R:PrepareShare('WHISPER','',page);check(not ok and composerCalls==0,'Blank recipient accepted')
+ok=R:PrepareShare('WHISPER','Friend-Realm',page);check(ok and composerCalls==1 and box.tellTarget=='Friend-Realm','Native composer target wrong')
+C_ChatInfo.InChatMessagingLockdown=function()return true end;check(not R:PrepareShare('SAY',nil,page)and composerCalls==1,'Chat lockdown bypassed')
+check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
+cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')
 ]=]
-assert(loadstring(source,'death-recap-ui-fixture'))()
+assert(loadstring(source,'death-log-ui-fixture'))()
