@@ -109,9 +109,11 @@ local function Tooltip(button,lines,spellID,itemID)
         tooltipHooked=true;GameTooltip:HookScript("OnSizeChanged",PositionTooltip)
     end
 end
-local function HideTooltip()
+local function HideTooltip(target)
+    if target and target~=tooltipOwner then return end
+    local owner=tooltipOwner
     tooltipOwner=nil;if frame then frame.tooltipPlacement=nil end
-    if GameTooltip then GameTooltip:Hide()end
+    if owner and GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()==owner then GameTooltip:Hide()end
 end
 local function Icon(parent,size)
     local b=CreateFrame("Button",nil,parent);Size(b,size,size);Surface(b,C.lineStrong)
@@ -482,7 +484,8 @@ local function SelectedTooltip(b,page,target)
         lines[#lines+1]=amount..(row.amount~=nil and(row.kind=="damage"and" damage"or" recorded")or"").." · "..At(row.nativeOffset)
     else
         local total=item.amountComplete and Amount(item.amount)or(item.amount>0 and"≥"..Amount(item.amount)or"Amount unavailable")
-        lines[#lines+1]=total.." total · "..#item.rows.." hits · "..At(item.first).."…"..At(item.last)
+        local noun="hits";for _,member in ipairs(item.rows)do if member.kind~="damage"then noun="events";break end end
+        lines[#lines+1]=total.." total · "..#item.rows.." "..noun.." · "..At(item.first).."…"..At(item.last)
         lines[#lines+1]="Selected "..b.member.."/"..#item.rows.." · "..amount.." · "..At(row.nativeOffset)
     end
     if row.sourceName and row.hideCaster~=true and row.hideCasterStatus~="restricted"then lines[#lines+1]="Source: "..row.sourceName end
@@ -620,7 +623,7 @@ function UI:Render()
                 if not b.lastCursorX or math.abs(x-b.lastCursorX)>=.5 then b.lastCursorX=x;local i=Nearest(item,time,selected);if i~=b.member then ChooseMember(i,self)end end
             end)
         end)
-        b.span:SetScript("OnLeave",function(self)self:SetScript("OnUpdate",nil);HideTooltip()end)
+        b.span:SetScript("OnLeave",function(self)self:SetScript("OnUpdate",nil);HideTooltip(self)end)
         b:SetScript("OnClick",function()if current~=page or example~=IsExample()or revision~=renderRevision or item.mixed then return end;local _,reason=Journal(item.rows[b.member],page);RA:Print(reason)end)
         if item.fatal then Place(frame.tombstone,"CENTER",frame,"TOPLEFT",X(item.first),-410-extraHeight);frame.tombstone:Show()end
     end

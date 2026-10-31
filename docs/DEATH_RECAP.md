@@ -21,9 +21,11 @@ HP uses a ring and percentage, the guide is dashed, and quiet graph marks preser
 actual event positions. Count and recorded absorption badges have readable
 backing; the selected border remains distinct from the fatal-hit border. Native
 spell/item descriptions remain in tooltips, followed by compact recap details.
-Placement prefers outside the recap, with bounded edge/effective-scale fallback
+Placement uses a 12 physical-pixel screen inset and gap and prefers outside the recap,
+with bounded edge/effective-scale fallback
 that protects the hovered target and HP/shelf where space allows. Geometry checks
-read only public UI bounds, never tooltip text or health widget values. Preview
+read only public UI bounds, never tooltip text or health widget values. Cleanup
+leaves foreign or newer target tooltips alone. Preview
 uses one provenance label; its reminder/chat actions stay inert and explain why.
 Synthetic healing debt uses clipped, explicitly layered native hatch lines while
 raw HP stays in its usual position. Native pixels, tooltip reflow and taint still

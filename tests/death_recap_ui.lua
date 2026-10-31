@@ -169,6 +169,35 @@ end end
 check(cases==45 and not GameTooltip:GetScript('OnUpdate'),'Placement added polling or omitted scale/edge cases')
 rects={};methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale=oldLeft,oldBottom,oldScale;UIParent:SetSize(0,0)
 U:Preview()
+-- Another UI may acquire the shared native tooltip before recap cleanup runs.
+local foreign=CreateFrame('Frame',nil,UIParent)
+for _,operation in ipairs({'leave','hide','render'})do
+ local b=hover(8)
+ GameTooltip:SetOwner(foreign,'ANCHOR_RIGHT');GameTooltip:SetText('Foreign tooltip');GameTooltip:Show()
+ local beforePoint=GameTooltip.points[#GameTooltip.points];GameTooltip:Fire('OnSizeChanged')
+ check(GameTooltip.points[#GameTooltip.points]==beforePoint,'Resize moved another owner tooltip')
+ if operation=='leave'then b:Fire('OnLeave')elseif operation=='hide'then U:Hide()else U:Render()end
+ check(GameTooltip:IsShown()and GameTooltip:GetOwner()==foreign,'Recap '..operation..' hid another owner tooltip')
+ GameTooltip:Hide();U:Preview()
+end
+local own=hover(8);own:Fire('OnLeave');check(not GameTooltip:IsShown(),'Recap leave retained its own tooltip')
+local staleTargets={sever,sever.amountTarget}
+for _,b in ipairs(hits())do if b.span:IsShown()then staleTargets[#staleTargets+1]=b.span;break end end
+check(#staleTargets==3,'Stale leave fixture omitted span target')
+for _,older in ipairs(staleTargets)do
+ older:Fire('OnEnter');local newer=popup.healTargets[1];newer:Fire('OnEnter')
+ older:Fire('OnLeave')
+ check(GameTooltip:IsShown()and GameTooltip:GetOwner()==newer,'Stale leave hid a newer recap tooltip')
+ newer:Fire('OnLeave');check(not GameTooltip:IsShown(),'Stale leave cleared newer owner tracking')
+end
+local copyPage=page;page={id=13,diedAt=100,casts={},native={recapID=4,rows={}}}
+for i=1,12 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
+U:ShowLast();local unknownGroup
+for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
+check(unknownGroup,'Unknown-event density fixture lost its summary')
+tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tooltipLines,' ')
+check(unknownCopy:find(' events · ',1,true)and not unknownCopy:find(' hits · ',1,true),'Unknown event kinds became damage hits')
+page=copyPage;U:Preview()
 local oldJournal;local mapped
 for _,b in ipairs(hits())do if b.group.spellID==1285017 then mapped=b;break end end
 check(mapped,'Coiled preview mapping missing');oldJournal=mapped:GetScript('OnClick')
