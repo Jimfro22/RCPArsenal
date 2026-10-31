@@ -11,9 +11,9 @@ end
 local function OpenAllowed()
     return Read(InCombatLockdown)==false
 end
-function R:BuildShareText(page)
-    if not page or page~=self:GetPage()then return nil,"No recorded personal recap"end
-    local text="RCP personal recap: partial capture."
+function R:BuildShareText(page,preview)
+    if type(page)~="table"or(preview~=true and page~=self:GetPage())then return nil,"No recorded personal recap"end
+    local text=preview==true and"RCP Preview report: fictional sample data."or"RCP personal recap: partial capture."
     if page.native then
         local fatal
         for _,row in ipairs(page.native.rows)do if row.nativeIndex==1 then fatal=row end end
@@ -24,8 +24,8 @@ function R:BuildShareText(page)
     else text=text.." Current native records unavailable."end
     return text
 end
-function R:PrepareShare(channel,target,page)
-    local text,reason=self:BuildShareText(page)
+function R:PrepareShare(channel,target,page,preview)
+    local text,reason=self:BuildShareText(page,preview)
     if not text then return false,reason end
     if channel~="WHISPER"and channel~="SAY"and channel~="PARTY"and channel~="RAID"then return false,"Choose a supported channel"end
     if Read(C_ChatInfo and C_ChatInfo.InChatMessagingLockdown or InChatMessagingLockdown)~=false then return false,"Chat is restricted or its status is unknown"end

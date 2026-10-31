@@ -1,0 +1,132 @@
+{
+  "build": "12.1.5.70688",
+  "entries": [
+    {
+      "ID": "80183",
+      "TraitDefinitionID": "85186",
+      "MaxRanks": "1",
+      "NodeEntryType": "1",
+      "TraitSubTreeID": "0"
+    },
+    {
+      "ID": "115877",
+      "TraitDefinitionID": "120889",
+      "MaxRanks": "1",
+      "NodeEntryType": "1",
+      "TraitSubTreeID": "0"
+    }
+  ],
+  "nodeLinks": [
+    {
+      "ID": "77410",
+      "TraitNodeID": "62124",
+      "TraitNodeEntryID": "80183",
+      "_Index": "100"
+    },
+    {
+      "ID": "113289",
+      "TraitNodeID": "93524",
+      "TraitNodeEntryID": "115877",
+      "_Index": "100"
+    }
+  ],
+  "nodes": [
+    {
+      "ID": "62124",
+      "TraitTreeID": "658",
+      "PosX": "5100",
+      "PosY": "3300",
+      "Type": "0",
+      "Flags": "0",
+      "TraitSubTreeID": "0"
+    },
+    {
+      "ID": "93524",
+      "TraitTreeID": "658",
+      "PosX": "5100",
+      "PosY": "4500",
+      "Type": "0",
+      "Flags": "0",
+      "TraitSubTreeID": "0"
+    }
+  ],
+  "conditionLinks": [],
+  "conditions": [],
+  "treeLoadouts": [
+    {
+      "ID": "930",
+      "TraitTreeID": "658",
+      "ChrSpecializationID": "64"
+    },
+    {
+      "ID": "931",
+      "TraitTreeID": "658",
+      "ChrSpecializationID": "63"
+    },
+    {
+      "ID": "991",
+      "TraitTreeID": "658",
+      "ChrSpecializationID": "62"
+    }
+  ],
+  "nodeGroups": [
+    {
+      "ID": "256665",
+      "TraitNodeGroupID": "7139",
+      "TraitNodeID": "62124",
+      "_Index": "85"
+    },
+    {
+      "ID": "256690",
+      "TraitNodeGroupID": "7139",
+      "TraitNodeID": "93524",
+      "_Index": "110"
+    },
+    {
+      "ID": "256715",
+      "TraitNodeGroupID": "7144",
+      "TraitNodeID": "93524",
+      "_Index": "45"
+    }
+  ],
+  "directGroupConditions": [
+    {
+      "ID": "18031",
+      "CondType": "0",
+      "TraitTreeID": "658",
+      "GrantedRanks": "0",
+      "QuestID": "0",
+      "AchievementID": "0",
+      "SpecSetID": "0",
+      "TraitNodeGroupID": "7139",
+      "TraitNodeID": "0",
+      "TraitNodeEntryID": "0",
+      "TraitCurrencyID": "2801",
+      "SpentAmountRequired": "8",
+      "Flags": "1",
+      "RequiredLevel": "0",
+      "FreeSharedStringID": "0",
+      "SpendMoreSharedStringID": "911",
+      "TraitCondAccountElementID": "0"
+    },
+    {
+      "ID": "18034",
+      "CondType": "0",
+      "TraitTreeID": "658",
+      "GrantedRanks": "0",
+      "QuestID": "0",
+      "AchievementID": "0",
+      "SpecSetID": "0",
+      "TraitNodeGroupID": "7139",
+      "TraitNodeID": "0",
+      "TraitNodeEntryID": "0",
+      "TraitCurrencyID": "2801",
+      "SpentAmountRequired": "20",
+      "Flags": "1",
+      "RequiredLevel": "0",
+      "FreeSharedStringID": "0",
+      "SpendMoreSharedStringID": "911",
+      "TraitCondAccountElementID": "0"
+    }
+  ]
+}

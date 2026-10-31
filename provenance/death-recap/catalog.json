@@ -1,6 +1,6 @@
 {
   "module": "RA.DeathRecapCatalog",
-  "revision": "2026-10-30.1",
+  "revision": "2026-10-31.1",
   "build": "12.1.5.70575",
   "nativeUIPin": "15881d522c44cd106d3d8660106ec9f9d2f44167",
   "clientExtractPin": "710c2408bfd3ae4df71b8cd55cdf01f63fd6c926",
@@ -10,8 +10,8 @@
     "rosterComplete": true,
     "rosterCount": 40,
     "classCount": 13,
-    "entryCount": 86,
-    "verifiedEntryCount": 68,
+    "entryCount": 88,
+    "verifiedEntryCount": 70,
     "disabledEntryCount": 18,
     "exhaustive": false,
     "unlistedMeaning": "not_covered; never infer no defensives",
@@ -389,10 +389,12 @@
         ],
         "minor": [
           "mage_prismatic_barrier",
-          "mage_alter_time"
+          "mage_alter_time",
+          "mage_mirror_image",
+          "mage_greater_invisibility"
         ],
         "disabledCandidates": [],
-        "verifiedUniqueSpellCount": 4,
+        "verifiedUniqueSpellCount": 6,
         "coverage": "audited_bounded_pve_subset; not_exhaustive_all_talents_items_or_pvp",
         "unlistedMeaning": "not_covered; never infer none"
       },
@@ -406,10 +408,12 @@
         ],
         "minor": [
           "mage_blazing_barrier",
-          "mage_alter_time"
+          "mage_alter_time",
+          "mage_mirror_image",
+          "mage_greater_invisibility"
         ],
         "disabledCandidates": [],
-        "verifiedUniqueSpellCount": 4,
+        "verifiedUniqueSpellCount": 6,
         "coverage": "audited_bounded_pve_subset; not_exhaustive_all_talents_items_or_pvp",
         "unlistedMeaning": "not_covered; never infer none"
       },
@@ -423,10 +427,12 @@
         ],
         "minor": [
           "mage_ice_barrier",
-          "mage_alter_time"
+          "mage_alter_time",
+          "mage_mirror_image",
+          "mage_greater_invisibility"
         ],
         "disabledCandidates": [],
-        "verifiedUniqueSpellCount": 4,
+        "verifiedUniqueSpellCount": 6,
         "coverage": "audited_bounded_pve_subset; not_exhaustive_all_talents_items_or_pvp",
         "unlistedMeaning": "not_covered; never infer none"
       },
@@ -8250,6 +8256,125 @@
         "passivePrerequisiteTalentsAreNotActivationButtons": true
       },
       "auditSource": "agents/ranged-rogue/defensive-catalog.json#evoker_time_dilation"
+    },
+    {
+      "key": "mage_mirror_image",
+      "spellID": 55342,
+      "name": "Mirror Image",
+      "category": "minor",
+      "class": "MAGE",
+      "specs": [
+        62,
+        63,
+        64
+      ],
+      "knownSpellIDs": [
+        55342
+      ],
+      "verified": true,
+      "requiredTalentSpellIDs": [],
+      "note": "Learned active player activation only. Identity and Mage tree eligibility verified in12.1.5.70688. No fixed damage reduction, duration, immunity or survival judgment is established.",
+      "verificationScope": "current_identity_and_catalog_eligibility_only; runtime_facts_independent",
+      "verificationBuild": "12.1.5.70688",
+      "runtimeIdentity": {
+        "requiredActivationSpellIDs": [
+          55342
+        ],
+        "allActivationIDsRequired": true,
+        "requiredTalentSpellIDs": [],
+        "allTalentPrerequisitesRequired": true,
+        "activationMustBeNonPassive": true,
+        "resolveCurrentOverride": true,
+        "unknownOrUnsupportedGate": "exclude_from_confirmed_available; preserve_coverage_unknown",
+        "passivePrerequisiteTalentsAreNotActivationButtons": true
+      },
+      "eligibility": {
+        "baseline_or_talent": "talent",
+        "known_required": true,
+        "runtime_active_button_check_required": true,
+        "cooldown_readiness_implies_usability": false,
+        "overrides": []
+      },
+      "evidence": [
+        "alpha32-mage-eligibility.json",
+        "https://wago.tools/db2/TraitDefinition/csv?build=12.1.5.70688&locale=enUS",
+        "https://wago.tools/db2/TraitNodeEntry/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitNode/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688"
+      ],
+      "traitEvidence": {
+        "definitionID": 85186,
+        "entryID": 80183,
+        "nodeID": 62124,
+        "treeID": 658,
+        "arcaneLoadoutID": 991
+      },
+      "classificationIsProductConvention": true
+    },
+    {
+      "key": "mage_greater_invisibility",
+      "spellID": 110959,
+      "name": "Greater Invisibility",
+      "category": "minor",
+      "class": "MAGE",
+      "specs": [
+        62,
+        63,
+        64
+      ],
+      "knownSpellIDs": [
+        110959
+      ],
+      "verified": true,
+      "requiredTalentSpellIDs": [],
+      "note": "Learned active player activation only. Identity and Mage tree eligibility verified in12.1.5.70688. No fixed damage reduction, duration, immunity or survival judgment is established. Greater Invisibility110960 is a triggered effect, not a second activation.",
+      "verificationScope": "current_identity_and_catalog_eligibility_only; runtime_facts_independent",
+      "verificationBuild": "12.1.5.70688",
+      "runtimeIdentity": {
+        "requiredActivationSpellIDs": [
+          110959
+        ],
+        "allActivationIDsRequired": true,
+        "requiredTalentSpellIDs": [],
+        "allTalentPrerequisitesRequired": true,
+        "activationMustBeNonPassive": true,
+        "resolveCurrentOverride": true,
+        "unknownOrUnsupportedGate": "exclude_from_confirmed_available; preserve_coverage_unknown",
+        "passivePrerequisiteTalentsAreNotActivationButtons": true
+      },
+      "eligibility": {
+        "baseline_or_talent": "talent",
+        "known_required": true,
+        "runtime_active_button_check_required": true,
+        "cooldown_readiness_implies_usability": false,
+        "overrides": [
+          {
+            "spell_id": 110959,
+            "replaces_spell_id": 66
+          }
+        ]
+      },
+      "evidence": [
+        "alpha32-mage-eligibility.json",
+        "https://wago.tools/db2/TraitDefinition/csv?build=12.1.5.70688&locale=enUS",
+        "https://wago.tools/db2/TraitNodeEntry/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitNode/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688"
+      ],
+      "traitEvidence": {
+        "definitionID": 120889,
+        "entryID": 115877,
+        "nodeID": 93524,
+        "treeID": 658,
+        "arcaneLoadoutID": 991
+      },
+      "classificationIsProductConvention": true
     }
-  ]
+  ],
+  "supplementalIdentityAudit": {
+    "build": "12.1.5.70688",
+    "nativeUIPin": "d07eb00237d8891f153215db98a5df880a26cfe5",
+    "scope": "Mirror Image and Greater Invisibility learned activation identity and Mage tree eligibility only; original catalog evidence pins preserved",
+    "evidenceFile": "alpha32-mage-eligibility.json"
+  }
 }

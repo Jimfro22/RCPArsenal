@@ -20,7 +20,13 @@ function GameTooltip:SetSpellByID(id)tooltipSpell=id;tooltipItem=nil;self.native
 function GameTooltip:SetItemByID(id)tooltipItem=id;tooltipSpell=nil;self.nativeDescription='Native item description '..id end
 function GameTooltip:SetOwner(owner,mode)self.owner,self.anchorMode=owner,mode end
 function GameTooltip:GetOwner()return self.owner end
-function GameTooltip:AddLine(line)tooltipLines[#tooltipLines+1]=line end
+function GameTooltip:AddLine()error('Recap facts appended to native tooltip')end
+local priorVisualText=RA.SetVisualText
+function RA:SetVisualText(region,value)
+ local popup=named.RCPArsenalDeathRecap
+ if popup and popup.tooltipRecap and region.parent==popup.tooltipRecap then tooltipLines[#tooltipLines+1]=value end
+ return priorVisualText(self,region,value)
+end
 UISpecialFrames={}
 local R,U=RA.DeathRecap,RA.DeathRecapUI
 local groupCalls=0;local originalGroup=RA.DeathLogModel.Group;RA.DeathLogModel.Group=function(self,...)groupCalls=groupCalls+1;return originalGroup(self,...)end
@@ -52,7 +58,7 @@ local function hover(index)
 end
 check(UISpecialFrames[1]=='RCPArsenalDeathRecap'and popup:GetScript('OnHide'),'Escape/nativehide cleanup missing')
 check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=440,'Composition lost Death Log hierarchy')
-check(popup.shelf.text=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
+check(popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Initial fatal health selection mismatch')
 check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated skull art')
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
@@ -64,7 +70,7 @@ for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter'
 end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
 local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
-tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Selected 1/2',1,true),'Group moment not explicit')
+tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 hits',1,true),'Group moment not explicit')
 grouped:Fire('OnMouseWheel',-1);check(popup.selected.nativeIndex==3 and popup.healthPanel.selectedHP==80000,'Wheel did not select exact constituent HP')
 check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
 local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==3,'Journal click also cycled events')
@@ -80,20 +86,20 @@ local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
 for i=1,50 do hover(2);hover(3)end
 check(#objects==beforeFrames and #timers==beforeTimers and groupCalls==beforeGroups,'Hover allocated or regrouped')
 local fatal=page.native.rows[4];fatal.nativeOffset=-1;page.native.rows[5]={nativeIndex=5,nativeOffset=0,spellID=126,kind='unknown'}
-U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40 · death notice','Latest native time mislabeled as Death or clocks conflated')
+U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40','Latest native time mislabeled as Death or clocks conflated')
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
 U:OpenBell();local enable=button('ENABLE');check(enable,'Live reminder confirmation missing')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
-check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
-check(popup.healthPanel.selectedHP==128000 and popup.percent.text=='32%'and popup.absorb:IsShown()and popup.healthPanel.healAbsorb==80000,'Example default health/debt not coherent')
-check(popup.shelf.text=='Cooldowns · −2.30s','Example shelf not tied to exact selected moment')
+check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context:IsShown(),'Preview context/label incorrect')
+check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.absorb:IsShown(),'Preview did not default to recorded death')
+check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
 check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
-U:OpenShare();check(not button('OPEN CHAT'),'Preview opened live composer')
-popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeOffset==-4.2 and popup.healthPanel.selectedHP==336000 and popup.shelf.text=='Cooldowns · −4.20s','Example heal failed synchronized explicit snapshot')
+U:OpenShare();check(button('OPEN CHAT'),'Private Preview report action missing')
+popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeOffset==-4.2 and popup.healthPanel.selectedHP==336000 and popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example heal failed synchronized explicit snapshot')
 for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeOffset==-3.5 or popup.selected.nativeOffset==-1.8,'Example defensive failed to select its actual time');break end end
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
 local healerArtwork=0
@@ -115,7 +121,12 @@ check(sever.selectedBorder:IsShown()and not sever.countBadge:IsShown(),'Singleto
 local groupedPreview
 for _,b in ipairs(hits())do if #b.group.rows>1 then groupedPreview=b;break end end
 check(groupedPreview.countBadge:IsShown()and groupedPreview.countBadge.width>=24 and groupedPreview.countText.fontSize==11,'Count backing/legibility missing')
-local absorbed=hover(5);check(absorbed.absorbBadge:IsShown()and #absorbed.absorbBadge.lines==5 and absorbed.absorbBadge.recordedAmount==20000,'Positive recorded absorption lacks backed shield')
+local absorbed=hover(5);check(not absorbed.absorbBadge,'Damage icon retained a shield badge')
+local blueCount=0
+for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()and marker.entry.kind=='absorbed'then
+ blueCount=blueCount+1;check(marker.entry.amount==20000 and marker.label.text=='20k absorbed'and marker.timeX==48+1.4/5*784,'Absorbed marker changed amount/time')
+end end
+check(blueCount==1,'Recorded absorption was omitted or counted twice')
 local function cross(x,first,last,r)return x>r.left-2 and x<r.right+2 and first<r.bottom+2 and last>r.top-2 end
 for _,b in ipairs(hits())do for _,stem in ipairs(b.stems or{})do if stem:IsShown()then
  local x,y=stem.points[1][4],-stem.points[1][5]
@@ -126,17 +137,17 @@ for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then
  for _,r in ipairs(popup.textExclusions)do check(not cross(x,y,y+t.height,r),'Selected dash crosses text')end
 end end
 local supportStems=0
-for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then check(obj.lines[3]and obj.lines[3]:IsShown(),'Aligned activation stem missing');supportStems=supportStems+1 end end
-check(supportStems==2 and #popup.healStems==2,'Preview support connections missing')
+for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then check(obj.activationStems and #obj.activationStems>0,'Aligned activation stem missing');supportStems=supportStems+1 end end
+check(supportStems==2 and #popup.healTargets==2,'Preview support connections missing')
 tooltipLines={};hover(8);local single=table.concat(tooltipLines,' ')
 check(tooltipSpell==1299684 and GameTooltip.nativeDescription=='Native spell description 1299684','Native spell tooltip discarded')
-check(single:find('51k damage · −2.30s',1,true)and not single:find('1/1',1,true)and not single:find('combined',1,true)and not single:find('fictional',1,true),'Singleton tooltip retained boilerplate')
+check(single:find('51k damage',1,true)and not single:find('−2.30s',1,true)and not single:find('1/1',1,true)and not single:find('combined',1,true)and not single:find('fictional',1,true),'Singleton tooltip retained boilerplate')
 tooltipLines={};popup.healTargets[1]:Fire('OnEnter');local healHelp=table.concat(tooltipLines,' ')
-check(tooltipSpell==2061 and healHelp:find('+9k healing · −4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
+check(tooltipSpell==2061 and healHelp:find('+9k healing',1,true)and not healHelp:find('−4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
 check(popup.hp.text=='336000 / 400000'and not popup.absorb:IsShown(),'Leaving debt moved/erased health text or retained debt')
 local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
-check(not popup.bell:IsEnabled()and not popup.share:IsEnabled()and popup.bell.alpha>=.7,'Preview actions falsely enabled or illegible')
-tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Unavailable in Preview',1,true),'Disabled action lacks concise reason')
+check(popup.bell:IsEnabled()and popup.share:IsEnabled()and popup.bell.alpha==1,'Private Preview actions unavailable')
+tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('fictional sample report',1,true),'Preview report help lost provenance')
 -- Exercise the actual placement callback with measured mock UI rectangles.
 local rects={};local oldLeft,oldBottom,oldScale=methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale
 function methods:GetLeft()return rects[self]and rects[self].left or oldLeft(self)end
@@ -160,7 +171,7 @@ for _,parentScale in ipairs({.8,1,1.25})do for _,panelScale in ipairs({.64,.8,1}
   if r.mode=='outside'then check(area(r,panel)==0,'Claimed outside tooltip overlaps recap')end
   local target={left=px+(b.group.iconX-23)*panelScale,right=px+(b.group.iconX+23)*panelScale,bottom=py+ph-(b.damageY+46)*panelScale,top=py+ph-b.damageY*panelScale}
   check(area(r,target)==0,'Tooltip covers hovered event despite room')
-  local point=GameTooltip.points[#GameTooltip.points];check(math.abs(point[4]*.9-r.left)<.001 and math.abs(point[5]*.9-r.bottom)<.001,'Tooltip offsets mixed effective scales')
+  local point=GameTooltip.points[#GameTooltip.points];check(math.abs(point[4]*.9-r.left)<.001 and math.abs(point[5]*.9-(r.top-GameTooltip.height*.9))<.001,'Tooltip offsets mixed effective scales')
   GameTooltip:SetSize(320,300);GameTooltip:Fire('OnSizeChanged');check(math.abs(popup.tooltipPlacement.right-popup.tooltipPlacement.left-288)<.001,'Native tooltip size change left stale placement')
   b:Fire('OnLeave');check(not GameTooltip:IsShown()and popup.tooltipPlacement==nil,'Tooltip ownership/placement survived leave')
   cases=cases+1
@@ -196,8 +207,34 @@ U:ShowLast();local unknownGroup
 for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
 check(unknownGroup,'Unknown-event density fixture lost its summary')
 tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tooltipLines,' ')
-check(unknownCopy:find(' events · ',1,true)and not unknownCopy:find(' hits · ',1,true),'Unknown event kinds became damage hits')
+check(unknownCopy:find(' events',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits')
 page=copyPage;U:Preview()
+-- Alpha32 companion tooltip, fixed Preview endpoint and actual reminder switch.
+U:Preview();check(popup.selected.nativeIndex==1 and not popup.context:IsShown(),'Header/default death changed')
+local shelfPositions={};for _,b in ipairs(shelves())do shelfPositions[b]={b.points[1][4],b.points[1][5],b.icon.rgb[1]}end
+local h=popup.healTargets[1];h:Fire('OnEnter')
+for b,pos in pairs(shelfPositions)do check(b.points[1][4]==pos[1]and b.points[1][5]==pos[2]and b.icon.rgb[1]==pos[3],'Hover reordered/changed death shelf')end
+local recap=popup.tooltipRecap
+check(recap:IsShown()and recap.width>=220 and recap.width<=360 and recap.lines[1].fontSize==13,'Recap companion sizing/summary incorrect')
+check(recap.lines[1].text=='+9k healing'and recap.lines[2].text:find('Healer:',1,true),'Companion lost healing recap facts')
+GameTooltip:Fire('OnTooltipCleared');check(recap:IsShown(),'Same-owner native refresh discarded recap facts')
+h:Fire('OnLeave');check(not recap:IsShown(),'Companion survived owned leave')
+local previousReminder=db.personalTools.consumableReminder
+popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder~=previousReminder and popup.reminder.enabledSetting==db.personalTools.consumableReminder,'Reminder switch did not change/synchronize actual setting')
+RA.PersonalTools:SetOption('consumableReminder',previousReminder);check(popup.reminder.enabledSetting==previousReminder,'External setting did not synchronize switch')
+for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()then for _,stem in ipairs(marker.stems)do if stem:IsShown()then
+ local x,y=stem.points[1][4],-stem.points[1][5];for _,r in ipairs(popup.textExclusions)do check(not cross(x,y,y+stem.height,r),'Support connector crossed a label')end
+end end end end
+U:ShowLast();for _,marker in ipairs(popup.supportMarkers)do check(not marker:IsShown(),'Preview support leaked into real fixture');for _,stem in ipairs(marker.stems)do check(not stem:IsShown(),'Old support stem survived fewer markers')end end
+U:Preview()
+-- A killing-blow absorption stays at its timestamp below a separate timer slot.
+local savedFatalAbsorb=page.native.rows[4].absorbed;page.native.rows[4].absorbed=7000;U:ShowLast()
+local endpointMarker
+for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()and marker.entry.row.nativeIndex==1 then endpointMarker=marker end end
+check(endpointMarker and endpointMarker.timeX==popup.deathX and popup.fightSlotExtra==20,'Endpoint absorption lost timestamp or timer slot')
+local markerBottom=-endpointMarker.points[1][5]+10;local fightTop=-popup.fight.points[1][5]-14
+check(fightTop>=markerBottom+4,'Killing-blow absorption overlaps fight timer')
+page.native.rows[4].absorbed=savedFatalAbsorb;U:Preview()
 local oldJournal;local mapped
 for _,b in ipairs(hits())do if b.group.spellID==1285017 then mapped=b;break end end
 check(mapped,'Coiled preview mapping missing');oldJournal=mapped:GetScript('OnClick')
@@ -224,7 +261,7 @@ page={id=11,diedAt=100,sample=true,origin='example',maxHealth=400000,healthPoint
  native={recapID=2,recapMaxHealth=1000,rows={{nativeIndex=2,nativeOffset=-1,spellID=123,kind='damage',amount=10,recordedHP=750,exampleHP=99999},{nativeIndex=3,nativeOffset=-.7,spellID=124,kind='damage',amount=10},{nativeIndex=4,nativeOffset=-.5,spellID=125,kind='damage',amount=10,recordedHP=1200},{nativeIndex=1,nativeOffset=0,spellID=126,kind='damage',amount=10,recordedHP=0}}},
  casts={},knownEntries={{spellID=235450,name='Known without observation',category='minor'}}}
 U:ShowLast();oldJournal();check(opens==1,'Stale preview callback navigated')
-check(not popup.coverage:IsShown()and not popup.absorb:IsShown()and popup.shelf.text=='Last recorded check','Real page adopted sample fields')
+check(not popup.coverage:IsShown()and not popup.absorb:IsShown()and popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check','Real page adopted sample fields')
 for _,b in ipairs(popup.healTargets)do check(not b:IsVisible(),'Synthetic heals leaked into real page')end
 for _,obj in ipairs(objects)do if obj.width==30 and obj.parent==popup and obj.icon then check(not obj:IsVisible(),'Synthetic defensive interval/use leaked')end end
 hover(2);check(popup.healthPanel.selectedHP==750 and popup.percent.text=='75%','Native selected raw health wrong')
@@ -271,17 +308,30 @@ U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.point
 page.lastAlive.spells=savedSpells
 U:ShowLast();U:OpenShare();local open=button('OPEN CHAT');check(open,'Live share absent')
 local composerCalls=0;C_ChatInfo.InChatMessagingLockdown=function()return false end;C_SocialRestrictions={CanSendChat=function()return true end}
-local box={SetAttribute=function(self,k,v)self[k]=v end};ChatFrame_OpenChat=function()composerCalls=composerCalls+1 end;ChatEdit_GetActiveWindow=function()return box end;ChatEdit_UpdateHeader=function()end
+local composedText
+local box={SetAttribute=function(self,k,v)self[k]=v end};ChatFrame_OpenChat=function(text)composerCalls=composerCalls+1;composedText=text end;ChatEdit_GetActiveWindow=function()return box end;ChatEdit_UpdateHeader=function()end
 U:Preview();open:Fire('OnClick');check(composerCalls==0,'Stale composer callback acted in Preview')
+U:OpenShare();local previewForm=open.parent;local previewPage=previewForm.page
+check(previewForm.copy:GetText():find('fictional sample data',1,true),'Preview copy report lost provenance')
+check(not R:BuildShareText(previewPage),'Unmarked sample accepted as recorded recap')
+button('SAY'):Fire('OnClick');open:Fire('OnClick')
+check(composerCalls==1 and box.chatType=='SAY'and composedText:find('RCP Preview report: fictional sample data.',1,true),'Preview did not prepare labelled sample in native composer')
+U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Preview did not enable actual reminder')
+for k,v in pairs(prefs)do if k~='consumableReminder'then check(db.personalTools[k]==v,'Preview toggle changed child preferences')end end
+U:OpenBell();button('DISABLE'):Fire('OnClick');check(not db.personalTools.consumableReminder,'Preview did not disable actual reminder')
+RA.PersonalTools:SetOption('consumableReminder',true);U:OpenBell();check(button('DISABLE'),'Reminder action failed to follow external setting');button('DISABLE'):Fire('OnClick')
+U:OpenBell();local oldEnable=button('ENABLE');U:Preview();oldEnable:Fire('OnClick');check(not db.personalTools.consumableReminder,'Stale Preview reminder action affected replacement page')
+local sampleCalls=composerCalls
 U:ShowLast();U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Explicit live reminder confirmation failed')
 RA.PersonalTools:SetOption('consumableReminder',false)
 db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check(popup:IsShown(),'Auto popup missing')
 popup:Hide();check(not popup.selected,'Native hide did not clear private selected context');RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')
 U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','life');check(not popup:IsShown()and page==beforePage,'Life event discarded history or kept popup')
 db.deathRecap.autoOpen=false;U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','death');check(not popup:IsShown(),'AutoopenOFF retained popup')
-local ok=R:PrepareShare('WHISPER','',page);check(not ok and composerCalls==0,'Blank recipient accepted')
-ok=R:PrepareShare('WHISPER','Friend-Realm',page);check(ok and composerCalls==1 and box.tellTarget=='Friend-Realm','Native composer target wrong')
-C_ChatInfo.InChatMessagingLockdown=function()return true end;check(not R:PrepareShare('SAY',nil,page)and composerCalls==1,'Chat lockdown bypassed')
+local ok=R:PrepareShare('WHISPER','',page);check(not ok and composerCalls==sampleCalls,'Blank recipient accepted')
+ok=R:PrepareShare('WHISPER','Friend-Realm',page);check(ok and composerCalls==sampleCalls+1 and box.tellTarget=='Friend-Realm','Native composer target wrong')
+C_ChatInfo.InChatMessagingLockdown=function()return true end
+check(not R:PrepareShare('SAY',nil,page)and not R:PrepareShare('SAY',nil,previewPage,true)and composerCalls==sampleCalls+1,'Chat lockdown bypassed')
 check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
 cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')
 ]=]
