@@ -51,7 +51,7 @@ function GameTooltip:AddLine()error('Recap facts appended to native tooltip')end
 local priorVisualText=RA.SetVisualText
 function RA:SetVisualText(region,value)
  local popup=named.RCPArsenalDeathRecap
- if popup and popup.tooltipRecap and region.parent==popup.tooltipRecap then tooltipLines[#tooltipLines+1]=value end
+ if popup and popup.tooltipRecap and(region.parent==popup.tooltipRecap or region.parent==popup.tooltipRecap.body)then tooltipLines[#tooltipLines+1]=value end
  return priorVisualText(self,region,value)
 end
 UISpecialFrames={}
@@ -87,6 +87,7 @@ check(UISpecialFrames[1]=='RCPArsenalDeathRecap'and popup:GetScript('OnHide'),'E
 check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=428,'Composition lost Death Log hierarchy')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Initial fatal health selection mismatch')
+check(popup.pointPercent.points[1][1]=='RIGHT'and popup.pointPercent.points[1][4]==-10,'Fatal percentage collides with tombstone')
 check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated skull art')
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
@@ -98,16 +99,18 @@ end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
 local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
 tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 hits',1,true),'Group moment not explicit')
-grouped:Fire('OnMouseWheel',-1);check(popup.selected.nativeIndex==3 and popup.healthPanel.selectedHP==80000,'Wheel did not select exact constituent HP')
+local groupFocusX=popup.guide.points[1][4]
+grouped:Fire('OnMouseWheel',-1);check(grouped.group.rows[grouped.member].nativeIndex==3 and popup.selected.nativeIndex==2 and popup.healthPanel.selectedHP==90000 and popup.guide.points[1][4]==groupFocusX and groupFocusX==grouped.group.iconX,'Tooltip detail moved stable group focus/health')
+check(not popup.healthPoint:IsShown(),'Packed/midpoint group invented an aligned HP sample')
 check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
-local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==3,'Journal click also cycled events')
-hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==3,'Redraw forgot group constituent')
-local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==3,'Stale render action changed selection')
+local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==2,'Journal click also moved group focus')
+hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Redraw forgot group focus/detail')
+local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==2,'Stale render action changed selection')
 -- Scrub is bounded pointer input while hovering only; stationary pointer cannot
 -- undo wheel choice. No re-grouping or periodic capture is attached to it.
 local x=300+48+(.5/5)*784;GetCursorPosition=function()return x,400 end
 grouped.span:Fire('OnEnter');check(popup.selected.nativeIndex==2,'Span scrub missed exact nearest event')
-grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==3,'Stationary scrub undid wheel selection')
+grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Stationary scrub changed focus or undid detail wheel')
 x=x+32;grouped.span:Fire('OnUpdate');grouped.span:Fire('OnLeave');check(grouped.span:GetScript('OnUpdate')==nil,'Pointer tracker survived leave')
 local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
 for i=1,50 do hover(2);hover(3)end
@@ -119,15 +122,15 @@ fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
 U:OpenBell();local enable=button('ENABLE');check(enable,'Live reminder confirmation missing')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
-check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context:IsShown(),'Preview context/label incorrect')
+check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and popup.context:IsShown()and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.absorb:IsShown(),'Preview did not default to recorded death')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
 check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
-U:OpenShare();check(button('OPEN CHAT'),'Private Preview report action missing');button('CLOSE'):Fire('OnClick')
-popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeOffset==-4.2 and popup.healthPanel.selectedHP==336000 and popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example heal failed synchronized explicit snapshot')
-for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeOffset==-3.5 or popup.selected.nativeOffset==-1.8,'Example defensive failed to select its actual time');break end end
+U:OpenShare();check(button('SEND WHISPER'),'Private Preview report action missing');button('CLOSE'):Fire('OnClick')
+popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.shelfSource=='Preview death snapshot','Healing hover changed damage focus')
+for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeIndex==1,'Defensive hover changed damage focus');break end end
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
 local healerArtwork=0
 for _,b in ipairs(popup.healTargets)do check(not b.icon and b.label.text:sub(1,1)=='+','Healing regained large artwork')end
@@ -142,7 +145,7 @@ for _,line in ipairs(popup.hatches)do if line:IsShown()then
 end end
 check(stripes>1 and stripes<=40,'No bounded hatch geometry')
 check(popup.healthPoint.width==12 and #popup.healthPoint.discs==3 and popup.pointPercent.text=='32%','Selected ring/percentage missing')
-local dashed=0;for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then dashed=dashed+1;check(t.width==1 and t.height<=4,'Guide became solid')end end
+local dashed=0;for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then dashed=dashed+1;check(t.width==1 and t.height<=5,'Guide became solid')end end
 check(dashed>1 and dashed<=96,'Guide dashes not bounded')
 check(sever.selectedBorder:IsShown()and not sever.countBadge:IsShown(),'Singleton selected/count treatment wrong')
 local groupedPreview
@@ -171,7 +174,7 @@ check(tooltipSpell==1299684 and GameTooltip.nativeDescription=='Native spell des
 check(single:find('51k damage',1,true)and not single:find('−2.30s',1,true)and not single:find('1/1',1,true)and not single:find('combined',1,true)and not single:find('fictional',1,true),'Singleton tooltip retained boilerplate')
 tooltipLines={};popup.healTargets[1]:Fire('OnEnter');local healHelp=table.concat(tooltipLines,' ')
 check(tooltipSpell==2061 and healHelp:find('+9k healing',1,true)and not healHelp:find('−4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
-check(popup.hp.text=='336000 / 400000'and not popup.absorb:IsShown(),'Leaving debt moved/erased health text or retained debt')
+check(popup.hp.text=='128000 / 400000'and popup.absorb:IsShown(),'Heal hover changed selected damage health/debt')
 local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
 check(popup.bell:IsEnabled()and popup.share:IsEnabled()and popup.bell.alpha==1,'Private Preview actions unavailable')
 tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Open this report in chat',1,true),'Report help is unclear')
@@ -237,7 +240,7 @@ tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tool
 check(unknownCopy:find(' events',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits')
 page=copyPage;U:Preview()
 -- Alpha32 companion tooltip, fixed Preview endpoint and actual reminder switch.
-U:Preview();check(popup.selected.nativeIndex==1 and not popup.context:IsShown(),'Header/default death changed')
+U:Preview();check(popup.selected.nativeIndex==1 and popup.context:IsShown()and popup.health.text=='Health','Header/default death changed')
 local shelfPositions={};for _,b in ipairs(shelves())do shelfPositions[b]={b.points[1][4],b.points[1][5],b.icon.rgb[1]}end
 local h=popup.healTargets[1];h:Fire('OnEnter')
 for b,pos in pairs(shelfPositions)do check(b.points[1][4]==pos[1]and b.points[1][5]==pos[2]and b.icon.rgb[1]==pos[3],'Hover reordered/changed death shelf')end
@@ -273,8 +276,12 @@ end
 page.native.rows[1].sourceName=oldSourceName;U:Preview()
 check(popup.height==428 and popup.supportExtra==0 and popup.fightSlotExtra==0,'Normal Preview retained artificial shelf/support/timer height')
 local expectedSlots={590,628,666,704,742,786,824};local slotCount=0
-for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-66,'Seven fixed CD slots did not stay on one row')end
+for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-68,'Seven fixed CD slots did not stay on one row')end
 check(slotCount==7,'Preview roster lost a CD slot')
+check(popup.health.text=='Health'and popup.health.width==58 and popup.percent.justifyH=='RIGHT','Health label/percentage grid missing')
+check(popup.healthPanel.points[1][4]==162 and popup.healthPanel.width==324 and popup.hp.points[1][4]==162 and popup.absorbLabel.points[1][4]+popup.absorbLabel.width==486,'Health bar/value/debt edges disagree')
+check(popup.shelf.points[1][4]==550 and popup.shelf.width==28 and popup.shelfAge.points[1][4]==590,'CD label/check age detached from inventory')
+check(popup.tombstone.width==18 and popup.tombstone.height==20 and popup.tombstone.points[1][1]=='BOTTOM'and popup.tombstone.points[1][4]==846 and popup.tombstone.points[1][5]==-386,'Death marker intersects graph endpoint')
 popup.reminder:Fire('OnEnter');check(not GameTooltip:IsShown()and popup.tooltipRecap:IsShown()and popup.tooltipRecap.lines[1].text=='Consumable reminder','Non-spell help is not a single card')
 local toggledFrom=db.personalTools.consumableReminder
 popup.reminder:Fire('OnClick');check(popup.tooltipRecap.lines[2].text==(db.personalTools.consumableReminder and'On · Click to turn off.'or'Off · Click to turn on.'),'Visible reminder help did not follow the setting')
@@ -286,16 +293,31 @@ local function checkModal(form)
  end end
  for _,o in ipairs(objects)do if o~=form and under(o,form)and(o.kind=='Button'or o.kind=='EditBox')then check(o:GetFrameLevel()>form:GetFrameLevel(),'Modal control is below its background')end end
 end
-hover(8);U:OpenShare();local shareForm=button('OPEN CHAT').parent;checkModal(shareForm)
+hover(8);U:OpenShare();local shareForm=button('SEND WHISPER').parent;checkModal(shareForm)
 check(not GameTooltip:IsShown()and not popup.tooltipRecap:IsShown(),'Opening share retained old tooltip')
 check(not shareForm.copy.template and not shareForm.recipient.template and shareForm.copy.textInsets[1]==10,'Native default editbox chrome/insets remained')
-check(shareForm.copy:GetText():find('Fatal hit: Venomfang',1,true),'Death summary was confused with selected hit')
+local fullReport=shareForm.report
+check(#fullReport.entries==16 and fullReport.entries[16].kind=='death','Full Preview events/death missing')
+local expectedTimes={-4.8,-4.6,-4.4,-4.2,-3.6,-3.5,-3.15,-3,-2.8,-2.3,-1.8,-1.3,-1.1,-.9,0,0}
+for i,time in ipairs(expectedTimes)do check(fullReport.entries[i].time==time,'Preview report chronology changed')end
+local axeCount=0;for _,event in ipairs(fullReport.entries)do if event.line:find('Axegrinder',1,true)then axeCount=axeCount+1 end end
+check(axeCount==6 and fullReport.entries[15].line:find('45,000 damage; 19,000 overkill; fatal hit',1,true),'Report collapsed hits or confused inspected hit with fatal')
+check(fullReport.entries[5].line:find('20,000 absorbed',1,true)and fullReport.entries[4].line:find('9,000 healing',1,true),'Full report lost support facts')
+check(shareForm.width==600 and shareForm.height==396 and shareForm.reportScroll.clips and shareForm.scrollMaximum>0,'Full report lacks bounded scrolling viewport')
+check(not shareForm.copy:IsShown()and not shareForm.copy:HasFocus()and shareForm.channels.WHISPER.selected:IsShown(),'Readonly surface/default destination missing')
+check(not shareForm.send:IsEnabled()and shareForm.send.alpha==.45 and shareForm.status.text:find('recipient',1,true),'Blank Whisper looks ready to send')
+shareForm.recipient:SetText('Bad Name');shareForm.recipient:Fire('OnTextChanged',true);check(not shareForm.send:IsEnabled(),'Invalid Whisper recipient enabled send')
+shareForm.reportScroll:Fire('OnMouseWheel',-10000);check(shareForm.reportScroll:GetVerticalScroll()==shareForm.scrollMaximum,'Wheel cannot reach last report line')
+shareForm.scrollbar:SetValue(0);check(shareForm.scrollPosition==0,'Scrollbar cannot return to report start')
+button('SAY'):Fire('OnClick');check(shareForm.reportScroll.height==212 and not shareForm.recipient:IsShown()and shareForm.channels.SAY.selected:IsShown()and shareForm.send:IsEnabled()and shareForm.send.alpha==1,'Destination selection/reclaimed space/primary state missing')
+button('SELECT TEXT'):Fire('OnClick');check(shareForm.copy:IsShown()and shareForm.copy:GetText()==fullReport.text,'Selectable report differs from immutable preview')
+shareForm.copy:SetText('Changed report');shareForm.copy:Fire('OnTextChanged',true);check(shareForm.copy:GetText()==fullReport.text and shareForm.report==fullReport,'Copy field altered frozen report')
 local heldSelection=popup.selected;popup.healTargets[1]:Fire('OnEnter');hover(2);check(popup.selected==heldSelection and not popup.tooltipRecap:IsShown(),'Underlying chart reacted through modal')
 popup.actionShield:Fire('OnClick');check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Outside click retained modal/barrier')
 U:OpenBell();checkModal(button('ENABLE',true).parent);button('CANCEL'):Fire('OnClick');check(not popup.actionShield:IsShown(),'Reminder close retained input barrier')
 U:Preview();hover(8);check(popup.absorbLabel.text=='80k heal absorb remaining'and popup.absorbLabel:GetUnboundedStringWidth()<=popup.absorbLabel.width and popup.hp.text=='128000 / 400000','Debt noun/state or HP value lost')
 local coralRuns,greenRuns=0,0
-for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==3 and o.width<=16 then
+for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==2 and o.width>16 then
  if o.color[1]==1 and o.color[2]==.46 then coralRuns=coralRuns+1 end
  if o.color[1]==RA.Theme.Colors.success[1]and o.color[2]==RA.Theme.Colors.success[2]then greenRuns=greenRuns+1 end
 end end
@@ -357,10 +379,10 @@ U:ShowLast();local seen={}
 for _,b in ipairs(hits())do
  if b.group.last==b.group.first then check(not b.span:IsShown()and b.span:GetScript('OnEnter')==nil,'Equal-time group kept a colliding scrub hitbox')end
  if b.group.mixed then check(b.group.spellID==nil and not b.icon:IsShown(),'Mixed sum uses single-spell artwork')end
- for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[popup.selected.nativeIndex]=true end
+ for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[b.group.rows[b.member].nativeIndex]=true end
 end
 for i=1,64 do check(seen[i],'Dense group lost constituent '..i)end
-U:OpenShare();checkModal(button('OPEN CHAT').parent);button('CLOSE'):Fire('OnClick')
+U:OpenShare();checkModal(button('SEND WHISPER').parent);button('CLOSE'):Fire('OnClick')
 -- Three overlapping positive spans keep their true bracket intervals while
 -- ambiguous mouse frames are removed. Their distinct glyph/amount wheel paths
 -- still expose every constituent.
@@ -375,7 +397,7 @@ page.native.rows[#page.native.rows+1]={nativeIndex=1,nativeOffset=0,spellID=701,
 U:ShowLast();local disabled=0;local overlapSeen={}
 for _,b in ipairs(hits())do
  if b.group.count>1 and not b.scrubAvailable then disabled=disabled+1;check(not b.span:IsShown()and b.span:GetScript('OnMouseWheel')==nil,'Ambiguous span still intercepts neighbor')end
- for i=1,#b.group.rows do b.amountTarget:Fire('OnMouseWheel',-1);overlapSeen[popup.selected.nativeIndex]=true end
+ for i=1,#b.group.rows do b.amountTarget:Fire('OnMouseWheel',-1);overlapSeen[b.group.rows[b.member].nativeIndex]=true end
 end
 check(disabled>=2,'Overlapping positive-span component did not use fallback')
 for i=1,11 do check(overlapSeen[i],'Fallback lost constituent '..i)end
@@ -384,32 +406,39 @@ local savedSpells=page.lastAlive.spells;page.lastAlive.spells={}
 for i=1,12 do page.lastAlive.spells[i]={spellID=500+i,name='Shelf '..i,observedAt=99,cooldown='inactive',category='minor'}end
 U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.points[1][5]-popup.guide.height==popup.graphBase.points[1][5],'Wrapped shelf left guide crossing its icons')
 page.lastAlive.spells=savedSpells
-U:ShowLast();U:OpenShare();local open=button('OPEN CHAT');check(open,'Live share absent')
-local composerCalls=0;C_ChatInfo.InChatMessagingLockdown=function()return false end;C_SocialRestrictions={CanSendChat=function()return true end}
-local composedText
-local box={SetAttribute=function(self,k,v)self[k]=v end};ChatFrame_OpenChat=function(text)composerCalls=composerCalls+1;composedText=text end;ChatEdit_GetActiveWindow=function()return box end;ChatEdit_UpdateHeader=function()end
-U:Preview();open:Fire('OnClick');check(composerCalls==0,'Stale composer callback acted in Preview')
+U:ShowLast();U:OpenShare();local open=button('SEND WHISPER');check(open,'Live share absent')
+local chatCalls={};C_ChatInfo.InChatMessagingLockdown=function()return false end;C_SocialRestrictions={CanSendChat=function()return true end}
+C_ChatInfo.SendChatMessage=function(text,channel,_,target)chatCalls[#chatCalls+1]={text=text,channel=channel,target=target}end
+U:Preview();open:Fire('OnClick');check(#chatCalls==0,'Stale send callback acted in Preview')
 U:OpenShare();local previewForm=open.parent;local previewPage=previewForm.page
-check(previewForm.copy:GetText():find('fictional sample data',1,true),'Preview copy report lost provenance')
+check(previewForm.copy:GetText():find('fictional sample',1,true),'Preview copy report lost provenance')
 check(not R:BuildShareText(previewPage),'Unmarked sample accepted as recorded recap')
-button('SAY'):Fire('OnClick');open:Fire('OnClick')
-check(composerCalls==1 and box.chatType=='SAY'and composedText:find('RCP Preview report: fictional sample data.',1,true),'Preview did not prepare labelled sample in native composer')
+button('SAY'):Fire('OnClick');check(#chatCalls==0,'Selecting channel submitted chat')
+local beforeChatTimers=#timers;open:Fire('OnClick')
+check(#chatCalls==1 and chatCalls[1].channel=='SAY'and chatCalls[1].text:find('RCP Preview — fictional sample',1,true)and #timers==beforeChatTimers,'Preview SAY did not use explicit one-line click')
+check(button('SEND NEXT LINE')and button('CANCEL')and not previewForm.channels.WHISPER:IsEnabled(),'Posting state/control locks absent')
+open:Fire('OnClick');check(#chatCalls==2 and chatCalls[2].text==previewForm.messages[2],'Manual SAY did not preserve second line')
+button('CANCEL'):Fire('OnClick');check(previewForm:IsShown()and previewForm.jobStatus=='stopped'and previewForm.status.text:find('Stopped 2 / ',1,true),'Cancellation hid partial progress')
+open:Fire('OnClick');check(#chatCalls==2,'Stopped report restarted')
 U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Preview did not enable actual reminder')
 for k,v in pairs(prefs)do if k~='consumableReminder'then check(db.personalTools[k]==v,'Preview toggle changed child preferences')end end
 U:OpenBell();button('DISABLE'):Fire('OnClick');check(not db.personalTools.consumableReminder,'Preview did not disable actual reminder')
 RA.PersonalTools:SetOption('consumableReminder',true);U:OpenBell();check(button('DISABLE'),'Reminder action failed to follow external setting');button('DISABLE'):Fire('OnClick')
 U:OpenBell();local oldEnable=button('ENABLE');U:Preview();oldEnable:Fire('OnClick');check(not db.personalTools.consumableReminder,'Stale Preview reminder action affected replacement page')
-local sampleCalls=composerCalls
+local sampleCalls=#chatCalls
 U:ShowLast();U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Explicit live reminder confirmation failed')
 RA.PersonalTools:SetOption('consumableReminder',false)
 db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check(popup:IsShown(),'Auto popup missing')
 popup:Hide();check(not popup.selected,'Native hide did not clear private selected context');RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')
 U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','life');check(not popup:IsShown()and page==beforePage,'Life event discarded history or kept popup')
 db.deathRecap.autoOpen=false;U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','death');check(not popup:IsShown(),'AutoopenOFF retained popup')
-local ok=R:PrepareShare('WHISPER','',page);check(not ok and composerCalls==sampleCalls,'Blank recipient accepted')
-ok=R:PrepareShare('WHISPER','Friend-Realm',page);check(ok and composerCalls==sampleCalls+1 and box.tellTarget=='Friend-Realm','Native composer target wrong')
+U:ShowLast();U:OpenShare();local liveForm=open.parent;liveForm.recipient:SetText('');open:Fire('OnClick');check(#chatCalls==sampleCalls,'Blank recipient accepted')
+liveForm.recipient:SetText('Friend-Realm');liveForm.recipient:Fire('OnTextChanged',true);check(open:IsEnabled(),'Valid whisper recipient did not enable send');open:Fire('OnClick')
+check(#chatCalls==sampleCalls+1 and chatCalls[#chatCalls].target=='Friend-Realm'and liveForm.jobStatus=='posting','Explicit whisper target wrong')
+local queued=timers[#timers];popup.actionShield:Fire('OnClick');queued.callback()
+check(#chatCalls==sampleCalls+1 and queued.cancelled and not liveForm:IsShown(),'Backdrop close retained queued work')
 C_ChatInfo.InChatMessagingLockdown=function()return true end
-check(not R:PrepareShare('SAY',nil,page)and not R:PrepareShare('SAY',nil,previewPage,true)and composerCalls==sampleCalls+1,'Chat lockdown bypassed')
+U:OpenShare();open:Fire('OnClick');check(#chatCalls==sampleCalls+1,'Chat lockdown bypassed')
 check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
 cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')
 ]=]

@@ -1,3 +1,13 @@
+# 0.15.3-alpha.34 complete Death Log reports and refined composition
+
+Post to chat reviews the full immutable report in a scrollable dialog. Each retained hit stays separate, with recorded absorption, Preview heals/activations and death. Explicit clicks queue Party/Raid/Whisper messages at one-second spacing; Say uses one click per line. Public restrictions are rechecked for every submission; cancellation/context changes stop unsent work. UTF-8 chunks preserve the complete report. Progress means submitted, not confirmed delivered. Real native and local clocks remain separate; no missing live healing, duration or readiness is invented.
+
+Visible encounter context and an aligned Health/CD grid restore the composition. Group focus stays at the icon center while tooltip detail exposes every constituent. Stable representative HP remains separate from tooltip inspection, and no graph point is moved to a packed icon. Preview graph steps are consistently thin with full colored plateaus, defensive durations are stronger, and the smaller death marker sits clear of its known HP point. Native spell/item descriptions, modal layering and the actual reminder toggle remain intact.
+
+Left-click the Missing dock box to post its displayed missing provider classes to Raid chat. Hover and the small badge retain inspection. This is provider-class coverage, not missing active auras. No new roster scan, automatic message, demo/preview post or retry is added; chat restrictions and a short duplicate-click guard apply.
+
+Recording, association, catalog, availability/audit semantics and all media are preserved. Code-derived rendered review precedes delivery; native typography, taint, queue behavior and clock accuracy still need client acceptance. GitHub tester only; no CurseForge, tag, release or install.
+
 # 0.15.3-alpha.33 screenshot-driven Death Log correction
 
 Recap rows clear pooled height constraints before final-width native wrap measurement, permit word/non-space wrapping and unlimited lines, and size the card from measured content. Non-spell help uses one concise card; native spell/item descriptions retain their separate companion. Shared tooltip ownership and cleanup remain guarded.
