@@ -302,7 +302,7 @@ end
 local function At(time)return string.format("%s%.1fs",time<0 and"−"or"",math.abs(time))end
 local function IsExample()return sample==true and current~=nil and current==examplePage end
 local function ActionPage(page,preview)
-    return current~=nil and current==page and(preview==true and IsExample()or preview==false and not sample and current==R:GetPage())
+    return current~=nil and current==page and(preview==true and IsExample()or preview==false and not sample and R:IsRetainedPage(current))
 end
 local function X(time)return 48+(time-domain.first)/(domain.last-domain.first)*784 end
 local function SamplePage()
@@ -312,7 +312,7 @@ local function SamplePage()
             {offset=-3.15,amount=11000,name="Renew",spellID=139,healer="Example healer",hp=211000}},
         supports={{spellID=235450,name="Prismatic Barrier",offset=-3.5,finish=-2.2,exampleHP=200000,nativeOffset=-3.5,nativeIndex=201},
             {spellID=342245,auraSpellID=342246,name="Alter Time",offset=-1.8,finish=-.5,exampleHP=128000,nativeOffset=-1.8,nativeIndex=202}},
-        defaultSelection=1,native={rows={}},casts={},lastAlive={spells={},supplies={}}}
+        defaultSelection=1,native={rows={}},casts={},lastAlive=R:GetCooldownPreviewPage().lastAlive}
     local definitions={{-4.8,1285017,"Axegrinder",15000,357000,"axe-A"},{-4.6,1285017,"Axegrinder",15000,342000,"axe-A"},
         {-4.4,1285017,"Axegrinder",15000,327000,"axe-A"},{-3.6,1306906,"Venomfang",136000,200000,"boss"},
         {-3,1283290,"Noxious Ground",16000,195000,"ground-A"},{-2.8,1283290,"Noxious Ground",16000,179000,"ground-A"},
@@ -413,14 +413,71 @@ local function DamageBadges(b)
     Rect(b.selectedBorder.edges,1,b.selectedBorder,0,0,50,2,pink);Rect(b.selectedBorder.edges,2,b.selectedBorder,0,48,50,2,pink)
     Rect(b.selectedBorder.edges,3,b.selectedBorder,0,0,2,50,pink);Rect(b.selectedBorder.edges,4,b.selectedBorder,48,0,2,50,pink);b.selectedBorder:Hide()
 end
+local dragging,dragProfile
+local positionEvents={}
+local function PositionDemand(shown)
+    for _,event in ipairs(positionEvents)do event:SetEnabled(shown==true)end
+end
+local function MoveAllowed()
+    local ok,value=pcall(InCombatLockdown)
+    return ok and Public(value)==false
+end
+local function PositionSettings()
+    local db=RA:GetDB();return db,type(db)=="table"and type(db.deathRecap)=="table"and db.deathRecap or nil
+end
+local function StoredPosition()
+    local _,settings=PositionSettings();local position=settings and Public(settings.position)
+    if type(position)~="table"or getmetatable(position)~=nil then return nil end
+    local x,y=Metric(position.x),Metric(position.y)
+    if Public(position.point)=="TOPLEFT"and Public(position.relativePoint)=="TOPLEFT"and x and y and math.abs(x)<1000000 and math.abs(y)<1000000 then return x,y end
+end
+local function RestorePosition()
+    if not frame or dragging then return end
+    local x,y=StoredPosition()
+    local pw,ph=ReadMetric(UIParent,"GetWidth"),ReadMetric(UIParent,"GetHeight")
+    local fs,ps=ReadMetric(frame,"GetEffectiveScale"),ReadMetric(UIParent,"GetEffectiveScale")
+    local fw,fh=ReadMetric(frame,"GetWidth"),ReadMetric(frame,"GetHeight")
+    if not pw or not ph or pw<=0 or ph<=0 or not fs or not ps or fs<=0 or ps<=0 or not fw or not fh then
+        Place(frame,"CENTER",UIParent,"CENTER",0,50);return
+    end
+    fw,fh=fw*fs/ps,fh*fs/ps
+    x,y=x or(pw-fw)/2,y or-(ph-fh)/2+50
+    x=math.max(0,math.min(math.max(0,pw-fw),x))
+    y=math.min(0,math.max(-math.max(0,ph-fh),y))
+    -- Store/use the addon's existing UIParent-space top-left convention. Height
+    -- changes grow down from this anchor; a smaller screen keeps the header in reach.
+    Place(frame,"TOPLEFT",UIParent,"TOPLEFT",x,y)
+end
+local function StopDragging(save)
+    if not dragging then return end
+    local owner=dragProfile;dragging,dragProfile=nil,nil
+    frame:StopMovingOrSizing()
+    local db,settings=PositionSettings()
+    if save and MoveAllowed()and owner==db and settings and type(RA.CaptureFrameTopLeft)=="function"then
+        local position={};local ok,captured=pcall(RA.CaptureFrameTopLeft,RA,frame,position)
+        local x,y=Metric(position.x),Metric(position.y)
+        if ok and captured==true and x and y and math.abs(x)<1000000 and math.abs(y)<1000000 then
+            settings.position={point="TOPLEFT",relativePoint="TOPLEFT",x=x,y=y}
+        end
+    end
+    RestorePosition()
+end
+function UI:ResetPosition()
+    if not MoveAllowed()then return false end
+    StopDragging(false)
+    local _,settings=PositionSettings();if settings then settings.position=nil end
+    RestorePosition();return true
+end
 local function StopMotion()
     for _,b in ipairs(damagePool)do if b.span then b.span:SetScript("OnUpdate",nil)end end
 end
 function UI:Hide()
     if closing then return end;closing=true
+    StopDragging(false);PositionDemand(false)
     StopMotion();HideTooltip();R:CancelShare("Log closed");if share then if share.copy then share.copy:ClearFocus()end;share:Hide()end;if actionShield then actionShield:Hide()end
     if frame then
         frame:Hide();frame.selected,frame.selectedItem=nil,nil;frame.healthPanel:SetScript("OnEnter",nil)
+        if frame.historyMenu then frame.historyMenu:Hide()end
         for _,b in ipairs(damagePool)do b.group=nil;b:SetScript("OnEnter",nil);b:SetScript("OnClick",nil);b:SetScript("OnMouseWheel",nil)
             if b.span then b.span:SetScript("OnEnter",nil);b.span:SetScript("OnMouseWheel",nil)end
             if b.amountTarget then b.amountTarget:SetScript("OnEnter",nil);b.amountTarget:SetScript("OnMouseWheel",nil);b.amountTarget:SetScript("OnClick",nil)end
@@ -445,7 +502,31 @@ local function Ensure()
     if frame then return end
     frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,BASE_HEIGHT);Point(frame,"CENTER",UIParent,"CENTER",0,50)
     frame:SetFrameStrata("DIALOG");frame:SetClampedToScreen(true);frame:EnableMouse(true);Surface(frame,C.canvasDeep);T:ApplyRounded(frame,{.48,.34,.52,.65},8,"border","BORDER")
+    frame:SetMovable(true)
+    frame.dragHandle=CreateFrame("Frame",nil,frame);Size(frame.dragHandle,550,52);Place(frame.dragHandle,"TOPLEFT",frame,"TOPLEFT",0,0)
+    frame.dragHandle:EnableMouse(true);frame.dragHandle:RegisterForDrag("LeftButton")
+    frame.dragHandle:SetScript("OnDragStart",function()
+        if current and frame:IsVisible()and not(share and share:IsShown())and MoveAllowed()then
+            dragProfile=RA:GetDB();dragging=true;HideTooltip();frame:StartMoving()
+        end
+    end)
+    frame.dragHandle:SetScript("OnDragStop",function()StopDragging(true)end)
     frame.title=Label(frame,"Death Log",24,20,-18,142);RA:ApplyFont(frame.title,24,"BOLD",false)
+    frame.historyNav=CreateFrame("Frame",nil,frame);Size(frame.historyNav,70,24);Place(frame.historyNav,"TOPLEFT",frame,"TOPLEFT",486,-22)
+    frame.historyPrev=Button(frame.historyNav,"‹",18,function()UI:ShowHistory((frame.historyIndex or 1)+1)end);Place(frame.historyPrev,"LEFT",frame.historyNav,"LEFT",0,0)
+    frame.historyPicker=Button(frame.historyNav,"1/1",30,function()
+        if share and share:IsShown()then return end
+        frame.historyMenu:SetShown(not frame.historyMenu:IsShown())
+    end);Place(frame.historyPicker,"LEFT",frame.historyNav,"LEFT",19,0)
+    frame.historyNext=Button(frame.historyNav,"›",18,function()UI:ShowHistory((frame.historyIndex or 1)-1)end);Place(frame.historyNext,"RIGHT",frame.historyNav,"RIGHT",0,0)
+    frame.historyMenu=CreateFrame("Frame",nil,frame);Size(frame.historyMenu,420,150);Place(frame.historyMenu,"TOPRIGHT",frame.historyNav,"BOTTOMRIGHT",0,-4);frame.historyMenu:SetFrameLevel(frame:GetFrameLevel()+16);Surface(frame.historyMenu,C.canvasDeep)
+    frame.historyButtons={}
+    for i=1,5 do local index=i
+        local b=Button(frame.historyMenu,"",404,function()UI:ShowHistory(index)end);frame.historyButtons[i]=b
+        Place(b,"TOPLEFT",frame.historyMenu,"TOPLEFT",8,-8-(i-1)*28);b.label:SetWidth(390);b.label:SetWordWrap(false);b.label:SetMaxLines(1);b.label:SetJustifyH("LEFT")
+    end
+    frame.historyMenu:Hide()
+
     frame.playerName=Label(frame,"",14,174,-25,280,C.text);RA:ApplyFont(frame.playerName,14,"BOLD",false);frame.playerName:SetHeight(18);frame.playerName:SetWordWrap(false);frame.playerName:SetMaxLines(1);frame.playerName:Hide()
     frame.coverage=Label(frame,"Preview",10,174,-26,70,C.muted)
     frame.close=CreateFrame("Button",nil,frame);Size(frame.close,28,28);Point(frame.close,"TOPLEFT",frame,"TOPLEFT",832,-18)
@@ -500,25 +581,8 @@ local function Ensure()
     frame:SetScript("OnHide",function()if not closing then UI:Hide()end end)
     frame:Hide()
 end
-local function Roster(page,example,time)
-    if example then
-        return {{spellID=342245,name="Alter Time",category="minor",cooldown="active",chargeQuery="not_applicable",exact=true},
-            {spellID=45438,name="Ice Block",category="major",cooldown="active",chargeQuery="not_applicable",exact=true},
-            {spellID=235450,name="Prismatic Barrier",category="minor",cooldown="active",chargeQuery="not_applicable",exact=true},
-            {spellID=55342,name="Mirror Image",category="minor",role="defensive",defensiveTalentSpellID=1309497,cooldown="inactive",chargeQuery="not_applicable",exact=true},
-            {kind="stone",itemID=5512,name="Healthstone",cooldown="inactive",physicalCount=1,remainingUses=1,exact=true},
-            {kind="potion",itemID=241304,name="Healing potion",physicalCount=0,cooldown="unknown",exact=true}}
-    end
-    local rows={};local sample=page.lastAlive
-    for _,row in ipairs(sample and sample.spells or page.knownEntries or{})do
-        if R:GetRecordedUseRole(row)~="utility"then rows[#rows+1]=row end
-    end
-    for _,row in ipairs(R:GetSupplyFamilies(page))do rows[#rows+1]=row end
-    return rows
-end
-local function State(row,example)
-    return R:ClassifyRecordedCheck(row,not example and current.lastAlive and current.lastAlive.coverageEndedAt,example)
-end
+local function Roster(page,example,time)return R:GetCooldownRows(page,example)end
+local function State(row,example)return row.recordedState,row.detail end
 local function CooldownSlots(rows)
     local slots,col,line,gap={},0,0,0
     local itemCount=0;for _,row in ipairs(rows)do if row.kind then itemCount=itemCount+1 end end
@@ -534,6 +598,30 @@ local function CooldownSlots(rows)
     end
     return slots
 end
+function UI:PaintCooldownStatus(b,texture,state,row)
+    local shade=state==false and .4 or 1
+    if state==nil then texture:SetVertexColor(.55,.65,.85);texture:SetAlpha(.8)else texture:SetVertexColor(shade,shade,shade);texture:SetAlpha(1)end
+    texture:SetDesaturated(state==false)
+    if not b.statusBadge then
+        b.statusBadge=CreateFrame("Frame",nil,b);Size(b.statusBadge,16,16);Place(b.statusBadge,"BOTTOMRIGHT",b,"BOTTOMRIGHT",2,-2);Surface(b.statusBadge,C.canvasDeep)
+        b.statusLines={b.statusBadge:CreateLine(nil,"OVERLAY"),b.statusBadge:CreateLine(nil,"OVERLAY")}
+        for _,line in ipairs(b.statusLines)do line:SetThickness(2)end
+        b.info=Font(b.statusBadge,11,"BOLD",C.textSoft);Place(b.info,"CENTER",b.statusBadge,"CENTER",0,0)
+    end
+    -- Expressway has no checkmark glyph. Draw both proven states so their
+    -- meaning survives font changes; the unknown question mark is text.
+    Text(b.info,state==true and"✓"or state==false and"×"or"?");b.info:SetShown(state==nil);b.recordedState=state
+    b.info:SetTextColor(unpack(C.textSoft));b.nativeChargeCount=state==nil and row and R:RenderRecordedChargeCount(b.info,row)or false
+    if b.nativeChargeCount then b.info:SetTextColor(unpack(C.text))end
+    for _,line in ipairs(b.statusLines)do line:SetShown(state~=nil);line:SetColorTexture(unpack(state==true and C.success or C.danger))end
+    if state==true then
+        b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,3,-8);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,6,-11)
+        b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,6,-11);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,13,-4)
+    elseif state==false then
+        b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,4,-4);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,12,-12)
+        b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,12,-4);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,4,-12)
+    end
+end
 local function Shelf(page,example,time)
     Text(frame.shelf,"CDs");frame.shelfSource=example and"Preview death snapshot"or"Last recorded check"
     Text(frame.shelfAge,"")
@@ -541,36 +629,13 @@ local function Shelf(page,example,time)
     for _,row in ipairs(rows)do local state=State(row,example);signature[#signature+1]=tostring(row.spellID or row.itemID or row.kind)..":"..tostring(state)end
     local key=table.concat(signature,";")
     if frame.shelfKey==key then return end;frame.shelfKey=key;HidePool(shelfPool)
-    table.sort(rows,function(a,b)
-        local function Rank(row)return row.kind=="stone"and 10 or row.kind=="potion"and 11 or row.category=="major"and 0 or 1 end
-        local ar,br=Rank(a),Rank(b);if ar==br then return(a.spellID or a.itemID or 0)<(b.spellID or b.itemID or 0)end;return ar<br
-    end)
     local slots=CooldownSlots(rows)
     frame.shelfAge:Hide()
     for i,row in ipairs(rows)do
         local b=shelfPool[i]or Icon(frame,32);shelfPool[i]=b
         local line,x=slots[i].line,slots[i].x
         Place(b,"TOPLEFT",frame,"TOPLEFT",x,-76-line*38);Artwork(b,row);Text(b.badge,"");b:Show()
-        local state,detail=State(row,example);local shade=state==false and .4 or 1
-        if state==nil then b.icon:SetVertexColor(.55,.65,.85);b.icon:SetAlpha(.8)else b.icon:SetVertexColor(shade,shade,shade);b.icon:SetAlpha(1)end
-        b.icon:SetDesaturated(state==false)
-        if not b.statusBadge then
-            b.statusBadge=CreateFrame("Frame",nil,b);Size(b.statusBadge,16,16);Place(b.statusBadge,"BOTTOMRIGHT",b,"BOTTOMRIGHT",2,-2);Surface(b.statusBadge,C.canvasDeep)
-            b.statusLines={b.statusBadge:CreateLine(nil,"OVERLAY"),b.statusBadge:CreateLine(nil,"OVERLAY")}
-            for _,line in ipairs(b.statusLines)do line:SetThickness(2)end
-            b.info=Font(b.statusBadge,11,"BOLD",C.textSoft);Place(b.info,"CENTER",b.statusBadge,"CENTER",0,0)
-        end
-        -- Expressway has no checkmark glyph. Draw both proven states so their
-        -- meaning survives font changes; the unknown question mark is text.
-        Text(b.info,state==true and"✓"or state==false and"×"or"?");b.info:SetShown(state==nil);b.recordedState=state
-        for _,line in ipairs(b.statusLines)do line:SetShown(state~=nil);line:SetColorTexture(unpack(state==true and C.success or C.danger))end
-        if state==true then
-            b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,3,-8);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,6,-11)
-            b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,6,-11);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,13,-4)
-        elseif state==false then
-            b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,4,-4);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,12,-12)
-            b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,12,-4);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,4,-12)
-        end
+        local state,detail=State(row,example);UI:PaintCooldownStatus(b,b.icon,state,row)
         b.detailMember=0;b:EnableMouseWheel(row.members and #row.members>1 or false)
         local function ShowShelf(self)
             if current~=page or example~=IsExample()then return end
@@ -598,6 +663,9 @@ local function Shelf(page,example,time)
                 if row.currentCharges~=nil and not row.chargesPendingAt and not row.pendingAt then lines[#lines+1]="Charges: "..row.currentCharges end
                 if row.physicalCount~=nil then lines[#lines+1]="Carried: "..row.physicalCount end
                 if row.remainingUses~=nil then lines[#lines+1]="Uses left: "..row.remainingUses end
+                if b.nativeChargeCount then lines[#lines+1]="Captured charge count displayed directly by Blizzard; availability remains unconfirmed."
+                elseif page.restored and row.chargeCountStatus=="restricted"then lines[#lines+1]="Opaque charge count was not saved; unavailable after reload."end
+                for _,note in ipairs(R:GetPrecombatNotes(row))do lines[#lines+1]=note end
                 if row.members and #row.members>1 then lines[#lines+1]="Mouse wheel: inspect recorded items"end
                 for index,member in ipairs(row.members or{})do
                     local item=member.row
@@ -939,6 +1007,20 @@ function UI:Render()
     end end
     frame.fightSlotExtra=fightExtra
     frame.info:Show();Header(page,example)
+    local records=R:GetHistory();local active=1
+    for i,record in ipairs(records)do if record==page then active=i end end
+    frame.historyIndex=active;frame.historyNav:SetShown(not example and #records>0)
+    Text(frame.historyPicker.label,active.."/"..math.max(1,#records));frame.historyPrev:SetEnabled(active<#records);frame.historyNext:SetEnabled(active>1)
+    for i,b in ipairs(frame.historyButtons)do local record=records[i];b:SetShown(record~=nil)
+        if record then
+            local label=record.encounter and record.encounter.name or record.playerName or record.class or"Personal death"
+            local stamp="Death "..record.id
+            if record.recordedAt and type(date)=="function"then local ok,value=pcall(date,"%m/%d %H:%M",record.recordedAt);if ok and CapturedText(value)then stamp=value end end
+            Text(b.label,i.." · "..label..(record.playerName and(" · "..record.playerName)or"").." · "..stamp)
+        end
+    end
+    frame.historyMenu:SetHeight(16+#records*28)
+
     frame.contextText=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
     RefreshReminderSwitch()
     frame.share:SetEnabled(true);frame.share:SetAlpha(1)
@@ -960,7 +1042,7 @@ function UI:Render()
     for tier=1,tierTotal do local right=832
         for i=#model.items,1,-1 do local item=model.items[i];if item.tier==tier then item.iconX=math.min(item.iconX,right);right=item.iconX-92 end end
     end
-    contentShift=shelfExtra;extraHeight=shelfExtra+castExtra+supportExtra+fightExtra+(tierTotal-1)*TIER_GAP;Size(frame,880,BASE_HEIGHT+extraHeight)
+    contentShift=shelfExtra;extraHeight=shelfExtra+castExtra+supportExtra+fightExtra+(tierTotal-1)*TIER_GAP;Size(frame,880,BASE_HEIGHT+extraHeight);RestorePosition()
     local viewWidth,viewHeight=UIParent:GetWidth(),UIParent:GetHeight()
     if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(BASE_HEIGHT+extraHeight)))end
     local hasTimeline=example or #model.rows>0
@@ -981,7 +1063,7 @@ function UI:Render()
     Place(frame.hp,"TOPLEFT",frame,"TOPLEFT",552,-(HEALTH_TOP-23)-extraHeight)
     Place(frame.healthContext,"TOPLEFT",frame,"TOPLEFT",116,-(HEALTH_TOP-23)-extraHeight)
     frame.guide:Hide();frame.interval:Hide();frame.empty:SetShown(#model.rows==0)
-    Text(frame.empty,not example and not page.native and(page.nativeAttempts and page.nativeAttempts<R.LIMITS.attempts and"Hit details are loading"or"Hit details unavailable")or viewport.retainedCount>0 and"No recorded events in this window · Full report has older events"or"No hit details recorded")
+    Text(frame.empty,page.restored and not page.native and"Saved death: hit details were not captured"or not example and not page.native and(page.nativeAttempts and page.nativeAttempts<R.LIMITS.attempts and"Hit details are loading"or"Hit details unavailable")or viewport.retainedCount>0 and"No recorded events in this window · Full report has older events"or"No hit details recorded")
     for index,item in ipairs(model.items)do
         local b=damagePool[index]or Icon(frame,46);damagePool[index]=b;b.group=item
         local keys={};for _,row in ipairs(item.rows)do keys[#keys+1]=row.nativeIndex end;local groupKey=table.concat(keys,":")
@@ -1083,12 +1165,21 @@ function UI:Render()
     choice=choice or model.rows[1]
     if choice then local item;for _,g in ipairs(model.items)do for _,row in ipairs(g.rows)do if row==choice then item=g end end end;Select(page,choice,item,true)else selected=nil;frame.selected=nil;frame.selectedItem=nil;Health(page,{nativeOffset=0},example);Shelf(page,example,0)end
 end
+function UI:ShowPage(page)
+    if not R:SelectHistoryPage(page)then return false end
+    self:Hide();Ensure();current,sample=page,false;self:Render();frame:Show();PositionDemand(true);RA:FireCallback("DEATH_RECAP_VISIBILITY",true,page);return true
+end
 function UI:ShowLast()
-    local page=R:GetPage();if not page then RA:Print("No log recorded this session");return false end
-    self:Hide();Ensure();current,sample=page,false;self:Render();frame:Show();RA:FireCallback("DEATH_RECAP_VISIBILITY",true,page);return true
+    local page=R:GetPage()or R:GetHistory()[1];if not page then RA:Print("No recorded death available");return false end
+    return self:ShowPage(page)
+end
+function UI:ShowHistory(index)
+    if share and share:IsShown()then return false end
+    local page=R:GetHistory()[index];if not page then return false end
+    return self:ShowPage(page)
 end
 function UI:Preview()
-    self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();RA:FireCallback("DEATH_RECAP_VISIBILITY",true);return true
+    self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();PositionDemand(true);RA:FireCallback("DEATH_RECAP_VISIBILITY",true);return true
 end
 local function HideActionShieldIfUnused()
     if actionShield and not(share and share:IsShown())then actionShield:Hide()end
@@ -1315,6 +1406,8 @@ function UI:CreateSettings(parent,kit)
     local view=kit.Button(group,"VIEW LAST",130,30,function()UI:ShowLast()end);Point(view,"TOPLEFT",group,"TOPLEFT",0,-52)
     local preview=kit.Button(group,"PREVIEW RECAP",130,30,function()UI:Preview()end);Point(preview,"LEFT",view,"RIGHT",10,0)
     local settings=kit.Button(group,"DISPLAY +",130,30,function()expanded=not expanded;kit.Refresh()end);Point(settings,"LEFT",preview,"RIGHT",10,0)
+    local reset=kit.Button(group,"RESET POSITION",150,30,function()UI:ResetPosition()end);Point(reset,"LEFT",settings,"RIGHT",10,0)
+    local character=kit.Button(group,"CHECK CHARACTER",160,30,function()local ok,why=RA.DeathRecapEntry:CheckCharacter();if not ok and why then RA:Print(why)end end);Point(character,"LEFT",reset,"RIGHT",10,0)
     local auto=kit.Toggle(group,"Open after my death","Closing or resurrecting keeps the last recap for manual review.",function()return R:GetState().autoOpen end,function(value)R:SetOption("autoOpen",value);kit.Refresh()end)
     T.SetWidth(auto,918);Point(auto,"TOPLEFT",group,"TOPLEFT",0,-100);auto:SetCompact(true)
     function group:Refresh()
@@ -1327,8 +1420,14 @@ end
 RA:RegisterCallback("DEATH_RECAP_CHANGED",function(kind)
     if kind=="death"then UI:Hide();if R:GetState().autoOpen then UI:ShowLast()end
     elseif kind=="life"or(kind=="settings"and not R:GetState().enabled)then UI:Hide()
-    elseif kind=="native"and frame and frame:IsShown()and not sample and current==R:GetPage()then UI:Render()end
+    elseif kind=="native"and frame and frame:IsShown()and not sample and R:IsRetainedPage(current)then UI:Render()end
 end)
 RA:RegisterCallback("ACCENT_THEME_CHANGED",function()if frame and frame:IsShown()then UI:Render()end end)
 
 RA:RegisterCallback("PERSONAL_TOOLS_CHANGED",RefreshReminderSwitch)
+for _,name in ipairs({"DISPLAY_SIZE_CHANGED","UI_SCALE_CHANGED","PLAYER_REGEN_DISABLED"})do
+    positionEvents[#positionEvents+1]=RA:RegisterOptionalEvent(name,function()
+        if frame and frame:IsShown()then StopDragging(false);RestorePosition()end
+    end)
+end
+RA:RegisterCallback("PROFILE_RESET",function()UI:Hide();RestorePosition()end)

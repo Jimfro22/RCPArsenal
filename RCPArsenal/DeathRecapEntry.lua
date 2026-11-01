@@ -35,44 +35,8 @@ local function Number(value)
     value = Public(value)
     if type(value) == "number" and value == value and value > -math.huge and value < math.huge then return value end
 end
--- A display-only projection of the frozen checks. Never refresh availability here.
-function Entry:GetAvailableRows(page)
-    local rows, sample = {}, page and page.lastAlive
-    rows.hadCheck = type(sample) == "table"
-    if not rows.hadCheck then return rows end
-    local seen = {}
-    local function Add(row, kind, detail)
-        local id = row.spellID or row.itemID
-        if not Number(id) or id <= 0 or id ~= math.floor(id) or seen[(kind or "spell")..id] then return end
-        seen[(kind or "spell")..id] = true
-        rows[#rows+1] = {spellID=not kind and id or nil, itemID=kind and id or nil,
-            name=kind == "stone" and "Healthstone" or kind == "potion" and "Healing potion" or row.name or "Defensive",
-            category=row.category, kind=kind, icon=row.icon, detail=detail,
-            checkedAt=Number(R:GetRecordedCheckTime(row)),remainingUses=Number(row.remainingUses),physicalCount=Number(row.physicalCount)}
-    end
-    for index, row in ipairs(sample.spells or {}) do
-        if index > R.LIMITS.spells then break end
-        local state, detail = R:ClassifyRecordedCheck(row, sample.coverageEndedAt, false)
-        if row.known == true and state == true and R:GetRecordedUseRole(row)~="utility"then Add(row, nil, detail) end
-    end
-    local supplies = {}
-    for index, row in ipairs(sample.supplies or {}) do
-        if index > 32 then break end
-        supplies[#supplies+1] = row
-    end
-    for _, family in ipairs(R:GetSupplyFamilies({lastAlive={supplies=supplies,coverageEndedAt=sample.coverageEndedAt}})) do
-        for _, member in ipairs(family.members) do
-            local uses=Number(member.row.remainingUses)
-            if member.state == true and(family.kind~="stone"or uses and uses>0)then Add(member.row, family.kind, member.detail); break end
-        end
-    end
-    local function Rank(row) return row.kind == "stone" and 2 or row.kind == "potion" and 3 or row.category == "major" and 0 or 1 end
-    table.sort(rows, function(a,b)
-        local ar,br=Rank(a),Rank(b)
-        return ar ~= br and ar < br or ar == br and (a.spellID or a.itemID) < (b.spellID or b.itemID)
-    end)
-    return rows
-end
+-- Shared frozen ordering and tri-state evidence with the expanded shelf.
+function Entry:GetRows(page,example)return R:GetCooldownRows(page,example)end
 local function Mutable(frame)
     local ok, method = pcall(function() return frame.CanChangeProtectedState end)
     if not ok or type(issecretvalue) ~= "function" then return false end
@@ -159,7 +123,7 @@ end
 local function Age(row, page)
     local died, checked = Number(page and page.diedAt), Number(row.checkedAt)
     if not died or not checked or checked > died then return "Check time not recorded" end
-    return string.format("Checked %.1fs before death notice", died-checked)
+    return page.beforeCombat and"Recorded before combat"or string.format("Checked %.1fs before death notice", died-checked)
 end
 local function TooltipIcon(self)
     if not self:IsVisible() or not ValidHover() then Hide(true); return end
@@ -168,17 +132,24 @@ local function TooltipIcon(self)
     local page=previewPage or token.page
     GameTooltip:SetOwner(self,"ANCHOR_TOP")
     GameTooltip:SetText(self.row.name)
-    GameTooltip:AddLine("Available when checked",1,1,1)
+    GameTooltip:AddLine(self.row.recordedState==true and"Available when checked"or self.row.recordedState==false and"Unavailable when checked"or"Availability not confirmed",1,1,1)
     GameTooltip:AddLine(Age(self.row,page),.7,.7,.75,true)
-    if self.row.kind=="stone"and self.row.remainingUses then GameTooltip:AddLine("Uses remaining when checked: "..self.row.remainingUses,.7,.7,.75,true)end
+    if self.nativeChargeCount then GameTooltip:AddLine("Captured charge count displayed directly by Blizzard; availability remains unconfirmed.",.7,.7,.75,true)end
+    for _,line in ipairs(R:GetPrecombatNotes(self.row))do GameTooltip:AddLine(line,.7,.7,.75,true)end
+    local member=self.row.representativeRow
+    if member then
+        if member.itemID then GameTooltip:AddLine("Recorded item: "..member.itemID,.7,.7,.75,true)end
+        if member.physicalCount~=nil then GameTooltip:AddLine("Carried when checked: "..member.physicalCount,.7,.7,.75,true)end
+        if member.remainingUses~=nil then GameTooltip:AddLine("Uses remaining when checked: "..member.remainingUses,.7,.7,.75,true)end
+    end
     if self.row.detail then GameTooltip:AddLine(self.row.detail,.7,.7,.75,true) end
-    GameTooltip:AddLine(previewPage and "Preview · click to open the sample log" or "Click to open Death Log",.7,.7,.75,true)
+    GameTooltip:AddLine(previewPage and(previewPage.beforeCombat and"Before combat · Frozen character check"or"Preview · click to open the sample log")or"Click to open Death Log",.7,.7,.75,true)
     GameTooltip:Show()
 end
 local function Populate(rows)
     HideTooltip()
     for _, icon in ipairs(button.icons) do icon:Hide(); icon.row=nil; icon.overflow=nil; icon:SetScript("OnClick",nil) end
-    RA:SetVisualText(button.label,previewPage and "Death Log · Preview" or "Death Log")
+    RA:SetVisualText(button.label,previewPage and(previewPage.beforeCombat and"Before combat"or"Death Summary · Preview")or"Death Summary")
     button.previewClose:SetShown(previewPage~=nil);button.chevron:SetShown(previewPage==nil)
     local items=0;for _,row in ipairs(rows)do if row.kind then items=items+1 end end
     local total=#rows*ICON_SIZE+math.max(0,#rows-1)*ICON_GAP+(items>0 and #rows>items and ITEM_GAP-ICON_GAP or 0)
@@ -216,7 +187,7 @@ local function Populate(rows)
         icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-28-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
         if item.row.spellID then RA:RegisterSpellIcon(icon.texture,item.row.spellID)
         else RA:RegisterVisualTexture(icon.texture,item.row.icon or(item.row.kind=="stone"and"Interface\\Icons\\INV_Stone_04"or"Interface\\Icons\\INV_Potion_51"),T.Assets.White) end
-        icon.texture:SetVertexColor(1,1,1);icon.texture:SetDesaturated(false);icon:Show()
+        UI:PaintCooldownStatus(icon,icon.texture,item.row.recordedState,item.row);icon:Show()
     end end
 end
 local function EnsureButton()
@@ -236,7 +207,7 @@ local function EnsureButton()
     button.label:SetWordWrap(false);button.label:SetMaxLines(1)
     button.label:SetTextColor(unpack(C.text)); button.label:SetJustifyH("LEFT")
     T.SetSize(button.label, CARD_MIN-60, 18); T.SetPoint(button.label, "TOPLEFT", button, "TOPLEFT", 36, -6)
-    RA:SetVisualText(button.label, "Death Log")
+    RA:SetVisualText(button.label, "Death Summary")
     button.chevron=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.chevron,16,"REGULAR",false)
     button.chevron:SetTextColor(unpack(C.muted));T.SetSize(button.chevron,8,18);T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-8,-6);RA:SetVisualText(button.chevron,"›")
     button.icons={}
@@ -259,14 +230,14 @@ local function EnsureButton()
     button:SetScript("OnEnter", function(self)
         if not ValidHover() then Hide(true); return end
         hovered = true; Paint(); Attention()
-        local text = previewPage and "Preview · open the sample Death Log." or "Open your captured log."
+        local text = previewPage and(previewPage.beforeCombat and"Before combat · Recorded character check. This does not predict readiness at a later death."or"Preview · open the sample Death Log.")or"Open your captured log."
         local page = previewPage or token.page
         local rows=button.boundRows
         if not previewPage and rows and #rows==0 then text=text.." "..(rows.hadCheck and"No availability confirmed."or"Availability was not recorded.")end
         if not previewPage and not page.native then
             text = text .. (R:GetDiagnostics().fetchPending and " Hit details are loading." or " Hit details are unavailable.")
         end
-        if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(text);GameTooltip:AddLine("Shown icons were available when checked. Other checks may be missing or uncertain.",.7,.7,.75,true); GameTooltip:Show() end
+        if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(text);GameTooltip:AddLine("Frozen checks: check = available, red X = unavailable, ? = unconfirmed.",.7,.7,.75,true); GameTooltip:Show() end
     end)
     button:SetScript("OnLeave", function() hovered = false; HideTooltip(); Paint(); Attention() end)
     button:SetScript("OnMouseDown", function() T:SetRoundedColor(button, C.surfacePressed, "base") end)
@@ -304,13 +275,14 @@ local function RefreshNow()
     if previewPage then
         if Global(InCombatLockdown)~=false or button and not Mutable(button)then previewPage=nil;SubscriptionDemand();Hide(true);return end
         if Call(UI,"IsShown")~=false or not EnsureButton() then Hide(true); return end
-        if button.boundRows~=previewPage.available then Populate(previewPage.available);button.boundRows=previewPage.available end
+        if button.boundRows~=previewPage.rows then Populate(previewPage.rows);button.boundRows=previewPage.rows end
         button:ClearAllPoints();T.SetPoint(button,"CENTER",UIParent,"CENTER",0,80)
         anchor=nil;binding=binding+1
         local expectedPage,expectedBinding=previewPage,binding
         local function Open(self)
             if previewPage~=expectedPage or binding~=expectedBinding or not button:IsVisible() or not Mutable(button)or Global(InCombatLockdown)~=false
                 or self and self~=button and not self:IsVisible() then return end
+            if previewPage.beforeCombat then return end
             previewPage=nil;SubscriptionDemand();Hide(true);UI:Preview()
         end
         button:SetScript("OnClick",Open)
@@ -323,7 +295,7 @@ local function RefreshNow()
     if not host then Hide(true); return end
     if Call(UI, "IsShown") ~= false then Hide(false); return end
     if not EnsureButton() then Hide(true); return end
-    if button.boundRows~=token.available then Populate(token.available);button.boundRows=token.available end
+    if button.boundRows~=token.rows then Populate(token.rows);button.boundRows=token.rows end
     if not Place(host) then Hide(true); return end
     anchor = host; binding = binding + 1
     local clickBinding, clickToken = binding, token
@@ -348,16 +320,18 @@ function Entry:Preview()
     if Global(InCombatLockdown)~=false then return false end
     if previewPage then self:HidePreview();return true end
     Hide(true)
-    previewPage={diedAt=100,lastAlive={spells={
-        {spellID=45438,name="Ice Block",known=true,category="major",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
-        {spellID=55342,name="Mirror Image",known=true,category="minor",role="defensive",defensiveTalentSpellID=1309497,cooldown="inactive",chargeQuery="not_applicable",cooldownAt=98.4},
-    },supplies={
-        {kind="stone",itemID=5512,physicalCount=1,remainingUses=1,cooldown="inactive",cooldownAt=99},
-        {kind="potion",itemID=241304,physicalCount=1,cooldown="inactive",cooldownAt=99},
-    }}}
-    previewPage.available=self:GetAvailableRows(previewPage)
+    previewPage=R:GetCooldownPreviewPage()
+    previewPage.rows=self:GetRows(previewPage,true)
     SubscriptionDemand()
     if Call(UI,"IsShown")==true then UI:Hide()end
+    self:Refresh();return button and button:IsShown()or false
+end
+function Entry:CheckCharacter()
+    local check,reason=R:CheckCharacter();if not check then return false,reason end
+    Hide(true)
+    previewPage={beforeCombat=true,diedAt=check.observedAt,lastAlive=check,playerName=check.playerName}
+    previewPage.rows=self:GetRows(previewPage)
+    SubscriptionDemand();if Call(UI,"IsShown")==true then UI:Hide()end
     self:Refresh();return button and button:IsShown()or false
 end
 previewCombat=RA:RegisterOptionalEvent("PLAYER_REGEN_DISABLED",function()
@@ -414,7 +388,7 @@ RA:RegisterCallback("DEATH_RECAP_CHANGED", function(kind)
             if not token or token.page ~= page or token.generation ~= page.captureGeneration then
                 Hide(true)
                 token = {page=page, id=page.id, generation=page.captureGeneration,
-                    available=Entry:GetAvailableRows(page),viewed=shownPage == page and Call(UI, "IsShown") == true}
+                    rows=Entry:GetRows(page),viewed=shownPage == page and Call(UI, "IsShown") == true}
             end
         else Clear() end
     elseif kind == "life" or kind == "reset" or kind == "unavailable" then Clear()

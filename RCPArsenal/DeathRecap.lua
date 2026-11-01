@@ -3,12 +3,27 @@ local Recap = {}
 RA.DeathRecap = Recap
 Recap.LIMITS = { spells=32, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
-local session, last, generation, serial = nil, nil, 0, 0
+local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
 local encounterContext;local encounterSerial=0
 local RefreshTicker,cooldownObserver
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
+local opaqueChargeCounts=setmetatable({},{__mode="k"})
+local history,selectedHistory,explicitHistorySelection={},nil,false
+local function SaveHistory()RA.DeathRecapHistory:Save(history,serial)end
+function Recap:GetHistory()local out={};for i,page in ipairs(history)do out[i]=page end;return out end
+function Recap:GetSelectedPage()return selectedHistory or self:GetPage()or history[1]end
+function Recap:IsRetainedPage(page)
+    if page~=nil and page==self:GetPage()then return true end
+    for _,record in ipairs(history)do if record==page then return true end end
+    return false
+end
+function Recap:SelectHistoryPage(value)
+    local page=type(value)=="number"and history[value]or value
+    if not self:IsRetainedPage(page)then return false end
+    selectedHistory=page;explicitHistorySelection=page~=last;return true
+end
 
 -- Fail closed if the client cannot establish public values. Never stringify,
 -- compare, index, count or export an opaque native result before this check.
@@ -93,7 +108,9 @@ local function Settings()local db=RA:GetDB();return db and db.deathRecap or {} e
 local function Enabled()return Settings().enabled==true end
 local function Copy(value)
     if type(value)~="table" then return value end
-    local result={};for key,item in pairs(value)do result[key]=Copy(item)end;return result
+    local result={};for key,item in pairs(value)do result[key]=Copy(item)end
+    if opaqueChargeCounts[value]then opaqueChargeCounts[result]=opaqueChargeCounts[value]end
+    return result
 end
 local function Notify(kind)RA:FireCallback("DEATH_RECAP_CHANGED",kind)end
 local function Diagnostic(method,...)
@@ -231,6 +248,33 @@ local function SpellObservation(entry,time,reason)
         row.chargeCountStatus=FieldStatus(charges.currentCharges,"number")
         if row.currentCharges and (row.currentCharges~=math.floor(row.currentCharges)
             or not row.maxCharges or row.currentCharges>row.maxCharges)then row.currentCharges=nil end
+        if row.maxCharges and row.chargeCountStatus=="restricted"then
+            -- Direct native text passthrough only. Never compare, stringify,
+            -- export or put this opaque scalar into a public captured table.
+            opaqueChargeCounts[row]={count=charges.currentCharges,observedAt=time}
+        end
+    end
+    -- Only an independently confirmed noncharge spell may use the supported
+    -- ignore-GCD duration query. Drop the userdata after guarded scalar reads.
+    if row.isEnabled==true and row.cooldown=="active-context-unknown"and row.chargeQuery=="not_applicable"then
+        local duration,status=Query(C_Spell and C_Spell.GetSpellCooldownDuration,entry.spellID,true)
+        row.ownCooldownQuery=status;row.ownCooldownAt=time;row.ownCooldownSource="ignoreGCD-duration"
+        if type(duration)=="userdata"then
+            local function Boolean(name)
+                local ok,method=pcall(function()return duration[name]end)
+                method=ok and Public(method)or nil
+                if type(method)~="function"then return nil,"unsupported"end
+                local called,value=pcall(method,duration)
+                if not called then return nil,"API-error"end
+                return Bool(value),FieldStatus(value,"boolean")
+            end
+            row.ownCooldownActive,row.ownCooldownActiveStatus=Boolean("IsActive")
+            row.ownCooldownZero,row.ownCooldownZeroStatus=Boolean("IsZero")
+            if row.ownCooldownActive==false and row.ownCooldownZero==true then row.ownCooldownState="inactive"
+            elseif row.ownCooldownActive==true and row.ownCooldownZero==false then row.ownCooldownState="active"end
+            if row.ownCooldownState then row.cooldown=row.ownCooldownState end
+        elseif status=="public"then row.ownCooldownQuery="malformed"end
+        duration=nil
     end
     return row
 end
@@ -273,10 +317,11 @@ local function SupplyObservations(time,reason,death)
     return result
 end
 local function Pending(domain,time,reason,spellID)
-    if not session or not session.lastAlive then return end
-    local rows=domain=="items"and session.lastAlive.supplies or session.lastAlive.spells
+    local sample=Combat()and session and session.lastAlive or baseline
+    if not session or not sample then return end
+    local rows=domain=="items"and sample.supplies or sample.spells
     for _,row in ipairs(rows)do if not spellID or row.spellID==spellID then
-        row.pendingAt=row.pendingAt or time;row.pendingReason=reason
+        row.pendingAt=row.pendingAt or time;row.pendingReason=reason;opaqueChargeCounts[row]=nil
         if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedAt=time;row.directCooldown.invalidatedBy=reason end
     end end
     if domain=="items"then session.itemsDirty=true end
@@ -292,7 +337,7 @@ local function ReconcileSpell(entry,previous,time,reason,death)
     if direct and direct.valid then
         if direct.isEnabled~=row.isEnabled or direct.isActive~=row.isActive or row.cooldownQuery~="public"then
             direct.valid=false;direct.invalidatedAt=time;direct.invalidatedBy="generic-flags-changed"
-        elseif not death and row.cooldown~="inactive"and row.cooldown~="held"then
+        elseif not death and not row.ownCooldownState and not direct.ownCooldownState and row.cooldown~="inactive"and row.cooldown~="held"then
             -- Keep the direct check's original age. The newer generic flags and
             -- charges are separate observations; they cannot renew its GCD fact.
             row.genericCooldown={observedAt=time,isEnabled=row.isEnabled,isActive=row.isActive,cooldown=row.cooldown,source=reason}
@@ -327,7 +372,7 @@ local function Observe(reason,death)
     return sample
 end
 local function ScheduleObservation()
-    if eventTimer or not session or not C_Timer or not C_Timer.NewTimer then return end
+    if eventTimer or not session or not Combat()or not C_Timer or not C_Timer.NewTimer then return end
     local owner=session;local timer
     timer=C_Timer.NewTimer(.1,function()
         if eventTimer~=timer or session~=owner then return end
@@ -336,14 +381,68 @@ local function ScheduleObservation()
     end)
     eventTimer=timer
 end
+local function SameEntries(a,b)
+    if #a~=#b then return false end
+    for i,entry in ipairs(a)do local old=b[i]
+        if not old or entry.spellID~=old.spellID or entry.baseSpellID~=old.baseSpellID or entry.key~=old.key
+            or entry.role~=old.role or entry.defensiveTalentSpellID~=old.defensiveTalentSpellID then return false end
+    end
+    return true
+end
+local function RememberUse(owner,cast)
+    local id=cast.spellID;local use=owner.observedUses[id]
+    if not use then
+        local item=(RA.DeathRecapCatalog or{}).itemUseSpells
+        use={spellID=id,role=item and item[id]and"consumable"or cast.role,defensiveTalentSpellID=cast.defensiveTalentSpellID,
+            observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=cast.observedAt}
+        owner.observedUses[id]=use
+    end
+    use.observedCount=use.observedCount+1;use.lastSuccessfulUseAt=cast.observedAt
+end
+local function CaptureBaseline(reason,domain,spellID,baseID)
+    if not Enabled()or not Alive()or Combat()or not session then return end
+    local time=Now();if not time then return end
+    local previous=baseline
+    if not previous or previous.playerGUID~=session.playerGUID or previous.specID~=session.specID or previous.class~=session.class or not SameEntries(previous.entries,session.entries)then previous=nil end
+    if previous and domain=="spells"and spellID then
+        local matched=false;for _,entry in ipairs(session.entries)do if spellID==entry.spellID or spellID==entry.baseSpellID or baseID and(baseID==entry.spellID or baseID==entry.baseSpellID) then matched=true end end
+        if not matched then return end
+    end
+    local snapshot={observedAt=time,source=reason,playerGUID=session.playerGUID,playerName=session.playerName,playerRealm=session.playerRealm,
+        specID=session.specID,class=session.class,entries=Copy(session.entries),spells={},supplies={}}
+    for i,entry in ipairs(session.entries)do
+        local affected=not previous or domain~="items"and(not spellID or spellID==entry.spellID or spellID==entry.baseSpellID or baseID and(baseID==entry.spellID or baseID==entry.baseSpellID))
+        snapshot.spells[i]=affected and SpellObservation(entry,time,reason)or Copy(previous.spells[i])
+    end
+    if not previous or domain~="spells"then snapshot.supplies=SupplyObservations(time,reason,false)else snapshot.supplies=Copy(previous.supplies)end
+    baseline=snapshot;stats.baselineUpdates=(stats.baselineUpdates or 0)+1
+end
 local function NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()then return end
+    local previous=session
     Notify("reset")
     local entries,spec,class,overflow,unknown=BuildEntries()
     local playerName,playerRealm=PlayerIdentity()
     session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
         playerGUID=String(Call(UnitGUID,"player")),playerName=playerName,playerRealm=playerRealm,coverage=reason,overflow=overflow,unknownKnown=unknown,
-        encounter=Copy(encounterContext),eventAt={}}
+        encounter=Copy(encounterContext),eventAt={},precombatSession=not Combat()}
+    if Combat()then
+        if previous and previous.precombatSession and not previous.dead and session.playerGUID and previous.playerGUID==session.playerGUID
+            and previous.specID==spec and previous.class==class and SameEntries(previous.entries,entries)then
+            for _,cast in ipairs(previous.casts)do
+                if session.startedAt and cast.observedAt<=session.startedAt and session.startedAt-cast.observedAt<=Recap.LIMITS.seconds then
+                    local retained=Copy(cast);session.casts[#session.casts+1]=retained;RememberUse(session,retained)
+                    session.useCoverageStartedAt=math.min(session.useCoverageStartedAt or session.startedAt,cast.observedAt)
+                end
+            end
+        end
+        if baseline and session.playerGUID and baseline.playerGUID==session.playerGUID and baseline.class==class and baseline.specID==spec and SameEntries(baseline.entries,entries)then
+            session.precombatBaseline=Copy(baseline);session.precombatBaseline.frozenAtCombatEntry=session.startedAt
+        end
+    else
+        CaptureBaseline("precombat-baseline")
+        for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
+    end
     Diagnostic("ValidateCooldownIdentity")
 end
 RefreshTicker=function()
@@ -414,7 +513,7 @@ FetchNative=function(page,token)
             end
             page.native.clockDiagnostic.nativeMinimumTimestamp=minimum
             page.nativeStatus="Personal native record associated; native verification pending"
-            page.nativeReason="associated_personal_id";Notify("native");return
+            page.nativeReason="associated_personal_id";SaveHistory();Notify("native");return
         end
         reason="foreign_native_destination"
     end
@@ -435,11 +534,15 @@ local function OnDeath()
     local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,playerName=session.playerName,playerRealm=session.playerRealm,specID=session.specID,class=session.class,
         coverage=session.coverage,overflow=session.overflow,unknownKnown=session.unknownKnown,
         encounter=Copy(session.encounter),encounterEndObservation=Copy(session.encounterEndObservation),knownEntries=Copy(session.entries),localSessionStartedAt=session.startedAt,lastAlive=Copy(session.lastAlive),
-        casts={},observedUses=Copy(session.observedUses),directSpellEvents=Copy(session.directSpellEvents),useCoverage={startedAt=session.startedAt,combatEntryObserved=session.combatEntryObserved,
+        casts={},precombatBaseline=Copy(session.precombatBaseline),observedUses=Copy(session.observedUses),directSpellEvents=Copy(session.directSpellEvents),useCoverage={startedAt=session.useCoverageStartedAt or session.startedAt,combatEntryObserved=session.combatEntryObserved,
             reason=session.coverage,endedAt=session.lastAlive and session.lastAlive.coverageEndedAt,rejectedReceipts=session.rejectedUseReceipts or 0,lateReceipts=session.lateUseReceipts or 0},deathObservation=Observe("death-notification",true),
         association=Association:Freeze(),nativeAttempts=0,nativeStatus="Waiting for a fresh personal native recap"}
     for _,cast in ipairs(session.casts)do if time-cast.observedAt<=Recap.LIMITS.seconds then page.casts[#page.casts+1]=Copy(cast)end end
-    session.dead=true;last=page;Notify("death");FetchNative(page,generation)
+    page.recordedAt=Number(Call(GetServerTime))
+    session.dead=true;last=page;table.insert(history,1,page)
+    while #history>5 do table.remove(history)end
+    if not explicitHistorySelection or not Recap:IsRetainedPage(selectedHistory)then selectedHistory=page;explicitHistorySelection=false end
+    SaveHistory();Notify("death");FetchNative(page,generation)
 end
 function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
     if row.family then return row.familyState,row.familyDetail end
@@ -478,6 +581,7 @@ end
 -- Pure view of the frozen item candidates. A representative supplies artwork,
 -- never family-wide stock, cooldown, or remaining-use claims.
 function Recap:GetRecordedCheckTime(row)
+    if row.family then return row.checkedAt end
     if row.kind and row.familyAbsenceVerified then return row.carriedAt or row.observedAt end
     if not row.kind and row.cooldown~="held"and not row.pendingAt and not row.chargesPendingAt and row.currentCharges~=nil then return row.chargesAt or row.observedAt end
     return row.cooldownAt or row.observedAt
@@ -506,7 +610,106 @@ function Recap:GetSupplyFamilies(page)
     end
     return result
 end
+-- Both cooldown displays consume this same bounded projection. Status and
+-- timestamps come only from the frozen living sample, never the current kit.
+function Recap:GetCooldownRows(page,example)
+    page=Table(page)or{}
+    local sample=Table(page.lastAlive)
+    local rows={hadCheck=sample~=nil};local seen={}
+    local spells=sample and Table(sample.spells)or Table(page.knownEntries)or{}
+    for index=1,math.min(#spells,self.LIMITS.spells)do
+        local source=Table(spells[index]);local id=source and ID(source.spellID)
+        if id and not seen[id]and Public(source.known)~=false and self:GetRecordedUseRole(source)~="utility"then
+            seen[id]=true
+            local row=sample and Copy(source)or{spellID=id,name=String(source.name,128),category=String(source.category,20)}
+            if sample then
+                row.recordedState,row.detail=self:ClassifyRecordedCheck(row,sample.coverageEndedAt,example)
+                row.checkedAt=self:GetRecordedCheckTime(row)
+            else row.detail="Availability was not recorded"end
+            row.coverageEndedAt=sample and sample.coverageEndedAt
+            rows[#rows+1]=row
+        end
+    end
+    local supplies={}
+    for index=1,math.min(#(sample and sample.supplies or{}),32)do
+        local row=Table(sample.supplies[index]);if row then supplies[#supplies+1]=Copy(row)end
+    end
+    for _,family in ipairs(self:GetSupplyFamilies({lastAlive={supplies=supplies,coverageEndedAt=sample and sample.coverageEndedAt}}))do
+        family.recordedState,family.detail=family.familyState,family.familyDetail
+        for _,member in ipairs(family.members)do if member.row.itemID==family.representativeItemID then
+            family.representativeRow=Copy(member.row);family.checkedAt=self:GetRecordedCheckTime(member.row);break
+        end end
+        rows[#rows+1]=family
+    end
+    local function Rank(row)return row.kind=="stone"and 2 or row.kind=="potion"and 3 or row.category=="major"and 0 or 1 end
+    table.sort(rows,function(a,b)
+        local ar,br=Rank(a),Rank(b)
+        return ar~=br and ar<br or ar==br and(a.spellID or 0)<(b.spellID or 0)
+    end)
+    local before=Table(page.precombatBaseline)
+    if before then
+        local baselineRows=self:GetCooldownRows({lastAlive=before})
+        for _,row in ipairs(rows)do if row.recordedState==nil then
+            for _,prior in ipairs(baselineRows)do if row.spellID and row.spellID==prior.spellID or row.kind and row.kind==prior.kind then
+                row.precombatCheck={state=prior.recordedState,detail=prior.detail,checkedAt=prior.checkedAt,
+                    itemID=prior.representativeItemID,combatAt=before.frozenAtCombatEntry}
+                break
+            end end
+        end end
+    end
+    return rows
+end
+function Recap:GetPrecombatNotes(row)
+    local before=row.precombatCheck;if not before then return{}end
+    local label=before.state==true and"Available"or before.state==false and"Unavailable"or"Unconfirmed"
+    local lines={"Precombat check: "..label.." (historical)"}
+    if before.detail then lines[#lines+1]=before.detail end
+    if before.itemID then lines[#lines+1]="Precombat item: "..before.itemID end
+    if before.checkedAt and before.combatAt and before.combatAt>=before.checkedAt then lines[#lines+1]=string.format("Checked %.1fs before combat entry",before.combatAt-before.checkedAt)end
+    lines[#lines+1]="Precombat availability does not establish readiness at death."
+    return lines
+end
+function Recap:CheckCharacter()
+    if not Enabled()then return nil,"Enable Death Recap before checking your character"end
+    if not Alive()or Combat()then return nil,"Check character is available alive and outside combat"end
+    CaptureBaseline("precombat-manual-check")
+    if not baseline then return nil,"Character check unavailable"end
+    return Copy(baseline)
+end
+function Recap:RenderRecordedChargeCount(fontString,row)
+    if row.pendingAt or row.chargesPendingAt or row.coverageEndedAt then return false end
+    local witness=opaqueChargeCounts[row]
+    if not witness or type(fontString.SetFormattedText)~="function"then return false end
+    -- SetFormattedText is explicitly AllowedWhenTainted for its Text aspect.
+    -- Native formatting receives the count directly; Lua never reads it back.
+    local ok=pcall(fontString.SetFormattedText,fontString,"%d",witness.count)
+    if ok then fontString.__raNativeText=true;fontString.__raVisualText=nil end
+    return ok
+end
+function Recap:GetCooldownPreviewPage()
+    return{diedAt=100,lastAlive={observedAt=99,spells={
+        {spellID=342245,name="Alter Time",known=true,category="minor",cooldown="active",chargeQuery="not_applicable",cooldownAt=99},
+        {spellID=45438,name="Ice Block",known=true,category="major",cooldown="active",chargeQuery="not_applicable",cooldownAt=99},
+        {spellID=235450,name="Prismatic Barrier",known=true,category="minor",cooldown="active",chargeQuery="not_applicable",cooldownAt=99},
+        {spellID=55342,name="Mirror Image",known=true,category="minor",role="defensive",defensiveTalentSpellID=1309497,cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
+    },supplies={
+        {kind="stone",itemID=5512,name="Healthstone",physicalCount=1,remainingUses=1,cooldown="inactive",cooldownAt=99},
+        {kind="potion",itemID=241304,name="Healing potion",physicalCount=0,cooldown="unknown",cooldownAt=99},
+    }}}
+end
 function Recap:GetPage()return last end
+-- Item casts need the same whole-coverage summary as defensives. The short
+-- timeline ring is deliberately separate and may have expired by death.
+function Recap:GetRecordedConsumableUses(page)
+    local result={};local uses=page and Table(page.observedUses)
+    for spellID in pairs((RA.DeathRecapCatalog or{}).itemUseSpells or{})do
+        local id=ID(spellID);local row=id and uses and Table(uses[id])
+        local count=row and Number(row.observedCount,1,1e12)
+        if row and ID(row.spellID)==id and count and count==math.floor(count)and #result<32 then result[#result+1]=Copy(row)end
+    end
+    table.sort(result,function(a,b)return a.spellID<b.spellID end)
+    return result
+end
 -- Reuse only the supported learned Mirror identity; no discovery or queries.
 function Recap:GetCooldownDiagnosticIdentity()
     if not Enabled()or not session or session.dead or not cooldownObserver or type(cooldownObserver.SetEnabled)~="function"then return nil end
@@ -519,11 +722,12 @@ end
 -- Explicit diagnostic action only: one sanitized read of the accepted frozen
 -- ID. No association, lifecycle timer, or replacement of the captured packet.
 function Recap:ReadNativePacketForDebug()
-    local page=last;local native=page and Table(page.native)
+    local page=self:GetSelectedPage();local native=page and Table(page.native)
+    if page and page.restored then return nil,"Saved death: native reread requires a death from this login"end
     local id=native and ID(native.recapID)
     if not id then return nil,"No accepted personal native recap ID recorded this session"end
     local packet,reason=NativePacket(id)
-    if last~=page or page.native~=native or ID(native.recapID)~=id then return nil,"Recorded page changed during diagnostic read"end
+    if self:GetSelectedPage()~=page or page.native~=native or ID(native.recapID)~=id then return nil,"Recorded page changed during diagnostic read"end
     if not packet then return nil,reason end
     for _,row in ipairs(packet.rows)do
         if row.destGUID and page.playerGUID and row.destGUID~=page.playerGUID then return nil,"foreign_native_destination"end
@@ -537,9 +741,10 @@ end
 -- Explicit local audit of captured public facts. No spell/item getters, polling
 -- or clock conversion; client metadata uses the existing one-time build read.
 function Recap:GetAvailabilityAudit()
-    if not last then return nil,"No personal death recorded this session"end
+    local last=self:GetSelectedPage()
+    if not last then return nil,"No personal death recorded"end
     local audit={localDeathID=last.id,nativeRecapID=last.native and last.native.recapID,deathNoticeAt=last.diedAt,specID=last.specID,class=last.class,
-        directSpellEvents=Copy(last.directSpellEvents),client=Copy(self:GetDiagnostics().client),catalogRevision=(RA.DeathRecapCatalog or{}).revision,encounter=Copy(last.encounter),coverage=Copy(last.useCoverage),spells={}}
+        directSpellEvents=Copy(last.directSpellEvents),client=Copy(self:GetDiagnostics().client),catalogRevision=(RA.DeathRecapCatalog or{}).revision,encounter=Copy(last.encounter),coverage=Copy(last.useCoverage),spells={},consumableUses=self:GetRecordedConsumableUses(last)}
     audit.encounterEndObservation=Copy(last.encounterEndObservation)
     local fields={"role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus",
         "cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","directCooldown","genericCooldown"}
@@ -580,13 +785,13 @@ function Recap:GetDiagnostics()
     return result
 end
 function Recap:GetState()
-    return {enabled=Enabled(),autoOpen=Settings().autoOpen==true,hasPage=last~=nil,
+    return {enabled=Enabled(),autoOpen=Settings().autoOpen==true,hasPage=self:GetSelectedPage()~=nil,
         recording=ticker~=nil,coverage=session and session.coverage or "No alive observations"}
 end
 function Recap:Refresh()
     Diagnostic("StopCooldownCapture",Enabled()and"observer-reset"or"disabled")
     Notify("reset")
-    StopRecording();CancelFetch();session=nil
+    StopRecording();CancelFetch();session=nil;baseline=nil
     local enabled=Enabled()
     Association:SetEnabled(enabled)
     RA.HealingSupplies:SetConsumer("recap",enabled)
@@ -606,7 +811,23 @@ function Recap:EnableReminder()
 end
 local function Passive(event,callback)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback)end
 local function Active(event,callback,unit)
-    local subscription=RA:RegisterOptionalEvent(event,callback,unit);active[#active+1]=subscription
+    local subscription=RA:RegisterOptionalEvent(event,function(name,...)
+        if Enabled()and Alive()and not Combat()then
+            if name=="UNIT_SPELLCAST_SUCCEEDED"then callback(name,...);return end
+            local spellID,baseID
+            if name=="SPELL_UPDATE_COOLDOWN"then
+                local spell,base=...;spellID,baseID=ID(spell),ID(base)
+                local valid=(FieldStatus(spell,"number")=="not-recorded"or spellID~=nil)and(FieldStatus(base,"number")=="not-recorded"or baseID~=nil)
+                local reason=valid and"cooldown-event"or"precombat-reconcile"
+                -- An unreadable payload cannot confer eligible-event GCD context.
+                if reason~= "cooldown-event"then CaptureBaseline("precombat-reconcile","spells");return end
+                CaptureBaseline("cooldown-event","spells",spellID,baseID)
+            elseif name=="SPELL_UPDATE_CHARGES"then CaptureBaseline("precombat-charge-event","spells")
+            else CaptureBaseline("precombat-"..name,"items")end
+            return
+        end
+        callback(name,...)
+    end,unit);active[#active+1]=subscription
     if event=="SPELL_UPDATE_COOLDOWN"then cooldownObserver=subscription end
 end
 Passive("PLAYER_DEAD",OnDeath)
@@ -616,6 +837,7 @@ Passive("PLAYER_REGEN_ENABLED",function()
     if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     if session then for _,row in ipairs(session.lastAlive and session.lastAlive.spells or{})do if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedBy="coverage-ended"end end end
     StopRecording()
+    if Alive()then CaptureBaseline("precombat-combat-ended");for _,subscription in ipairs(active)do subscription:SetEnabled(true)end end
     if last and not last.native and last.nativeAttempts<Recap.LIMITS.attempts then
         if fetchTimer then fetchTimer:Cancel();fetchTimer=nil end
         FetchNative(last,generation)
@@ -633,7 +855,7 @@ end)
 for _,event in ipairs({"PLAYER_ALIVE","PLAYER_UNGHOST","PLAYER_ENTERING_WORLD"})do
     Passive(event,function()
         Diagnostic("StopCooldownCapture",event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
-        StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil end
+        StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil;baseline=nil end
         if Alive()then
             if Combat()then BeginCombat("Resurrected/entered during combat; incomplete coverage")
             else NewSession("Alive baseline; no combat observations yet")end
@@ -645,11 +867,8 @@ for _,event in ipairs({"PLAYER_SPECIALIZATION_CHANGED","TRAIT_CONFIG_UPDATED","S
         if event=="PLAYER_SPECIALIZATION_CHANGED"and String(unit,16)and String(unit,16)~="player"then return end
         if session and not session.dead then
             local entries,spec,class,overflow,unknown=BuildEntries()
-            local same=spec==session.specID and class==session.class and #entries==#session.entries
-            for i,entry in ipairs(entries)do local old=session.entries[i]
-                if not old or entry.spellID~=old.spellID or entry.baseSpellID~=old.baseSpellID or entry.key~=old.key then same=false end
-            end
-            if same then session.overflow=overflow;session.unknownKnown=unknown;return end
+            local same=spec==session.specID and class==session.class and SameEntries(entries,session.entries)
+            if same then session.overflow=overflow;session.unknownKnown=unknown;if not Combat()then CaptureBaseline("precombat-spell-refresh")end;return end
         end
         if Combat()then BeginCombat("Spell/spec identity changed; earlier coverage discarded")else NewSession("Spell/spec identity refreshed")end
     end)
@@ -675,15 +894,14 @@ Active("UNIT_SPELLCAST_SUCCEEDED",function(_,unit,_,spellID)
     if not time or not spellID then session.rejectedUseReceipts=(session.rejectedUseReceipts or 0)+1;return end
     local tracked,trackedName,trackedRole,trackedTalent,trackedItemUse=false,nil,nil,nil,false
     for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;trackedRole=entry.role;trackedTalent=entry.defensiveTalentSpellID;break end end
-    if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true;trackedItemUse=true end
+    if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then
+        tracked=true;trackedItemUse=true
+        trackedName=String((RA.DeathRecapCatalog.itemUseNames or{})[spellID],128)
+    end
     if not tracked then return end
     Diagnostic("CaptureCooldownReceipt",spellID,time)
-    if not trackedItemUse then
-        local use=session.observedUses[spellID]
-        if not use then use={spellID=spellID,role=trackedRole,defensiveTalentSpellID=trackedTalent,observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=time};session.observedUses[spellID]=use end
-        use.observedCount=use.observedCount+1;use.lastSuccessfulUseAt=time
-    end
-    session.casts[#session.casts+1]={spellID=spellID,name=trackedName,role=trackedRole,defensiveTalentSpellID=trackedTalent,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
+    local cast={spellID=spellID,name=trackedName,role=trackedRole,defensiveTalentSpellID=trackedTalent,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
+    RememberUse(session,cast);session.casts[#session.casts+1]=cast
     if trackedItemUse then Pending("items",time,"item-cast-received")else Pending("spells",time,"cast-received",spellID)end
     ScheduleObservation()
     stats.casts=stats.casts+1
@@ -742,5 +960,7 @@ end)
 RA:RegisterCallback("HEALING_SUPPLIES_ITEM_DATA_READY",function()
     if Enabled()and Alive()and Combat()and session then Pending("items",Now(),"item-data-ready");Observe("item-data-event",false)end
 end)
-RA:RegisterInitializer(function()Recap:Refresh()end)
+RA:RegisterInitializer(function()
+    history,serial=RA.DeathRecapHistory:Load();selectedHistory=history[1];Recap:Refresh()
+end)
 RA:RegisterCallback("PROFILE_RESET",function()Diagnostic("StopCooldownCapture","profile-reset");Recap:Refresh()end)

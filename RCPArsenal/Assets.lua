@@ -22,12 +22,14 @@ function RA:SetVisualText(region, text)
     if region.GetObjectType and region:GetObjectType() == "EditBox" then
         return pcall(region.SetText, region, text)
     end
+    region.__raNativeText = nil
     region.__raVisualText = text == nil and "" or tostring(text)
     local ok = pcall(region.SetText, region, region.__raVisualText)
     return ok
 end
 
 function RA:GetVisualText(region)
+    if region.__raNativeText then return nil end -- Native Text aspect: no readback/replay.
     if region.__raVisualText ~= nil then return region.__raVisualText end
     if region.GetText then
         local ok, text = pcall(region.GetText, region)

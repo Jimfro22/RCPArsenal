@@ -50,12 +50,13 @@ RA.DeathRecapCatalog={entries={{key='shield',spellID=871,name='Shield Wall',clas
 RA.PersonalTools={SetOption=function(_,key,value)db.personalTools[key]=value;return true end}
 assert(loadfile('RCPArsenal/HealingSupplies.lua'))('RCPArsenal',RA)
 assert(loadfile('RCPArsenal/DeathRecapAssociation.lua'))('RCPArsenal',RA)
+assert(loadfile('RCPArsenal/DeathRecapHistory.lua'))('RCPArsenal',RA)
 assert(loadfile('RCPArsenal/DeathRecap.lua'))('RCPArsenal',RA)
 for _,fn in ipairs(initializers)do fn()end
 local R=RA.DeathRecap
 check(optionalCount()==0 and #timers==0 and bagReads==0 and R:GetPage()==nil,'OFF did work or invented death')
 R:SetOption('enabled',true)
-check(optionalCount()>0 and bagReads==0 and #timers==0,'Idle enable scanned bags or polled')
+check(optionalCount()>0 and bagReads==6 and #timers==0,'Idle enable did not capture one bounded baseline or added polling')
 event('DAMAGE_METER_CURRENT_SESSION_UPDATED');event('DAMAGE_METER_COMBAT_SESSION_UPDATED',9,1)
 combat=true;event('PLAYER_REGEN_DISABLED')
 check(bagReads==6 and not R:GetDiagnostics().tickerActive and R:GetDiagnostics().trackedSpells==1,'Inactive cooldown baseline polled or missed local baseline')

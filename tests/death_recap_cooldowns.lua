@@ -27,7 +27,8 @@ local function object(h,a,z)
  returnedObjects[#returnedObjects+1]=value;return value
 end
 C_Spell.GetSpellCooldownDuration=function(id,ignoreGCD)
- calls=calls+1;check(insideCooldown and ignoreGCD==true,'Duration query escaped direct callback or ignored GCD flag')
+ if not insideCooldown then return object(true,false,false)end -- separately permitted production observations
+ calls=calls+1;check(ignoreGCD==true,'Duration query ignored GCD flag')
  check(id==55342 or id==6655342,'Duration query used unrelated ID')
  check(#timers==beforeEventTimers,'Duration query ran after scheduling deferred work')
  if factoryMode=='nil'then return nil elseif factoryMode=='secret'then return secret

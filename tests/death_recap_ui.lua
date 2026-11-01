@@ -632,7 +632,7 @@ page={id=777,diedAt=100,class='MAGE',specID=62,casts={{spellID=110959,name='Grea
  {spellID=110959,name='Greater Invisibility',known=true,cooldown='inactive',chargeQuery='not_applicable'},
  {spellID=55342,name='Mirror Image',known=true,cooldown='inactive',chargeQuery='not_applicable'}},supplies={}}}
 U:ShowLast();check(#shelves()==2,'Legacy utility appeared on defensive availability shelf')
-check(#RA.DeathRecapEntry:GetAvailableRows(page)==0,'Legacy utility appeared on compact defensive card')
+check(#RA.DeathRecapEntry:GetRows(page)==2,'Legacy utility appeared on compact defensive card')
 local utilityChips=0
 for _,b in ipairs(objects)do if b.parent==popup and b.useGroup and b:IsVisible()then
  utilityChips=utilityChips+1;check(b.useMeta.text:find('Utility',1,true),'Utility chip lost its visible role')
@@ -642,10 +642,47 @@ check(utilityChips==2,'Eligible utility receipts disappeared')
 local utilityReport=assert(R:BuildShareText(page))
 check(utilityReport:find('Greater Invisibility: utility use',1,true)and utilityReport:find('Mirror Image: utility use',1,true),'Full report reclassified legacy utility casts')
 page.lastAlive.spells[2].role='defensive';page.lastAlive.spells[2].defensiveTalentSpellID=1309497
-U:ShowLast();check(#shelves()==3 and #RA.DeathRecapEntry:GetAvailableRows(page)==1,'Captured learned Refractive Images qualification lost defensive shelf/card')
+U:ShowLast();check(#shelves()==3 and #RA.DeathRecapEntry:GetRows(page)==3,'Captured learned Refractive Images qualification lost defensive shelf/card')
 U:Preview()
 for _,b in ipairs(shelves())do tooltipSpell=nil;b:Fire('OnEnter');check(tooltipSpell~=110959,'Preview restored Greater Invisibility defensive icon')end
 U:Hide()
+-- Drag persistence uses native UIParent-space capture; cancellation never
+-- overwrites settings and clamps keep the header reachable after screen changes.
+U:ShowLast();local starts,stops=0,0
+popup.StartMoving=function()starts=starts+1 end;popup.StopMovingOrSizing=function()stops=stops+1 end
+local movedLeft,movedTop=120,900
+popup.GetLeft=function()return movedLeft end;popup.GetTop=function()return movedTop end
+popup:SetScale(.8);UIParent:SetScale(1);UIParent:SetSize(1920,1080)
+local previousPosition=db.deathRecap.position
+popup.dragHandle:Fire('OnDragStart');popup.dragHandle:Fire('OnDragStop')
+check(starts==1 and stops==1 and db.deathRecap.position.point=='TOPLEFT'and db.deathRecap.position.x==96 and db.deathRecap.position.y==-360,'Drag did not persist scaled UIParent-space anchor')
+U:Hide();U:ShowLast();check(popup.points[1][1]=='TOPLEFT'and popup.points[1][4]==96 and popup.points[1][5]==-360,'Reopen lost saved anchor')
+local savedPosition=db.deathRecap.position
+combat=true;popup.dragHandle:Fire('OnDragStart');popup.dragHandle:Fire('OnDragStop');check(starts==1 and db.deathRecap.position==savedPosition,'Combat drag changed saved position');combat=false
+popup.dragHandle:Fire('OnDragStart');U:Hide();check(stops==2 and db.deathRecap.position==savedPosition,'Hide saved a partial drag or failed to stop movement')
+U:ShowLast();popup.dragHandle:Fire('OnDragStart');local originalDB=RA.GetDB;local otherProfile={deathRecap={position={point='TOPLEFT',relativePoint='TOPLEFT',x=10,y=-10}}}
+RA.GetDB=function()return otherProfile end;popup.dragHandle:Fire('OnDragStop');check(otherProfile.deathRecap.position.x==10 and db.deathRecap.position==savedPosition,'Profile switch saved old drag into another profile');RA.GetDB=originalDB
+U:ShowLast();popup.dragHandle:Fire('OnDragStart');event('PLAYER_REGEN_DISABLED');check(db.deathRecap.position==savedPosition,'Combat entry committed an unfinished drag')
+U:ResetPosition();check(db.deathRecap.position==nil,'Reset position did not clear saved anchor')
+db.deathRecap.position={point='TOPLEFT',relativePoint='TOPLEFT',x=99999,y=-99999};U:ShowLast()
+check(popup.points[1][4]>=0 and popup.points[1][4]<=1920-popup.width*.8 and popup.points[1][5]<=0 and popup.points[1][5]>=-(1080-popup.height*.8),'Saved offscreen position was not clamped')
+UIParent:SetSize(1000,600);event('DISPLAY_SIZE_CHANGED');check(popup.points[1][4]<=1000-popup.width*.8 and popup.points[1][5]>=-(600-popup.height*.8),'Resolution change did not clamp visible window')
+popup:SetScale(1);UIParent:SetSize(1920,1080);U:ResetPosition();U:Hide()
+-- The header controls browse retained records while the latest death stays
+-- bound to its own Summary/native association; the selected report follows it.
+local actualHistory,actualRetained=R.GetHistory,R.IsRetainedPage
+local latestFixture=page;local olderFixture={id=1001,diedAt=90,playerName='Saved player',restored=true,class='MAGE',casts={},lastAlive={spells={},supplies={}},native={recapID=1001,recapMaxHealth=100,rows={{nativeIndex=1,nativeOffset=0,kind='damage',amount=5,recordedHP=17}}}}
+R.GetHistory=function()return{latestFixture,olderFixture}end
+R.IsRetainedPage=function(self,p)return p==latestFixture or p==olderFixture end
+U:ShowLast();check(popup.historyNav:IsShown()and popup.historyPicker.label.text=='1/2'and popup.historyPrev:IsEnabled()and not popup.historyNext:IsEnabled(),'History selector state incorrect at latest')
+popup.historyPicker:Fire('OnClick');check(popup.historyMenu:IsShown()and popup.historyButtons[2].label.text:find('Saved player',1,true),'History menu lost concise identity')
+popup.historyButtons[2]:Fire('OnClick');check(R:GetSelectedPage()==olderFixture and R:GetPage()==latestFixture and popup.healthPanel.selectedHP==17 and popup.historyPicker.label.text=='2/2','UI history selection replaced latest or borrowed selected HP')
+check(R:BuildShareText(olderFixture):find('5 damage',1,true),'Selected history report omitted its own native row')
+U:OpenShare();check(not U:ShowHistory(1),'History switched behind share modal');popup.shareChooser.close:Fire('OnClick')
+popup.historyNext:Fire('OnClick');check(R:GetSelectedPage()==latestFixture and popup.historyPicker.label.text=='1/2','Newer navigation did not return to latest')
+R.GetHistory,R.IsRetainedPage=actualHistory,actualRetained;U:Hide()
+local nativeText={__raNativeText=true,GetText=function()error('Read back native secret Text aspect')end}
+check(RA:GetVisualText(nativeText)==nil,'Asset recovery read native charge text')
 check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
 cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')
 ]=]

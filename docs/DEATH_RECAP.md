@@ -1,4 +1,96 @@
-# Death Log — alpha.40 entry, player context and recorded uses
+# Death Log and Death Summary — alpha.41
+
+## Core recording verification
+
+`/rcp recapfacts` opens a plain readout of the selected death's defensive uses,
+consumable uses, last living checks and death-notice checks. It reads frozen data;
+opening it never queries current cooldowns or bags. Use receipts do not imply
+remaining availability, and a missing receipt does not prove an ability was unused.
+Restricted charge counts remain explicitly unresolved in the public text report.
+
+Defensive and consumable use counts now both survive beyond the short timeline
+ring for this recording session. The ledger keeps count, first and last successful
+use for each tracked spell; it does not reconstruct discarded individual events.
+Those item summaries are included in diagnostics and the five saved deaths.
+Recent own-player successful uses before pulling are retained in a bounded
+64-receipt / 30-second buffer and handed to the matching combat session. A prior
+life, changed identity or stale receipt cannot be imported. This adds no idle
+timer, bag scan or cooldown query. Combat entry and earlier receipt coverage keep
+their separate timestamps.
+
+The Arcane Mage recorder tests cover spending one or both Barrier charges,
+recharging after use, restricted counts, and death before a charge callback.
+They supply API answers and test actual recorder callbacks; they do not establish
+live Retail availability accuracy. The owner's captured native recap remains the
+source for the damage regression fixture. No 90% availability claim is established.
+
+The examined Osso simulator v0.1.39 starts on this Mac but does not expose
+`C_DeathRecap.GetRecapEvents`. Its charge model requires explicit state; automatic
+spending/recharge is outside its documented scope. Its tainted secret-number
+`SetFormattedText` probe also fails, despite the current Blizzard API declaring
+secret arguments allowed. Simulator rejection is not proof of native rejection.
+The restricted-count display below remains a native-testable prototype.
+
+## Existing alpha.41 work
+
+Death Summary above the native death dialog now shows every tracked defensive and
+both item families in the same bounded order as the expanded CDs shelf. Lit/check,
+dim/red X, and muted question-mark states describe frozen availability evidence.
+Unknown is never converted to unavailable. Both surfaces use one projection and
+one badge painter; item artwork and check age follow the actual representative
+candidate, with the individual family checks retained in the expanded hover.
+The small card opens Death Log. Its historical snapshot stays fixed as native hit
+details arrive. The Summary on login never represents an old saved death.
+
+Drag the expanded header to move the window outside combat. The position is saved
+in the local profile using the existing UIParent top-left convention. Reopening,
+height changes, UI scale and display changes retain/clamp it. **Reset position**
+in Death Recap settings clears the saved anchor; interrupted drags do not save.
+
+The header selector and arrows switch among the five latest recorded deaths.
+The account-saved list keeps at most five public snapshots across reloads, with
+captured player, encounter, checks, baseline, casts and native rows. A sixth evicts
+only the oldest. Selection is separate from the current death's Summary/native
+association. Sharing and ordinary debug use the selected record; a restored death
+cannot reread a current-login native recap ID. Only explicitly allowlisted scalar
+fields and bounded arrays are saved; no association state, native objects,
+callbacks, chat targets or link tokens enter history.
+
+While enabled and alive outside combat, existing life/spec/bag/cooldown/charge
+observations refresh a bounded own-character baseline without idle polling.
+**Check character** or `/rcp recapcheck` refreshes and displays **Before combat**;
+it requires recording enabled and never enables it automatically. The panel
+closes on combat entry. Combat freezes the actual earlier baseline with its
+identity and timestamps separately from living checks. An unresolved death check
+can show its historical precombat check in hover, but never inherits its ready
+verdict. Trait/role qualification changes invalidate the previous capture identity.
+
+Ambiguous current **noncharge** spells can query their own cooldown with the
+supported ignore-GCD duration API. Only guarded public userdata predicates with
+`IsActive=false, IsZero=true` establish inactive, or `true,false` establish active.
+Held, pending, ended coverage and known charge spells retain their existing gates.
+Errors, restricted predicates and conflicting results remain unconfirmed. This
+path does not resolve Ice Cold/Barrier when their actual charge count is opaque.
+
+A restricted captured charge count can instead be passed directly to native
+`FontString:SetFormattedText("%d", count)`. It appears as a neutral charge badge;
+Lua never compares, formats, reads back or exports the opaque count. The value
+lives only in a bounded volatile witness keyed by captured rows and is omitted
+from public page data, debug and saved history. Later queries cannot change an
+older witness; pending/ended observations cannot display it. Restored history
+explicitly discloses that opaque counts were not saved. Native formatter failure
+keeps the question mark. This is a native-testable prototype, not a native pass.
+Primary contract: [Blizzard FontString API, pinned70688 UI source](https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleFontStringAPIDocumentation.lua#L516).
+
+The owner's ten native amounts reconcile the displayed grouped totals:
+16,298;54,247=47,369+6,878;55,730=39,432+16,298;
+138,217=38,547+6,792+76,580+16,298; fatal77,049.
+Screenshots do not provide raw timestamps. The visible gap remains unchanged
+pending a matched native reread; no timing or missing-hit claim is inferred.
+
+The preceding alpha.40 behavior and native acceptance details follow.
+
+## Alpha.40 retained behavior
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
