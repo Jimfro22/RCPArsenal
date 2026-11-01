@@ -44,7 +44,9 @@ for _,group in ipairs(model.items)do
    check(row.spellID==294741 and row.amount==15014 and row.absorbed==1667,'Tied Saber Slash event changed')
   end
  end
- if group.fatal then check(#group.rows==1 and group.rows[1].nativeIndex==1,'Owner fatal hit became a grouped sum')end
+ if group.fatal then check(group.fatalRow==page.native.rows[1]and group.fatalRow.nativeIndex==1,'Owner cluster lost its exact fatal receipt')end
+ local largest=group.rows[1];for _,row in ipairs(group.rows)do if row.amount>largest.amount then largest=row end end
+ check(group.representative==largest and group.spellID==largest.spellID,'Owner cluster artwork did not use its largest actual hit')
 end
 check(count==10 and tied==3,'Native timestamp ties were deduplicated')
 check(model.rows[1].recordedHP==223196 and model.rows[#model.rows].recordedHP==45326,'Raw owner HP endpoints were rewritten')
@@ -64,48 +66,37 @@ check(absorbedTotal==28797 and absorbMembers==8,'Owner absorbed amounts were los
 check(U:ShowLast(),'Owner recap did not open in actual UI')
 local popup=named.RCPArsenalDeathRecap
 check(popup.width==880 and popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==45326,'Owner fatal selection acquired zero HP or moved main layout')
-check(popup.hp.text=='45326 / 850900'and popup.percent.text=='5%'and popup.healthPoint:IsShown(),'Owner fatal HP/denominator was lost in actual UI')
-check(popup.healthGraphScale.upper==30 and popup.healthGraphScale.maximum==255270 and popup.healthGraphScale.count==10,'Owner graph did not use all ten valid samples for its 0–30% scale')
-check(popup.graphLabel.text=='Recorded HP · 0–30% of max HP'and popup.graphScaleTicks[1].text=='30%'and popup.graphScaleTicks[2].text=='15%'and popup.graphScaleTicks[3].text=='0%','Owner graph has no explicit shared scale labels')
-check(popup.graphContext.text=='10 hits · 1.8s recorded','Owner native window context used local death/use timing or padded domain width')
-check(popup.healthPoint.width==8 and popup.healthPoint.height==2,'Owner selected marker can conceal adjacent tied health ticks')
-local capturedMarks={}
-for _,region in ipairs(objects)do if region.parent==popup and region.kind=='Texture'and region:IsVisible()and region.width==6 and region.height==2 and region.color and region.color[4]==.95 then
- capturedMarks[#capturedMarks+1]={x=region.points[1][4]+3,y=region.points[1][5]-1}
-end end
-check(#capturedMarks==10,'Owner raw samples were dropped or inferred on the live graph')
-local tiedX=48+(page.native.rows[3].nativeOffset-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784
-local tiedMarks={}
-for _,mark in ipairs(capturedMarks)do if math.abs(mark.x-tiedX)<1 then tiedMarks[#tiedMarks+1]=mark end end
-table.sort(tiedMarks,function(a,b)return a.y<b.y end)
-check(#tiedMarks==3 and tiedMarks[2].y-tiedMarks[1].y>=2 and tiedMarks[3].y-tiedMarks[2].y>=2,'Owner tied HP ticks overlap or moved away from their true native time')
-local fixedScale=popup.healthGraphScale
--- Native timestamps stay tied even when collision layout moves the hit icons.
--- At a fractional scale each selected receipt must still expose its own HP.
+check(popup.hp.text=='45326 / 850900'and popup.percent.text=='5%'and popup.healthBar:IsShown(),'Owner fatal HP/denominator was lost in actual UI')
+check(not popup.graphBase and not popup.graphLabel and not popup.graphContext and not popup.healthPoint and not popup.pointPercent and not popup.graphScaleTicks,'Removed owner health plot or sample markers returned')
+check(not popup.absorb and not popup.absorbLabel and not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Owner live absorption became health or inferred healing')
+check(popup.healthPanel.points[1][4]==48 and popup.healthPanel.width==784 and popup.healthPanel.points[1][5]<popup.rail.points[1][5],'Owner health bar is not below and aligned with the timeline')
+-- Cluster artwork is fixed, while every tied original receipt still selects
+-- its own raw HP. Tied time and absent source remain exact facts in the detail.
 local previousScale=popup:GetEffectiveScale();popup:SetScale(.8)
-local inspectedTies,shiftedTies=0,0
+local inspectedTies,tiedGroup=0,nil
 for nativeIndex=3,5 do
  local target,memberIndex
  for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then
   for index,row in ipairs(button.group.rows)do if row.nativeIndex==nativeIndex then target,memberIndex=button,index end end
  end end
- check(target~=nil,'Owner tied event has no selectable hit target')
- target.member=memberIndex;target:Fire('OnEnter');inspectedTies=inspectedTies+1
- local row=page.native.rows[nativeIndex];local point=popup.healthPoint.points[1]
- local expectedY=popup.graphBase.points[1][5]+row.recordedHP/fixedScale.maximum*60
- check(popup:GetEffectiveScale()==.8 and popup.healthPoint:IsVisible()and popup.pointPercent:IsVisible(),'Displaced owner tied event hid its valid selected HP marker/percentage at fractional scale')
+ check(target~=nil,'Owner tied event has no selectable cluster member')
+ if tiedGroup then check(target==tiedGroup,'Exact-time owner receipts were split into different temporal clusters')else tiedGroup=target end
+ local art,representative=target.icon.texture,target.group.representative
+ target.member=memberIndex;tooltipLines={};target:Fire('OnEnter');inspectedTies=inspectedTies+1
+ local row=page.native.rows[nativeIndex];local copy=table.concat(tooltipLines,' ')
+ check(popup:GetEffectiveScale()==.8 and popup.healthBar:IsShown(),'Owner selected HP bar disappeared at fractional scale')
  check(popup.selected.nativeIndex==nativeIndex and popup.healthPanel.selectedHP==expectedHP[nativeIndex]and popup.hp.text==expectedHP[nativeIndex]..' / 850900','Tied selection substituted another receipt HP')
- check(Near(point[4],tiedX)and Near(point[4]*.8,tiedX*.8)and Near(point[5],expectedY),'Tied selected marker moved from exact native time/raw-HP position to packed icon position')
- check(popup.pointPercent.text==string.format('%.0f%%',row.recordedHP/850900*100)and popup.healthGraphScale==fixedScale,'Tied selected percentage or frozen graph scale changed')
- if math.abs(target.group.iconX-tiedX)*.8>1 then shiftedTies=shiftedTies+1 end
+ check(popup.percent.text==string.format('%.0f%%',row.recordedHP/850900*100)and target.group.representative==representative and target.icon.texture==art,'Tied member inspection changed percentage denominator or representative artwork')
+ check(copy:find(string.format('%.1fs',row.nativeOffset),1,true)and copy:find('15,014',1,true)and not copy:find('Source:',1,true),'Tied member detail lost readable time/amount or invented source identity')
+ check(target.group.rows[memberIndex]==row and popup.selected.nativeOffset==row.nativeOffset and popup.selected.timestamp==row.timestamp,'One-decimal tooltip changed the exact retained timestamp or selected raw row')
 end
-check(inspectedTies==3 and shiftedTies==2,'Owner regression did not exercise all three ties and both collision-displaced hit icons')
+check(inspectedTies==3,'Owner regression did not inspect every tied raw receipt')
 popup:SetScale(previousScale)
 for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then
  for i,row in ipairs(button.group.rows)do if row.nativeIndex==10 then
   button.member=i;button:Fire('OnEnter')
   check(popup.healthPanel.selectedHP==223196 and popup.hp.text=='223196 / 850900','Oldest owner native HP was reconstructed from damage')
-  check(popup.healthGraphScale==fixedScale and popup.percent.text=='26%','Owner inspection changed the graph scale or rescaled the upper health percentage')
+  check(popup.percent.text=='26%'and not popup.healing:IsShown(),'Owner inspection rescaled raw health or synthesized healing')
  end end
 end end
 local selected=popup.selected
@@ -116,7 +107,7 @@ for _,button in ipairs(objects)do if button.parent==popup and button.icon and bu
   inspected=inspected+1
   local copy=table.concat(tooltipLines,' ')
   check(copy:find('1.9s',1,true),'Owner shelf lost the independent recorded check age')
-  check(button.icon.rgb[1]==.55 and not copy:find('outside',1,true),'Owner unknown shelf verdict/neutral reason regressed')
+  check(button.recordedState==nil and button.info.text=='?'and button.icon.rgb[1]==.55 and not copy:find('outside',1,true),'Owner unknown shelf verdict/neutral reason regressed')
   local expectedUseAge=tooltipSpell==235450 and '5.2s' or '18.4s'
   local expectedCount=tooltipSpell==235450 and 'Used 2 times' or 'Used once'
   check(copy:find(expectedUseAge,1,true)and popup.tooltipRecap.lines[1].text:find(expectedCount,1,true),'Owner shelf did not lead with affirmative use count and its independent use age')
@@ -128,7 +119,7 @@ for _,button in ipairs(objects)do if button.parent==popup and button.icon and bu
   end
  end
 end end
-check(inspected==2 and popup.selected==selected,'Owner shelf hover omitted a spell or changed selected HP')
+check(inspected==2 and popup.selected==selected and popup.shelfAge.text==''and not popup.shelfAge:IsShown(),'Owner shelf hover omitted evidence, changed HP or restored visible age')
 
 -- This optional receipt list is deliberately DERIVED, never claimed as the
 -- owner's raw per-use export. Count 2 permits exactly its first/last endpoints.
@@ -145,17 +136,24 @@ end
 check(barriers==2 and mirrors==1,'Aggregate endpoints generated the wrong receipt count')
 page=derived;U:ShowLast();selected=popup.selected
 check(popup.recordedUseGroups[1].spellID==235450 and popup.recordedUseGroups[2].spellID==414658 and popup.recordedUseGroups[3].spellID==55342,'Owner use groups are not newest first')
-local groupCount,groupedBarrier=0,false
-for _,button in ipairs(objects)do if button.parent==popup and button.useGroup and button:IsVisible()then
- groupCount=groupCount+1
+local groupCount,groupedBarrier=0,false;local seenGroups={}
+for _,button in ipairs(objects)do if button.parent==popup and(button.useGroup or button.useOverflow)and button:IsVisible()then
+ check(button.points[1][4]>=48 and button.points[1][4]+button.width<=536,'Owner use chip collided with the CD shelf')
+ if button.useGroup then
+ groupCount=groupCount+1;seenGroups[button.useGroup.spellID]=true
  if button.useGroup.spellID==235450 then
   groupedBarrier=true;check(#button.useGroup.rows==2 and button.useMeta.text=='×2 · 5.2s','Derived repeated Barrier endpoints did not share a visible count and latest age')
   tooltipLines={};button:Fire('OnEnter');local copy=table.concat(tooltipLines,' ')
   check(copy:find('23.0s',1,true)and copy:find('5.2s',1,true)and copy:find('death notice',1,true),'Grouped receipt tooltip lost either local age or its clock provenance')
   button:Fire('OnMouseWheel',-1);button:Fire('OnMouseWheel',-1)
  end
+ else
+  for _,detail in ipairs(button.useOverflow.rows)do if not seenGroups[detail.group.spellID]then groupCount=groupCount+1;seenGroups[detail.group.spellID]=true end end
+  tooltipLines={};button:Fire('OnEnter');local copy=table.concat(tooltipLines,' ')
+  check(copy:find('Spell 55342',1,true)and copy:find('18.4s',1,true)and copy:find('death notice',1,true),'Owner overflow lost ability identity or independent receipt age: '..copy)
+ end
 end end
-check(groupCount==3 and groupedBarrier and popup.selected==selected,'Derived receipt grouping lost identities or moved selected HP')
+check(groupCount==3 and seenGroups[235450]and seenGroups[414658]and seenGroups[55342]and groupedBarrier and popup.selected==selected,'Derived receipt grouping lost identities or moved selected HP')
 derived.native.rows[1].recordedHP=0
 check(fixture.NewPage().native.rows[1].recordedHP==45326 and fixture.raw.nativeRows[1].recordedHP==45326,'Fixture consumers mutated source facts')
 cleanErrors()
