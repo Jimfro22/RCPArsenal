@@ -28,7 +28,7 @@ local function Fields(input,keys)
     return out
 end
 local CHECK='spellID baseSpellID key name category role defensiveTalentSpellID known observedAt cooldownAt chargesAt source cooldown cooldownQuery isEnabled isActive isOnGCD cooldownEnabledStatus cooldownActiveStatus cooldownGCDStatus chargeQuery chargeReason chargeCountStatus chargeActiveStatus maxChargesStatus currentCharges maxCharges chargesActive pendingAt pendingReason chargesPendingAt valid eventSequence invalidationGeneration invalidatedAt invalidatedBy ownCooldownQuery ownCooldownAt ownCooldownSource ownCooldownActive ownCooldownZero ownCooldownActiveStatus ownCooldownZeroStatus ownCooldownState'
-local ITEM='kind category source observedAt cooldown itemID icon carried carriedAt cacheGeneration partial familyAbsenceVerified physicalCount countStatus countAt remainingUses usesStatus usesAt cooldownQuery cooldownStartStatus cooldownDurationStatus enableCooldownTimer cooldownAt pendingAt pendingReason'
+local ITEM='kind category source inventorySource observedAt cooldown itemID icon carried carriedAt cacheGeneration partial familyAbsenceVerified physicalCount countStatus countAt remainingUses usesStatus usesAt cooldownQuery cooldownStartStatus cooldownDurationStatus enableCooldownTimer cooldownAt pendingAt pendingReason'
 local CAST='spellID name role defensiveTalentSpellID observedAt source'
 local CLOCK='localClock localSessionStartedAt localDeathNoticeAt nativeReadLocalBefore nativeReadLocalAfter nativeFirstTimestamp nativeMinimumTimestamp nativeMaximumTimestamp nativeFatalTimestamp nativeRowCount nativeTimestampStatus'
 local function Array(input,limit,fn)
@@ -48,7 +48,7 @@ local function Check(input)
 end
 local function Sample(input)
     local out=Fields(input,'observedAt source coverageEndedAt coverageEndReason playerGUID playerName playerRealm specID class frozenAtCombatEntry');if not out then return nil end
-    out.spells=Array(input.spells,32,Check);out.supplies=Array(input.supplies,32,function(v)return Fields(v,ITEM)end)
+    out.spells=Array(input.spells,32,Check);out.supplies=Array(input.supplies,34,function(v)return Fields(v,ITEM)end)
     out.entries=Array(input.entries,32,function(v)return Fields(v,CHECK)end);return out
 end
 function H:Snapshot(input)

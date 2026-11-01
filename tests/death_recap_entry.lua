@@ -150,7 +150,7 @@ rows=Available({spells={Ready(1),negative,unknown},supplies={}})
 check(rows[1].recordedState==true and rows[2].recordedState==false and rows[3].recordedState==nil,'Full projection dropped or conflated tri-state evidence')
 local bounded={spells={},supplies={}}
 for i=1,40 do bounded.spells[i]=Ready(i);bounded.supplies[i]={kind='stone',itemID=i,cooldown='unknown'}end
-rows=Available(bounded);check(#rows==34 and #rows[33].members==32,'Shared projection exceeded32 spells/items or omitted family icons')
+rows=Available(bounded);check(#rows==34 and #rows[33].members==34,'Shared projection exceeded32 spells/34 items or omitted family icons')
 local duplicate=Ready(1);rows=Available({spells={duplicate,duplicate},supplies={}});check(#rows==3,'Duplicate spell icons entered projection')
 check(stateReads==0,'Frozen projection queried current APIs')
 for _,saved in ipairs(savedAPIs)do saved.object[saved.key]=saved.value end
