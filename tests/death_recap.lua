@@ -69,9 +69,12 @@ charges={maxCharges=2,currentCharges=1,isActive=true};time=11.3;event('SPELL_UPD
 dead=true;time=12;event('PLAYER_DEAD')
 local page=R:GetPage()
 check(page and #page.casts==1 and page.lastAlive.spells[1].currentCharges==1,'Cast/remaining-charge evidence lost')
-check(page.lastAlive.spells[1].cooldown=='active' and page.deathObservation.source=='death-notification','Alive/death evidence merged')
+check(page.lastAlive.spells[1].cooldown=='active-context-unknown' and page.deathObservation.source=='death-notification','Charge-event/death evidence merged with trusted cooldown context')
 check(not R:GetDiagnostics().tickerActive and not page.native,'Old/empty native recap accepted')
 local firstPage=page;local timerA=timers[#timers]
+local pendingAttempts=page.nativeAttempts
+event('PLAYER_DEAD')
+check(R:GetPage()==page and not timerA.cancelled and R:GetDiagnostics().fetchPending and page.nativeAttempts==pendingAttempts,'Duplicate death notice cancelled the pending personal recap')
 meterRows={{isLocalPlayer=true,deathRecapID=1}}
 link='death:1';events={{destGUID='Player-self',timestamp=100,event='SPELL_DAMAGE',spellId=123,amount=secret},
     {destGUID='Player-self',timestamp=98,event='SPELL_DAMAGE',spellId=124,amount=100}}
@@ -119,9 +122,9 @@ dead=true;time=21;event('PLAYER_DEAD');page=R:GetPage()
 check(page.lastAlive.spells[1].cooldown=='held' and page.lastAlive.spells[1].currentCharges==nil,'Held/opaque charges became ready/zero')
 R:SetOption('enabled',false);dead=false;cooldown={isEnabled=true,isActive=true,isOnGCD=true};charges=nil;R:SetOption('enabled',true)
 dead=true;time=22;event('PLAYER_DEAD');page=R:GetPage()
-check(page.lastAlive.spells[1].cooldown=='active' and page.lastAlive.spells[1].isOnGCD==nil,'GCD flag trusted outside cooldown update')
+check(page.lastAlive.spells[1].cooldown=='active-context-unknown' and page.lastAlive.spells[1].isOnGCD==nil,'GCD flag trusted outside cooldown update')
 dead=false;event('PLAYER_ALIVE');time=22.2;event('PLAYER_REGEN_DISABLED');time=22.4;event('SPELL_UPDATE_COOLDOWN');dead=true;time=23;event('PLAYER_DEAD')
-check(R:GetPage().lastAlive.spells[1].cooldown=='gcd-only' and R:GetPage().deathObservation.spells[1].cooldown=='active','Event-only GCD/death semantics lost')
+check(R:GetPage().lastAlive.spells[1].cooldown=='gcd-observed' and R:GetPage().deathObservation.spells[1].cooldown=='active-context-unknown','Event-only GCD/death semantics lost')
 local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end;R:EnableReminder()
 for k,v in pairs(prefs)do if k~='consumableReminder'then check(db.personalTools[k]==v,'Bell changed child preference')end end
 check(db.personalTools.consumableReminder==true,'Explicit bell did not enable existing master')

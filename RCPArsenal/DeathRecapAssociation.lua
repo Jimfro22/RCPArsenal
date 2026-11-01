@@ -1,7 +1,8 @@
 local _,RA=...
 local A={};RA.DeathRecapAssociation=A
-local enabled,epoch,witnessed,sessionID,baseline,unmatched,blocked=false,0,false,nil,nil,0,false
-local accepted={}
+local enabled,epoch,witnessed,baseline,unmatched,blocked=false,0,false,nil,0,false
+local accepted,acceptedCount,latestHint={},0,nil
+A.MAX_ACCEPTED=256
 local stats={reads=0,rows=0}
 local function Public(value)
     if type(issecretvalue)~="function"then return nil end
@@ -15,16 +16,12 @@ local function Table(value)
     value=Public(value);if type(value)=="table"and getmetatable(value)==nil then return value end
 end
 local function Copy(set)local out={};for key in pairs(set or{})do out[key]=true end;return out end
-local function Same(a,b)
-    for key in pairs(a)do if not b[key]then return false end end
-    for key in pairs(b)do if not a[key]then return false end end;return true
-end
-local function Scan(id)
+local function Scan()
     if not enabled or not C_DamageMeter or not Enum or not Enum.DamageMeterType or not Enum.DamageMeterSessionType then return nil,"meter_unavailable"end
-    local fn=id and C_DamageMeter.GetCombatSessionFromID or C_DamageMeter.GetCombatSessionFromType
+    local fn=C_DamageMeter.GetCombatSessionFromType
     if type(fn)~="function"then return nil,"meter_unavailable"end
     stats.reads=stats.reads+1
-    local ok,value=pcall(fn,id or Enum.DamageMeterSessionType.Current,Enum.DamageMeterType.Deaths)
+    local ok,value=pcall(fn,Enum.DamageMeterSessionType.Current,Enum.DamageMeterType.Deaths)
     local session=ok and Table(value)
     local rows=session and Table(session.combatSources)
     if not rows then return nil,"meter_unreadable"end
@@ -45,10 +42,10 @@ local function Scan(id)
 end
 function A:SetEnabled(value)
     if enabled==(value==true)then return end
-    enabled=value==true;epoch=epoch+1;witnessed=false;sessionID=nil;baseline=nil;unmatched=0;blocked=false;accepted={}
+    enabled=value==true;epoch=epoch+1;witnessed=false;latestHint=nil;baseline=nil;unmatched=0;blocked=false;accepted={};acceptedCount=0
 end
 function A:NewEpoch(alive)
-    epoch=epoch+1;witnessed=false;sessionID=nil;baseline=nil;unmatched=0;blocked=false;accepted={}
+    epoch=epoch+1;witnessed=false;latestHint=nil;baseline=nil;unmatched=0;blocked=false
     if not enabled or not alive then return end
     local set=Scan()
     -- A witnessed clean native epoch with a complete empty personal set is
@@ -56,42 +53,39 @@ function A:NewEpoch(alive)
     if set and next(set)==nil then baseline=set;witnessed=true end
 end
 function A:Update(kind,id,alive)
-    if not enabled or not Enum or not Enum.DamageMeterType or Public(kind)~=Enum.DamageMeterType.Deaths then return end
-    id=ID(id);if not id then return end
-    if sessionID==id then return end -- Scalar event handling after the first bind; no repeated row scans.
-    if sessionID and sessionID~=id then blocked=true;return end
-    sessionID=id
-    if not witnessed or not baseline or not alive or unmatched~=0 then return end
-    local current=Scan();local explicit=Scan(id)
-    if not current or not explicit or not Same(current,explicit)or not Same(current,baseline)then blocked=true end
+    if not enabled or not Enum or not Enum.DamageMeterType or Public(kind)~=Enum.DamageMeterType.Deaths then return false end
+    local value=Public(id)
+    if value~=0 then value=ID(value)end
+    if value==nil then return false end
+    -- Overall0 and positive notifications are dirty hints, not session binding
+    -- evidence. Current owns identity; restricted getters cannot poison it here.
+    latestHint=value;return true
 end
 function A:Freeze()
     unmatched=unmatched+1
     if unmatched~=1 then blocked=true end
-    return {epoch=epoch,sessionID=sessionID,baseline=Copy(baseline),known=witnessed and baseline~=nil and not blocked,
+    return {epoch=epoch,source="Current",baseline=Copy(baseline),known=witnessed and baseline~=nil and not blocked,
         ordinal=unmatched}
 end
 function A:Candidate(token)
     if not enabled or not token or token.epoch~=epoch then return nil,"meter_epoch_changed"end
     if not token.known or not witnessed or not baseline then return nil,"alive_baseline_unverified"end
     if blocked or unmatched~=1 or token.ordinal~=1 then return nil,"multiple_or_unresolved_deaths"end
-    if not sessionID or(token.sessionID and token.sessionID~=sessionID)then return nil,"session_unverified"end
-    local current,reason=Scan();if not current then return nil,reason end
-    local set,why=Scan(sessionID);if not set then return nil,why end
-    if not Same(current,set)then return nil,"session_switch_unverified"end
+    local set,reason=Scan();if not set then return nil,reason end
     for id in pairs(token.baseline)do if not set[id]then return nil,"baseline_ids_removed"end end
     local chosen,count=nil,0
     for id in pairs(set)do
         if not token.baseline[id]then chosen=id;count=count+1 end
     end
     if count~=1 or accepted[chosen]then return nil,"personal_id_delta_ambiguous"end
+    if acceptedCount>=self.MAX_ACCEPTED then return nil,"accepted_id_limit"end
     return chosen,nil,set
 end
 function A:Commit(token,id,set)
-    if token.epoch~=epoch or unmatched~=1 then return false end
-    accepted[id]=true;baseline=Copy(set);unmatched=0;return true
+    if token.epoch~=epoch or unmatched~=1 or accepted[id]or acceptedCount>=self.MAX_ACCEPTED then return false end
+    accepted[id]=true;acceptedCount=acceptedCount+1;baseline=Copy(set);unmatched=0;return true
 end
 function A:GetDiagnostics()
     return {reads=stats.reads,rows=stats.rows,epoch=epoch,baselineKnown=witnessed and baseline~=nil and not blocked,
-        unmatchedDeaths=unmatched,sessionBound=sessionID~=nil}
+        unmatchedDeaths=unmatched,sessionBound=false,source="Current",latestSessionHint=latestHint,acceptedIDs=acceptedCount,acceptedLimit=self.MAX_ACCEPTED}
 end

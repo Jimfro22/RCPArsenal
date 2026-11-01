@@ -1,10 +1,16 @@
-# Death Log — alpha.35 compact header and shield-label polish
+# Death Log — alpha.36 live capture and manual death entry
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
 opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
 Its amounts, selected-time states, health curve, heals, durations and healing
 debt are fictional. `/rcp recap` opens the one retained personal page this login.
+
+Automatic opening defaults OFF. The small RCP Death Log entry beside the visible
+Blizzard death dialog opens the current captured death, including a pending page.
+It disappears while the log is open and on release/resurrection/reset. Legacy
+unmarked auto-open settings migrate OFF once; later explicit choices persist.
+The optional Open after my death setting still enables automatic opening.
 
 The compact 880×428 base display has grouped damage below its native time rail,
 support above it and a shallow HP graph. A collision tier adds 100px; extra known
@@ -24,7 +30,8 @@ are tooltip-only. Normal click retains verified Journal navigation.
 The focus line is not a timestamp: packed artwork can differ from its event
 positions. Actual graph samples never move. The ring/percentage appears only
 when the representative's actual point aligns within one physical pixel of the
-focus line. Real HP remains discrete. Preview uses consistent 2-unit step
+focus line. Real HP uses visible 4-unit samples and neutral dashed joins between unambiguous
+adjacent samples; gaps and equal-time ambiguity break the joins. Preview uses consistent 2-unit step
 strokes, complete event-colored plateaus and subdued fill; defensive durations
 use stronger 4-unit strokes and end caps. The smaller tombstone sits clear of
 the actual known fatal HP point; unknown HP gets no invented graph endpoint.
@@ -54,7 +61,8 @@ visual group-focus locator follows the icon center without moving data points.
 
 Real data and selected-time limitations
 --------------------------------------
-The existing explicit own recap-ID/session association is preserved. The default
+Association uses the authoritative Current personal recap-ID set within a witnessed
+clean meter epoch. Update events are dirty hints, never explicit-session bindings. The default
 selected recap is never trusted. Up to64 normalized public native rows are kept;
 a larger input is marked partial. Original index1 remains the killing identity,
 independently of maximum timestamp. Amount, absorbed, overkill, resisted and
@@ -65,14 +73,16 @@ Public finite event HP and one positive finite recap maximum support raw selecte
 health and discrete graph marks. Known zero stays zero. Missing selection clears
 the previous value; above-max raw HP stays readable without a clamped bar. The
 maximum is a fixed recap reference. Before/after-hit semantics are unspecified.
-Real history is not connected, filled or reconstructed from damage, absorbs or
-HP deltas. No heal or forced zero endpoint is invented.
+Dashed lines connect recorded samples as visual joins only; health between them
+is unknown. No fill, damage/absorb reconstruction, inferred heal or forced zero
+endpoint is added.
 
 **The native recap clock has no validated local GetTime conversion.** Real shelf
 heading is **Last recorded check**, with actual check ages relative to the death
 notice. It is not a snapshot at the selected native hit. Its hover identifies
 independent cooldown/charge/stock observations and pending/coverage gaps. Cast
-receipts remain inspectable as untimed icons; no guessed native connector or
+receipts appear in a separate Recorded uses strip with local death-notice ages;
+no guessed native connector or
 effect duration is attached. The Example alone demonstrates one shared synthetic
 clock; its CD shelf is fixed to death while health/event selection changes. Full local histories, aura lifecycle and
 boss-heal-absorb collection are deferred until useful alignment/capability passes.
@@ -232,3 +242,33 @@ submission/cancellation on an authorized test destination. Exact merged real
 fight timestamps remain unavailable until independent native clock evidence
 establishes the relationship. The recorder, association, catalog, observed-use
 retention and all media remain unchanged in this pass.
+
+Alpha.36 native comparison and bounded evidence
+----------------------------------------------
+`/rcp recapblizzard` requests Blizzard's view of the accepted frozen recap ID.
+`/rcp recapdebug` opens a copyable frozen diagnostic packet without capture reads.
+`/rcp recapdebug reread` explicitly performs one bounded read of that same ID and
+shows index-wise differences without replacing the original page. These commands
+never substitute Blizzard's default record. The outdoor screenshot fatal mismatch
+remains an exact-ID diagnostic question; the largest hit is not fatal evidence.
+
+Absorb clusters show exact summed public credits and retain each original member
+for wheel inspection, with no shield attribution. The two item-family shelf slots
+retain individual stock/cooldown/check ages in their inspectable details. Direct
+cooldown snapshots keep event context and old timestamps; generic active checks
+without trustworthy GCD context and pending/restricted charges remain unknown.
+Charge-based verdicts use the charge check's age. Unchanged tracked spell rosters
+preserve use history. Spell-only updates do not rescan supplies.
+
+If a guarded Current read fails after a meter update, it does not invalidate an
+already witnessed clean alive baseline. This conditional failure handling does
+not establish that combat normally makes the meter unreadable. A newly reported
+Current epoch with no readable alive baseline
+remains unavailable; later data cannot reconstruct that prior observation.
+Accepted IDs cannot repeat across meter epochs within an enable cycle; the bounded
+256-ID retention limit fails unavailable rather than dropping anti-reuse evidence.
+
+Loading, unavailable and empty native pages hide the time rail, ticks and death
+axis labels until recorded events arrive. Recorded uses and the last-check shelf
+remain available independently. Preview keeps its fictional timeline and stepped
+health curve, described separately in its graph help.

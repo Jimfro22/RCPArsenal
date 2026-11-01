@@ -92,7 +92,7 @@ check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated 
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
 for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
- if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==1 and help:find('Off cooldown',1,true)and help:find('45.0s',1,true),'Age or secret charge erased public cooldown fact')end
+ if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==.55 and help:find('Normal cooldown was inactive',1,true)and help:find('charge state was not established',1,true)and help:find('45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
  if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
  if tooltipSpell==342245 then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
@@ -108,7 +108,8 @@ hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if 
 local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==2,'Stale render action changed selection')
 -- Scrub is bounded pointer input while hovering only; stationary pointer cannot
 -- undo wheel choice. No re-grouping or periodic capture is attached to it.
-local x=300+48+(.5/5)*784;GetCursorPosition=function()return x,400 end
+local function timelineX(time)return 48+(time-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784 end
+local x=300+timelineX(-4.5);GetCursorPosition=function()return x,400 end
 grouped.span:Fire('OnEnter');check(popup.selected.nativeIndex==2,'Span scrub missed exact nearest event')
 grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Stationary scrub changed focus or undid detail wheel')
 x=x+32;grouped.span:Fire('OnUpdate');grouped.span:Fire('OnLeave');check(grouped.span:GetScript('OnUpdate')==nil,'Pointer tracker survived leave')
@@ -116,7 +117,7 @@ local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
 for i=1,50 do hover(2);hover(3)end
 check(#objects==beforeFrames and #timers==beforeTimers and groupCalls==beforeGroups,'Hover allocated or regrouped')
 local fatal=page.native.rows[4];fatal.nativeOffset=-1;page.native.rows[5]={nativeIndex=5,nativeOffset=0,spellID=126,kind='unknown'}
-U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==48+4/5*784 and popup.fight.text=='Fight 1:40','Latest native time mislabeled as Death or clocks conflated')
+U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==timelineX(-1) and popup.fight.text=='Fight 1:40','Latest native time mislabeled as Death or clocks conflated')
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
@@ -158,7 +159,7 @@ local blueCount=0
 for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()and marker.entry.kind=='absorbed'then
  blueCount=blueCount+1;check(marker.entry.amount==20000 and marker.label.text=='+20k'and marker.timeX==48+1.4/5*784 and marker.color[1]==.36 and marker.color[2]==.70 and marker.color[3]==1,'Absorbed marker changed amount/time or blue identity')
  local markerSelected,markerHP=popup.selected,popup.healthPanel.selectedHP;tooltipSpell=nil;tooltipLines={};marker:Fire('OnEnter');local shieldHelp=table.concat(tooltipLines,' ')
- check(not GameTooltip:IsShown()and tooltipSpell==nil and popup.tooltipRecap.lines[1].text=='Shield absorb'and shieldHelp:find('20,000 damage absorbed by a shield.',1,true)and not shieldHelp:find('healing',1,true)and not shieldHelp:find('remaining',1,true),'Shield help invented healing, capacity or source identity')
+ check(not GameTooltip:IsShown()and tooltipSpell==nil and popup.tooltipRecap.lines[1].text=='Shield absorption · 1 hit'and shieldHelp:find('Total absorbed: 20,000',1,true)and shieldHelp:find('Shield source not recorded.',1,true)and not shieldHelp:find('healing',1,true)and not shieldHelp:find('remaining',1,true),'Shield help invented healing, capacity or source identity')
  check(popup.selected==markerSelected and popup.healthPanel.selectedHP==markerHP and #popup.healTargets==2,'Absorption hover changed selected health or became healing');marker:Fire('OnLeave')
 end end
 check(blueCount==1,'Recorded absorption was omitted or counted twice')
@@ -238,7 +239,7 @@ for _,older in ipairs(staleTargets)do
 end
 local copyPage=page;page={id=13,diedAt=100,casts={},native={recapID=4,rows={}}}
 U:ShowLast();check(popup.empty:IsShown()and not popup.context and not popup.health and popup.info.points[1][4]==174 and popup.info.points[1][5]==-23,'Empty live log restored labels or lost anchored help')
-for i=1,12 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
+for i=1,20 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
 U:ShowLast();local unknownGroup
 for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
 check(unknownGroup,'Unknown-event density fixture lost its summary')
@@ -341,7 +342,7 @@ U:Preview()
 local savedFatalAbsorb=page.native.rows[4].absorbed;page.native.rows[4].absorbed=7000;U:ShowLast()
 local endpointMarker
 for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()and marker.entry.row.nativeIndex==1 then endpointMarker=marker end end
-check(endpointMarker and endpointMarker.timeX==popup.deathX and popup.fightSlotExtra==20,'Endpoint absorption lost timestamp or timer slot')
+check(endpointMarker and endpointMarker.entry.first==0 and endpointMarker.timeX<=popup.deathX and popup.fightSlotExtra==20,'Endpoint absorption lost timestamp or timer slot')
 local markerBottom=-endpointMarker.points[1][5]+10;local fightTop=-popup.fight.points[1][5]-14
 check(fightTop>=markerBottom+4,'Killing-blow absorption overlaps fight timer')
 page.native.rows[4].absorbed=savedFatalAbsorb;U:Preview()
