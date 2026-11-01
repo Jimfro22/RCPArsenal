@@ -627,7 +627,7 @@ local function Health(page,row,example,item)
             local graphMax=not example and frame.healthGraphScale and frame.healthGraphScale.maximum or max
             Place(frame.healthPoint,"CENTER",frame,"TOPLEFT",X(row.nativeOffset),-GRAPH_TOP-extraHeight-(1-hp/graphMax)*GRAPH_HEIGHT)
             local scale=ReadMetric(frame,"GetEffectiveScale")or 1
-            frame.healthPoint:SetShown(item~=nil and math.abs(item.iconX-X(row.nativeOffset))*scale<=1)
+            frame.healthPoint:SetShown(item~=nil and(not example or math.abs(item.iconX-X(row.nativeOffset))*scale<=1))
             local pointX=X(row.nativeOffset);Text(frame.pointPercent,string.format("%.0f%%",hp/max*100))
             local left=row.nativeIndex==1 or pointX+10+frame.pointPercent:GetStringWidth()>860
             Place(frame.pointPercent,left and"RIGHT"or"LEFT",frame.healthPoint,"CENTER",left and-10 or 10,not example and(1-hp/graphMax)*GRAPH_HEIGHT<20 and-10 or 10)

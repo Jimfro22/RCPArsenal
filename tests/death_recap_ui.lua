@@ -101,7 +101,9 @@ local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst
 tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 hits',1,true),'Group moment not explicit')
 local groupFocusX=popup.guide.points[1][4]
 grouped:Fire('OnMouseWheel',-1);check(grouped.group.rows[grouped.member].nativeIndex==3 and popup.selected.nativeIndex==2 and popup.healthPanel.selectedHP==90000 and popup.guide.points[1][4]==groupFocusX and groupFocusX==grouped.group.iconX,'Tooltip detail moved stable group focus/health')
-check(not popup.healthPoint:IsShown(),'Packed/midpoint group invented an aligned HP sample')
+check(popup.healthPoint:IsVisible()and popup.pointPercent:IsVisible()
+ and math.abs(popup.healthPoint.points[1][4]-(48+(popup.selected.nativeOffset-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784))<.001
+ and math.abs(popup.healthPoint.points[1][5]-(popup.graphBase.points[1][5]+popup.selected.recordedHP/popup.healthGraphScale.maximum*60))<.001,'Packed group hid or moved its selected raw HP sample from true native time/HP')
 check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
 local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==2,'Journal click also moved group focus')
 hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Redraw forgot group focus/detail')

@@ -80,6 +80,27 @@ for _,mark in ipairs(capturedMarks)do if math.abs(mark.x-tiedX)<1 then tiedMarks
 table.sort(tiedMarks,function(a,b)return a.y<b.y end)
 check(#tiedMarks==3 and tiedMarks[2].y-tiedMarks[1].y>=2 and tiedMarks[3].y-tiedMarks[2].y>=2,'Owner tied HP ticks overlap or moved away from their true native time')
 local fixedScale=popup.healthGraphScale
+-- Native timestamps stay tied even when collision layout moves the hit icons.
+-- At a fractional scale each selected receipt must still expose its own HP.
+local previousScale=popup:GetEffectiveScale();popup:SetScale(.8)
+local inspectedTies,shiftedTies=0,0
+for nativeIndex=3,5 do
+ local target,memberIndex
+ for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then
+  for index,row in ipairs(button.group.rows)do if row.nativeIndex==nativeIndex then target,memberIndex=button,index end end
+ end end
+ check(target~=nil,'Owner tied event has no selectable hit target')
+ target.member=memberIndex;target:Fire('OnEnter');inspectedTies=inspectedTies+1
+ local row=page.native.rows[nativeIndex];local point=popup.healthPoint.points[1]
+ local expectedY=popup.graphBase.points[1][5]+row.recordedHP/fixedScale.maximum*60
+ check(popup:GetEffectiveScale()==.8 and popup.healthPoint:IsVisible()and popup.pointPercent:IsVisible(),'Displaced owner tied event hid its valid selected HP marker/percentage at fractional scale')
+ check(popup.selected.nativeIndex==nativeIndex and popup.healthPanel.selectedHP==expectedHP[nativeIndex]and popup.hp.text==expectedHP[nativeIndex]..' / 850900','Tied selection substituted another receipt HP')
+ check(Near(point[4],tiedX)and Near(point[4]*.8,tiedX*.8)and Near(point[5],expectedY),'Tied selected marker moved from exact native time/raw-HP position to packed icon position')
+ check(popup.pointPercent.text==string.format('%.0f%%',row.recordedHP/850900*100)and popup.healthGraphScale==fixedScale,'Tied selected percentage or frozen graph scale changed')
+ if math.abs(target.group.iconX-tiedX)*.8>1 then shiftedTies=shiftedTies+1 end
+end
+check(inspectedTies==3 and shiftedTies==2,'Owner regression did not exercise all three ties and both collision-displaced hit icons')
+popup:SetScale(previousScale)
 for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then
  for i,row in ipairs(button.group.rows)do if row.nativeIndex==10 then
   button.member=i;button:Fire('OnEnter')
