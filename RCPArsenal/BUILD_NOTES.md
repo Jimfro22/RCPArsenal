@@ -8,6 +8,8 @@ Direct cooldown events capture all five public payload fields and synchronous fl
 
 /rcp recapblizzard requests the accepted exact native ID. /rcp recapdebug copies frozen diagnostics; /rcp recapdebug reread explicitly reads that same ID once and compares original array slots without changing the frozen page. The screenshot fatal-hit discrepancy remains unresolved until an exact-ID comparison; index1 remains native fatal identity, separately from greatest amount or timestamp.
 
+Authoritative Current meter snapshots replace event-hint session binding. Restricted update reads cannot permanently reject a witnessed baseline; missing alive baselines still stay unavailable. The final bounded read is reserved for combat end after repeated unreadable meter results. Accepted IDs remain protected against reuse across epochs within a bounded enable cycle.
+
 No aura/healing collector, inferred clock bridge, automatic chat, install, CurseForge upload, release or tag. Offline tests and source-derived renders do not certify native event order, fonts, taint or game performance.
 
 # 0.15.3-alpha.35 narrow Death Log polish

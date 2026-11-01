@@ -635,7 +635,9 @@ local function DrawGraph(page,example)
     frame.graphLabel:SetShown(valid>0);frame.graphBase:SetShown(valid>0)
     frame.graphHelp=frame.graphHelp or CreateFrame("Button",nil,frame)
     Size(frame.graphHelp,28,18);Place(frame.graphHelp,"TOPLEFT",frame,"TOPLEFT",18,-(GRAPH_TOP-19)-extraHeight);frame.graphHelp:SetShown(valid>0)
-    frame.graphHelp:SetScript("OnEnter",function(self)Tooltip(self,{"Recorded health","Dots are recorded health. Dashed lines join samples; health between them is unknown."})end)
+    frame.graphHelp:SetScript("OnEnter",function(self)
+        Tooltip(self,example and{"Preview health","This fictional example uses a stepped health curve."}or{"Recorded health","Dots are recorded health. Dashed lines join samples; health between them is unknown."})
+    end)
     frame.graphHelp:SetScript("OnLeave",HideTooltip)
     if valid==0 then return end
     local n,lineCount,previous=0,0

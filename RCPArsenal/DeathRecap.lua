@@ -336,8 +336,14 @@ local function BeginCombat(reason,combatEntryObserved)
     for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
 end
 local FetchNative
+local function ReservePublicRetry(page)
+    -- A restricted Current container may stay unreadable for the whole fight.
+    -- Preserve the final shared attempt for combat end instead of spending it
+    -- on another dirty hint while the same access boundary still applies.
+    return page.nativeAttempts>=Recap.LIMITS.attempts-1 and page.nativeReason=="meter_unreadable"and Combat()
+end
 local function ScheduleNative(page,token,delay)
-    if fetchTimer or not C_Timer or not C_Timer.NewTimer then return end
+    if fetchTimer or ReservePublicRetry(page)or not C_Timer or not C_Timer.NewTimer then return end
     local timer
     timer=C_Timer.NewTimer(delay,function()
         if fetchTimer~=timer then return end
@@ -347,7 +353,7 @@ local function ScheduleNative(page,token,delay)
 end
 FetchNative=function(page,token)
     if not Enabled()or token~=generation or page.captureGeneration~=generation or last~=page
-        or page.native or page.nativeAttempts>=Recap.LIMITS.attempts then return end
+        or page.native or page.nativeAttempts>=Recap.LIMITS.attempts or ReservePublicRetry(page)then return end
     page.nativeAttempts=page.nativeAttempts+1
     local recapID,reason,set=Association:Candidate(page.association)
     local packet
@@ -365,7 +371,7 @@ FetchNative=function(page,token)
                 clockDiagnostic={localClock="GetTime",localSessionStartedAt=page.localSessionStartedAt,localDeathNoticeAt=page.diedAt,
                     nativeReadLocalBefore=packet.readBefore,nativeReadLocalAfter=packet.readAfter,nativeFirstTimestamp=packet.rows[1].timestamp,
                     nativeMaximumTimestamp=maximum,nativeRowCount=#packet.rows,nativeTimestampStatus="public-finite-number"},
-                association="Explicit personal death ID delta in a witnessed clean meter epoch; native synchronization testing pending",
+                association="Explicit personal death ID delta from authoritative Current in a witnessed clean meter epoch; native synchronization testing pending",
                 clock="Native relative to latest retained native timestamp; not the local observation clock"}
             local minimum=maximum
             for _,row in ipairs(packet.rows)do
@@ -567,10 +573,8 @@ for _,event in ipairs({"DAMAGE_METER_CURRENT_SESSION_UPDATED","DAMAGE_METER_RESE
     Passive(event,function()CancelFetch();Association:NewEpoch(Alive())end)
 end
 Passive("DAMAGE_METER_COMBAT_SESSION_UPDATED",function(_,kind,id)
-    Association:Update(kind,id,Alive())
-    if Enum and Enum.DamageMeterType and Public(kind)==Enum.DamageMeterType.Deaths and ID(id)
-        and last and not last.native and last.captureGeneration==generation and last.nativeAttempts<Recap.LIMITS.attempts
-        and(last.association.sessionID==nil or last.association.sessionID==id)then
+    local relevant=Association:Update(kind,id,Alive())
+    if relevant and last and not last.native and last.captureGeneration==generation and last.nativeAttempts<Recap.LIMITS.attempts then
         ScheduleNative(last,generation,.1)
     end
 end)

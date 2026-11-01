@@ -54,6 +54,8 @@ for i=1,32 do family:Fire('OnMouseWheel',-1)end
 card=popup.tooltipRecap;local found
 for _,line in ipairs(card.lines)do if line:IsShown()and line.text:find('Item 132:',1,true)then found=line end end
 check(found and found.recapY+found.height-card.scroll:GetVerticalScroll()<=card.height,'Last family candidate was truncated/unreachable')
+U:Preview();tooltipLines={};popup.graphHelp:Fire('OnEnter');local previewHelp=table.concat(tooltipLines,' ')
+check(previewHelp:find('fictional example',1,true)and previewHelp:find('stepped health curve',1,true)and not previewHelp:find('Dashed',1,true),'Preview graph help describes the real sample graph')
 io.write('PASS: '..checks..' actual-UI pooled artwork, HP gaps, receipt provenance, tooltip reachability and check-age assertions\n')
 ]=]
 assert(loadstring(source,'death-recap-presentation-fixture'))()

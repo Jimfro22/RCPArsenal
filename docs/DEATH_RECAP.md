@@ -61,7 +61,8 @@ visual group-focus locator follows the icon center without moving data points.
 
 Real data and selected-time limitations
 --------------------------------------
-The existing explicit own recap-ID/session association is preserved. The default
+Association uses the authoritative Current personal recap-ID set within a witnessed
+clean meter epoch. Update events are dirty hints, never explicit-session bindings. The default
 selected recap is never trusted. Up to64 normalized public native rows are kept;
 a larger input is marked partial. Original index1 remains the killing identity,
 independently of maximum timestamp. Amount, absorbed, overkill, resisted and
@@ -258,3 +259,9 @@ cooldown snapshots keep event context and old timestamps; generic active checks
 without trustworthy GCD context and pending/restricted charges remain unknown.
 Charge-based verdicts use the charge check's age. Unchanged tracked spell rosters
 preserve use history. Spell-only updates do not rescan supplies.
+
+A restricted first meter update does not invalidate an already witnessed clean
+alive baseline. A newly reported Current epoch with no readable alive baseline
+remains unavailable; later data cannot reconstruct that prior observation.
+Accepted IDs cannot repeat across meter epochs within an enable cycle; the bounded
+256-ID retention limit fails unavailable rather than dropping anti-reuse evidence.
