@@ -6,6 +6,7 @@ local secret=setmetatable({},{__tostring=function()error('Secret stringified')en
 function issecretvalue(value)return rawequal(value,secret)end
 local page
 local R={GetPage=function()return page end}
+function R:GetRecordedUseRole(row)return row.role=='utility'and'utility'or'defensive'end
 local RA={DeathRecap=R,DeathRecapCatalog={itemUseSpells={[6262]=true}}}
 local subscriptions,callbacks={},{}
 function RA:RegisterOptionalEvent(event,fn)

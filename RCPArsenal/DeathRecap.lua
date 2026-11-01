@@ -56,11 +56,32 @@ end
 local function Table(value)
     value=Public(value);if type(value)=="table" and getmetatable(value)==nil then return value end
 end
+function Recap:GetRecordedUseRole(row)
+    row=Table(row)
+    -- Older frozen pages lack current talent qualification. Preserve their
+    -- successful activations without assigning a newly verified defensive role.
+    if row and(Public(row.role)=="utility"or ID(row.spellID)==110959)then return "utility"end
+    if row and ID(row.spellID)==55342 then
+        return Public(row.role)=="defensive"and ID(row.defensiveTalentSpellID)==1309497 and"defensive"or"utility"
+    end
+    return "defensive"
+end
 local function Call(fn,...)
     if type(fn)~="function" then return nil end
     local ok,value=pcall(fn,...);if ok then return value end
 end
 local function Now()return Number(Call(GetTime))end
+local function PlayerIdentity()
+    local function Name(value)
+        value=String(value,128)
+        return value and value~=""and not value:find("[%c|]")and value or nil
+    end
+    local query=type(UnitFullName)=="function"and UnitFullName or UnitName
+    if type(query)~="function"then return end
+    local ok,name,realm=pcall(query,"player")
+    if not ok then return end
+    name=Name(name);return name,name and Name(realm)or nil
+end
 local function Alive()return Bool(Call(UnitIsDeadOrGhost,"player"))==false end
 local function Combat()return Bool(Call(InCombatLockdown))==true end
 local function Known(id)
@@ -151,15 +172,20 @@ local function BuildEntries()
                 if value==nil then known=nil end
             end
             local resolved=known==true and ID(Call(C_Spell and C_Spell.GetOverrideSpell,selected))or nil
+            local defensiveTalent
             for _,required in ipairs(entry.requiredTalentSpellIDs or {})do
                 if Known(required)~=true then known=nil;break end
+                if required==1309497 then defensiveTalent=required end
             end
             local supported=false
             for _,id in ipairs(entry.knownSpellIDs or {entry.spellID})do if resolved==id then supported=true end end
             local passive=resolved and Bool(Call(C_Spell and C_Spell.IsSpellPassive,resolved))
             if known==true and supported and passive==false and not seen[resolved] then
                 selected=resolved;seen[resolved]=true
-                entries[#entries+1]={key=entry.key,spellID=selected,baseSpellID=ID(Call(C_Spell and C_Spell.GetBaseSpell,selected)),name=entry.name,category=entry.category,known=true}
+                local role=entry.role=="utility"and"utility"or"defensive"
+                local qualified=selected==55342 and spec==62 and role=="defensive"and defensiveTalent==1309497 and defensiveTalent or nil
+                if selected==55342 and not qualified then role="utility"end
+                entries[#entries+1]={key=entry.key,spellID=selected,baseSpellID=ID(Call(C_Spell and C_Spell.GetBaseSpell,selected)),name=entry.name,category=entry.category,role=role,defensiveTalentSpellID=qualified,known=true}
             elseif known==nil or (known==true and (not supported or passive==nil))then unknown=unknown+1 end
         elseif entry.verified==true and eligible and entry.class==class then
             overflow=true
@@ -167,9 +193,9 @@ local function BuildEntries()
     end
     return entries,spec,class,overflow,unknown
 end
-local function SpellObservation(entry,time,reason,flagsOnly)
+local function SpellObservation(entry,time,reason)
     stats.spellQueries=stats.spellQueries+1
-    local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,
+    local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,role=entry.role,defensiveTalentSpellID=entry.defensiveTalentSpellID,
         known=entry.known,observedAt=time,cooldownAt=time,source=reason,cooldown="unknown",cooldownGCDStatus="not-event-context"}
     local value,status=Query(C_Spell and C_Spell.GetSpellCooldown,entry.spellID)
     local info=Table(value);row.cooldownQuery=info and"public"or(status=="public"and"malformed"or status)
@@ -187,7 +213,6 @@ local function SpellObservation(entry,time,reason,flagsOnly)
             elseif row.isOnGCD==false then row.cooldown="active"end
         end
     end
-    if flagsOnly then return row end
     row.chargesAt=time
     local charges
     row.chargeQuery="unsupported"
@@ -267,7 +292,7 @@ local function ReconcileSpell(entry,previous,time,reason,death)
     if direct and direct.valid then
         if direct.isEnabled~=row.isEnabled or direct.isActive~=row.isActive or row.cooldownQuery~="public"then
             direct.valid=false;direct.invalidatedAt=time;direct.invalidatedBy="generic-flags-changed"
-        elseif not death then
+        elseif not death and row.cooldown~="inactive"and row.cooldown~="held"then
             -- Keep the direct check's original age. The newer generic flags and
             -- charges are separate observations; they cannot renew its GCD fact.
             row.genericCooldown={observedAt=time,isEnabled=row.isEnabled,isActive=row.isActive,cooldown=row.cooldown,source=reason}
@@ -275,6 +300,8 @@ local function ReconcileSpell(entry,previous,time,reason,death)
             row.observedAt=direct.observedAt;row.source="retained-cooldown-event"
         end
     end
+    -- Fresh inactive/held flags stand on their own at this query's actual time;
+    -- the old direct callback and any GCD fact remain separate audit evidence.
     return row
 end
 local function Observe(reason,death)
@@ -288,7 +315,8 @@ local function Observe(reason,death)
     stats.samples=stats.samples+1
     for index,entry in ipairs(session.entries)do
         local previous=previousSample and previousSample.spells[index]
-        if previous and(itemReason or(not previous.pendingAt and not previous.chargesPendingAt and reason=="interval" and not ActiveCooldown(previous)and previous.chargesActive~=true))then
+        if previous and(itemReason or(not previous.pendingAt and not previous.chargesPendingAt and(reason=="coalesced-events"
+            or reason=="interval"and not ActiveCooldown(previous)and previous.chargesActive~=true)))then
             sample.spells[#sample.spells+1]=Copy(previous)
         else sample.spells[#sample.spells+1]=ReconcileSpell(entry,previous,time,reason,death)end
     end
@@ -312,8 +340,9 @@ local function NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()then return end
     Notify("reset")
     local entries,spec,class,overflow,unknown=BuildEntries()
+    local playerName,playerRealm=PlayerIdentity()
     session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
-        playerGUID=String(Call(UnitGUID,"player")),coverage=reason,overflow=overflow,unknownKnown=unknown,
+        playerGUID=String(Call(UnitGUID,"player")),playerName=playerName,playerRealm=playerRealm,coverage=reason,overflow=overflow,unknownKnown=unknown,
         encounter=Copy(encounterContext),eventAt={}}
     Diagnostic("ValidateCooldownIdentity")
 end
@@ -403,7 +432,7 @@ local function OnDeath()
     StopRecording();CancelFetch()
     local time=Now();if not session or not time then Notify("unavailable");return end
     serial=serial+1
-    local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,specID=session.specID,class=session.class,
+    local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,playerName=session.playerName,playerRealm=session.playerRealm,specID=session.specID,class=session.class,
         coverage=session.coverage,overflow=session.overflow,unknownKnown=session.unknownKnown,
         encounter=Copy(session.encounter),encounterEndObservation=Copy(session.encounterEndObservation),knownEntries=Copy(session.entries),localSessionStartedAt=session.startedAt,lastAlive=Copy(session.lastAlive),
         casts={},observedUses=Copy(session.observedUses),directSpellEvents=Copy(session.directSpellEvents),useCoverage={startedAt=session.startedAt,combatEntryObserved=session.combatEntryObserved,
@@ -512,7 +541,7 @@ function Recap:GetAvailabilityAudit()
     local audit={localDeathID=last.id,nativeRecapID=last.native and last.native.recapID,deathNoticeAt=last.diedAt,specID=last.specID,class=last.class,
         directSpellEvents=Copy(last.directSpellEvents),client=Copy(self:GetDiagnostics().client),catalogRevision=(RA.DeathRecapCatalog or{}).revision,encounter=Copy(last.encounter),coverage=Copy(last.useCoverage),spells={}}
     audit.encounterEndObservation=Copy(last.encounterEndObservation)
-    local fields={"observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus",
+    local fields={"role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus",
         "cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","directCooldown","genericCooldown"}
     local function Check(sample,id)
         for _,row in ipairs(sample and sample.spells or{})do if row.spellID==id then
@@ -526,7 +555,7 @@ function Recap:GetAvailabilityAudit()
         local entry=last.knownEntries[i];local use=last.observedUses and last.observedUses[entry.spellID]
         local alive,death=Check(last.lastAlive,entry.spellID),Check(last.deathObservation,entry.spellID)
         local displayed,detail=self:ClassifyRecordedCheck(alive or{},last.lastAlive and last.lastAlive.coverageEndedAt,false)
-        audit.spells[#audit.spells+1]={spellID=entry.spellID,name=entry.name,key=entry.key,lastAlive=alive,deathNotice=death,
+        audit.spells[#audit.spells+1]={spellID=entry.spellID,name=entry.name,key=entry.key,role=self:GetRecordedUseRole(entry),defensiveTalentSpellID=entry.defensiveTalentSpellID,lastAlive=alive,deathNotice=death,
             displayed={state=displayed,detail=detail,source="lastAlive",observedAt=self:GetRecordedCheckTime(alive or{})},
             use=use and Copy(use)or{observedCount=0,status="No successful use observed in this coverage"}}
     end
@@ -644,18 +673,19 @@ Active("UNIT_SPELLCAST_SUCCEEDED",function(_,unit,_,spellID)
     if not Alive()then session.lateUseReceipts=(session.lateUseReceipts or 0)+1;return end
     local time=Now();spellID=ID(spellID)
     if not time or not spellID then session.rejectedUseReceipts=(session.rejectedUseReceipts or 0)+1;return end
-    local tracked,trackedName,trackedItemUse=false,nil,false
-    for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;break end end
+    local tracked,trackedName,trackedRole,trackedTalent,trackedItemUse=false,nil,nil,nil,false
+    for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;trackedRole=entry.role;trackedTalent=entry.defensiveTalentSpellID;break end end
     if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true;trackedItemUse=true end
     if not tracked then return end
     Diagnostic("CaptureCooldownReceipt",spellID,time)
     if not trackedItemUse then
         local use=session.observedUses[spellID]
-        if not use then use={spellID=spellID,observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=time};session.observedUses[spellID]=use end
+        if not use then use={spellID=spellID,role=trackedRole,defensiveTalentSpellID=trackedTalent,observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=time};session.observedUses[spellID]=use end
         use.observedCount=use.observedCount+1;use.lastSuccessfulUseAt=time
     end
-    session.casts[#session.casts+1]={spellID=spellID,name=trackedName,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
+    session.casts[#session.casts+1]={spellID=spellID,name=trackedName,role=trackedRole,defensiveTalentSpellID=trackedTalent,observedAt=time,source="UNIT_SPELLCAST_SUCCEEDED"}
     if trackedItemUse then Pending("items",time,"item-cast-received")else Pending("spells",time,"cast-received",spellID)end
+    ScheduleObservation()
     stats.casts=stats.casts+1
     while #session.casts>Recap.LIMITS.casts or time-session.casts[1].observedAt>Recap.LIMITS.seconds do table.remove(session.casts,1)end
 end,"player")
@@ -690,19 +720,16 @@ Active("SPELL_UPDATE_COOLDOWN",function(event,...)
     for index,entry in ipairs(session.entries)do
         if spell.status=="public-nil"or spell.value==entry.spellID or spell.value==entry.baseSpellID
             or(base.value and(base.value==entry.spellID or base.value==entry.baseSpellID))then
-            local previous=session.lastAlive.spells[index]
-            local row=Copy(previous);local direct=SpellObservation(entry,time,"cooldown-event",true)
+            local row=SpellObservation(entry,time,"cooldown-event");local direct=Copy(row)
             direct.baseSpellID=entry.baseSpellID;direct.eventSequence=context.eventSequence;direct.context=Copy(context);direct.valid=true
             direct.invalidationGeneration=context.eventSequence
             if entry.spellID==55342 or entry.baseSpellID==55342 then diagnosticRow=direct end
-            for _,key in ipairs(cooldownFields)do row[key]=direct[key]end
-            row.observedAt=time;row.source="cooldown-event";row.pendingAt=nil;row.pendingReason=nil
-            row.chargesPendingAt=row.chargesPendingAt or time;row.directCooldown=direct;row.genericCooldown=nil
+            row.directCooldown=direct
             session.lastAlive.spells[index]=row;count=count+1
         end
     end
     Diagnostic("CaptureCooldownEvent",context,diagnosticRow)
-    if count>0 then ScheduleObservation();RefreshTicker()end
+    if count>0 then RefreshTicker()end
 end)
 Active("SPELL_UPDATE_CHARGES",function(event)
     local time=Now();if not session or not time or not Alive()then return end

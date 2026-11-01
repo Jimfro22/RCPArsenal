@@ -5,7 +5,7 @@ local R, UI, T = RA.DeathRecap, RA.DeathRecapUI, RA.Theme
 local C = T.Colors
 local button, token, anchor, layoutHost, placement, shownPage
 local previewPage
-local CARD_MIN, CARD_MAX, CARD_HEIGHT = 216, 288, 76
+local CARD_MIN, CARD_MAX, CARD_HEIGHT = 160, 280, 56
 local ICON_SIZE, ICON_GAP, ITEM_GAP = 22, 4, 10
 local binding, pulsing, hovered = 0, false, false
 local hooks, subscriptions = {}, {}
@@ -53,7 +53,7 @@ function Entry:GetAvailableRows(page)
     for index, row in ipairs(sample.spells or {}) do
         if index > R.LIMITS.spells then break end
         local state, detail = R:ClassifyRecordedCheck(row, sample.coverageEndedAt, false)
-        if row.known == true and state == true then Add(row, nil, detail) end
+        if row.known == true and state == true and R:GetRecordedUseRole(row)~="utility"then Add(row, nil, detail) end
     end
     local supplies = {}
     for index, row in ipairs(sample.supplies or {}) do
@@ -178,22 +178,29 @@ end
 local function Populate(rows)
     HideTooltip()
     for _, icon in ipairs(button.icons) do icon:Hide(); icon.row=nil; icon.overflow=nil; icon:SetScript("OnClick",nil) end
-    RA:SetVisualText(button.summary,previewPage and "Preview · sample checks" or #rows > 0 and "Available when checked" or rows.hadCheck and "No availability confirmed" or "Availability was not recorded")
+    RA:SetVisualText(button.label,previewPage and "Death Log · Preview" or "Death Log")
     button.previewClose:SetShown(previewPage~=nil);button.chevron:SetShown(previewPage==nil)
     local items=0;for _,row in ipairs(rows)do if row.kind then items=items+1 end end
     local total=#rows*ICON_SIZE+math.max(0,#rows-1)*ICON_GAP+(items>0 and #rows>items and ITEM_GAP-ICON_GAP or 0)
-    local width=math.min(CARD_MAX,math.max(CARD_MIN,math.ceil((total+24)/4)*4,math.ceil((button.summary:GetStringWidth()+56)/4)*4))
+    local titleWidth=Number(Call(button.label,"GetUnboundedStringWidth"))or Number(Call(button.label,"GetStringWidth"))or 0
+    local headerWidth=36+titleWidth+(previewPage and 34 or 24)
+    local width=math.min(CARD_MAX,math.max(CARD_MIN,math.ceil((total+16)/4)*4,math.ceil(headerWidth/4)*4))
     local lines,line={{width=0}}
     line=lines[1]
     for index,row in ipairs(rows)do
         local startsItems=row.kind and(index==1 or not rows[index-1].kind)
         local gap=#line>0 and(startsItems and ITEM_GAP or ICON_GAP)or 0
         local needed=startsItems and(items*ICON_SIZE+math.max(0,items-1)*ICON_GAP)or ICON_SIZE
-        if #line>0 and line.width+gap+needed>width-24 then line={width=0};lines[#lines+1]=line;gap=0 end
+        if #line>0 and line.width+gap+needed>width-16 then line={width=0};lines[#lines+1]=line;gap=0 end
         line[#line+1]={row=row,x=line.width+gap};line.width=line.width+gap+ICON_SIZE
     end
-    T.SetSize(button,width,CARD_HEIGHT+(#lines-1)*(ICON_SIZE+ICON_GAP))
-    button.label:SetWidth(width-72);button.summary:SetWidth(width-56)
+    T.SetSize(button,width,#rows==0 and 32 or CARD_HEIGHT+(#lines-1)*(ICON_SIZE+ICON_GAP))
+    button.label:SetWidth(width-36-(previewPage and 34 or 24))
+    local headerY=#rows==0 and 7 or 6
+    button.logo:ClearAllPoints();T.SetPoint(button.logo,"TOPLEFT",button,"TOPLEFT",10,-headerY)
+    button.label:ClearAllPoints();T.SetPoint(button.label,"TOPLEFT",button,"TOPLEFT",36,-headerY)
+    button.chevron:ClearAllPoints();T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-8,-headerY)
+    button.previewClose:ClearAllPoints();T.SetPoint(button.previewClose,"TOPRIGHT",button,"TOPRIGHT",-6,-headerY+1)
     local index=0
     for lineIndex,strip in ipairs(lines)do for _,item in ipairs(strip)do
         index=index+1
@@ -206,7 +213,7 @@ local function Populate(rows)
             icon:SetScript("OnLeave",function()hovered=false;HideTooltip();Paint();Attention()end)
         end
         icon.row=item.row
-        icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-46-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
+        icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-28-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
         if item.row.spellID then RA:RegisterSpellIcon(icon.texture,item.row.spellID)
         else RA:RegisterVisualTexture(icon.texture,item.row.icon or(item.row.kind=="stone"and"Interface\\Icons\\INV_Stone_04"or"Interface\\Icons\\INV_Potion_51"),T.Assets.White) end
         icon.texture:SetVertexColor(1,1,1);icon.texture:SetDesaturated(false);icon:Show()
@@ -221,18 +228,17 @@ local function EnsureButton()
     T:ApplyRounded(button, C.surfaceRaised, 6, "base")
     T:ApplyRounded(button, {C.magenta[1], C.magenta[2], C.magenta[3], .45}, 6, "border", "OVERLAY")
     button.logo = button:CreateTexture(nil, "ARTWORK")
-    T.SetSize(button.logo, 24, 24); T.SetPoint(button.logo, "TOPLEFT", button, "TOPLEFT", 12, -9)
+    T.SetSize(button.logo, 18, 18); T.SetPoint(button.logo, "TOPLEFT", button, "TOPLEFT", 10, -6)
     button.logo:SetVertexColor(1, 1, 1)
     T:RegisterAssetTexture(button.logo, T.Assets.HeaderLogo, nil, "LINEAR")
     button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     RA:ApplyFont(button.label, 13, "BOLD", false)
+    button.label:SetWordWrap(false);button.label:SetMaxLines(1)
     button.label:SetTextColor(unpack(C.text)); button.label:SetJustifyH("LEFT")
-    T.SetSize(button.label, CARD_MIN-72, 18); T.SetPoint(button.label, "TOPLEFT", button, "TOPLEFT", 44, -8)
+    T.SetSize(button.label, CARD_MIN-60, 18); T.SetPoint(button.label, "TOPLEFT", button, "TOPLEFT", 36, -6)
     RA:SetVisualText(button.label, "Death Log")
     button.chevron=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.chevron,16,"REGULAR",false)
-    button.chevron:SetTextColor(unpack(C.muted));T.SetSize(button.chevron,8,18);T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-12,-9);RA:SetVisualText(button.chevron,"›")
-    button.summary=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.summary,11,"REGULAR",false)
-    button.summary:SetTextColor(unpack(C.textSoft));button.summary:SetJustifyH("LEFT");T.SetSize(button.summary,CARD_MIN-56,14);T.SetPoint(button.summary,"TOPLEFT",button,"TOPLEFT",44,-27)
+    button.chevron:SetTextColor(unpack(C.muted));T.SetSize(button.chevron,8,18);T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-8,-6);RA:SetVisualText(button.chevron,"›")
     button.icons={}
     button.previewClose=CreateFrame("Button",nil,button);T.SetSize(button.previewClose,20,20);T.SetPoint(button.previewClose,"TOPRIGHT",button,"TOPRIGHT",-6,-6)
     button.previewClose.label=button.previewClose:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");button.previewClose.label:SetAllPoints(button.previewClose);RA:ApplyFont(button.previewClose.label,14,"REGULAR",false);RA:SetVisualText(button.previewClose.label,"×")
@@ -255,6 +261,8 @@ local function EnsureButton()
         hovered = true; Paint(); Attention()
         local text = previewPage and "Preview · open the sample Death Log." or "Open your captured log."
         local page = previewPage or token.page
+        local rows=button.boundRows
+        if not previewPage and rows and #rows==0 then text=text.." "..(rows.hadCheck and"No availability confirmed."or"Availability was not recorded.")end
         if not previewPage and not page.native then
             text = text .. (R:GetDiagnostics().fetchPending and " Hit details are loading." or " Hit details are unavailable.")
         end
@@ -342,8 +350,7 @@ function Entry:Preview()
     Hide(true)
     previewPage={diedAt=100,lastAlive={spells={
         {spellID=45438,name="Ice Block",known=true,category="major",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
-        {spellID=55342,name="Mirror Image",known=true,category="minor",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=98.4},
-        {spellID=110959,name="Greater Invisibility",known=true,category="minor",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
+        {spellID=55342,name="Mirror Image",known=true,category="minor",role="defensive",defensiveTalentSpellID=1309497,cooldown="inactive",chargeQuery="not_applicable",cooldownAt=98.4},
     },supplies={
         {kind="stone",itemID=5512,physicalCount=1,remainingUses=1,cooldown="inactive",cooldownAt=99},
         {kind="potion",itemID=241304,physicalCount=1,cooldown="inactive",cooldownAt=99},

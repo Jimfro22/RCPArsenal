@@ -12,12 +12,20 @@ class DeathRecapCatalogTests(unittest.TestCase):
         self.assertEqual(build(),(ROOT/'RCPArsenal/DeathRecapCatalog.lua').read_text())
         data=json.loads((ROOT/'provenance/death-recap/catalog.json').read_text())
         active=[e for e in data['entries'] if e['verified']]
-        self.assertEqual(len(active),70)
-        mage={e['spellID']:e for e in active if e['class']=='MAGE'}
+        self.assertEqual(len(active),71)
+        mage={e['spellID']:e for e in active if e['class']=='MAGE' and e.get('role')!='utility'}
+        mage[110959]=next(e for e in active if e['spellID']==110959)
         for spell_id in (55342,110959):
             self.assertIn(62,mage[spell_id]['specs'])
             self.assertEqual(mage[spell_id]['knownSpellIDs'],[spell_id])
             self.assertEqual(mage[spell_id]['verificationBuild'],'12.1.5.70688')
+        self.assertEqual(mage[110959]['role'],'utility')
+        self.assertIn('alpha40-greater-invisibility-role.json',mage[110959]['evidence'])
+        self.assertEqual(mage[55342]['specs'],[62])
+        self.assertEqual(mage[55342]['requiredTalentSpellIDs'],[1309497])
+        mirror_utility=next(e for e in active if e['spellID']==55342 and e['role']=='utility')
+        self.assertEqual(mirror_utility['specs'],[62,63,64])
+        self.assertEqual(mirror_utility['requiredTalentSpellIDs'],[])
         self.assertEqual(len(data['coverage']['perSpec']),40)
         for row in data['coverage']['perSpec']:
             self.assertLessEqual(row['verifiedUniqueSpellCount'],32)

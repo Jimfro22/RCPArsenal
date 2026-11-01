@@ -62,11 +62,11 @@ local NATIVE={"nativeIndex","event","timestamp","nativeOffset","rawSpellID","spe
 local SOURCE={"sourceName"}
 local STATUS={"hp","source","absorbed","overkill"}
 local CLOCK={"localClock","localSessionStartedAt","localDeathNoticeAt","nativeReadLocalBefore","nativeReadLocalAfter","nativeFirstTimestamp","nativeMinimumTimestamp","nativeMaximumTimestamp","nativeFatalTimestamp","nativeRowCount","nativeTimestampStatus"}
-local CHECK={"spellID","baseSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus","cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","valid","eventSequence","invalidationGeneration","invalidatedAt","invalidatedBy"}
+local CHECK={"spellID","baseSpellID","role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus","cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","valid","eventSequence","invalidationGeneration","invalidatedAt","invalidatedBy"}
 local EVENT={"event","observedAt","eventSequence"}
 local SAMPLE={"observedAt","source","coverageEndedAt","coverageEndReason"}
-local USE={"spellID","observedCount","firstSuccessfulUseAt","lastSuccessfulUseAt","source"}
-local CAST={"capturedIndex","spellID","name","source","observedAt","localDeathRelativeAge"}
+local USE={"spellID","role","defensiveTalentSpellID","observedCount","firstSuccessfulUseAt","lastSuccessfulUseAt","source"}
+local CAST={"capturedIndex","spellID","name","role","defensiveTalentSpellID","source","observedAt","localDeathRelativeAge"}
 local COVERAGE={"startedAt","combatEntryObserved","reason","endedAt","rejectedReceipts","lateReceipts"}
 
 local function Context(input)

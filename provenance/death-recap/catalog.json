@@ -1,6 +1,6 @@
 {
   "module": "RA.DeathRecapCatalog",
-  "revision": "2026-10-31.1",
+  "revision": "2026-11-01.1",
   "build": "12.1.5.70575",
   "nativeUIPin": "15881d522c44cd106d3d8660106ec9f9d2f44167",
   "clientExtractPin": "710c2408bfd3ae4df71b8cd55cdf01f63fd6c926",
@@ -8264,6 +8264,64 @@
       "category": "minor",
       "class": "MAGE",
       "specs": [
+        62
+      ],
+      "knownSpellIDs": [
+        55342
+      ],
+      "verified": true,
+      "requiredTalentSpellIDs": [
+        1309497
+      ],
+      "note": "Arcane Mirror Image has a defensive damage-delay role only when Refractive Images1309497 is publicly learned. Delayed damage is still dealt later; this is not damage reduction, healing, absorb, or immunity. No active duration or survival verdict is inferred from a use.",
+      "verificationScope": "current_identity_and_catalog_eligibility_only; runtime_facts_independent",
+      "verificationBuild": "12.1.5.70688",
+      "runtimeIdentity": {
+        "requiredActivationSpellIDs": [
+          55342
+        ],
+        "allActivationIDsRequired": true,
+        "requiredTalentSpellIDs": [
+          1309497
+        ],
+        "allTalentPrerequisitesRequired": true,
+        "activationMustBeNonPassive": true,
+        "resolveCurrentOverride": true,
+        "unknownOrUnsupportedGate": "exclude_from_confirmed_available; preserve_coverage_unknown",
+        "passivePrerequisiteTalentsAreNotActivationButtons": true
+      },
+      "eligibility": {
+        "baseline_or_talent": "talent",
+        "known_required": true,
+        "runtime_active_button_check_required": true,
+        "cooldown_readiness_implies_usability": false,
+        "overrides": []
+      },
+      "evidence": [
+        "alpha32-mage-eligibility.json",
+        "https://wago.tools/db2/TraitDefinition/csv?build=12.1.5.70688&locale=enUS",
+        "https://wago.tools/db2/TraitNodeEntry/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitNode/csv?build=12.1.5.70688",
+        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688",
+        "alpha40-mirror-role.json"
+      ],
+      "traitEvidence": {
+        "definitionID": 85186,
+        "entryID": 80183,
+        "nodeID": 62124,
+        "treeID": 658,
+        "arcaneLoadoutID": 991
+      },
+      "classificationIsProductConvention": true,
+      "role": "defensive"
+    },
+    {
+      "key": "mage_mirror_image_utility",
+      "spellID": 55342,
+      "name": "Mirror Image",
+      "category": "minor",
+      "class": "MAGE",
+      "specs": [
         62,
         63,
         64
@@ -8273,7 +8331,7 @@
       ],
       "verified": true,
       "requiredTalentSpellIDs": [],
-      "note": "Learned active player activation only. Identity and Mage tree eligibility verified in12.1.5.70688. No fixed damage reduction, duration, immunity or survival judgment is established.",
+      "note": "Known non-passive Mirror Image activation remains utility outside positively learned Arcane Refractive Images qualification. Successful casts are facts, with no damage-reduction or survival claim.",
       "verificationScope": "current_identity_and_catalog_eligibility_only; runtime_facts_independent",
       "verificationBuild": "12.1.5.70688",
       "runtimeIdentity": {
@@ -8300,7 +8358,8 @@
         "https://wago.tools/db2/TraitDefinition/csv?build=12.1.5.70688&locale=enUS",
         "https://wago.tools/db2/TraitNodeEntry/csv?build=12.1.5.70688",
         "https://wago.tools/db2/TraitNode/csv?build=12.1.5.70688",
-        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688"
+        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688",
+        "alpha40-mirror-role.json"
       ],
       "traitEvidence": {
         "definitionID": 85186,
@@ -8309,7 +8368,8 @@
         "treeID": 658,
         "arcaneLoadoutID": 991
       },
-      "classificationIsProductConvention": true
+      "classificationIsProductConvention": true,
+      "role": "utility"
     },
     {
       "key": "mage_greater_invisibility",
@@ -8327,7 +8387,7 @@
       ],
       "verified": true,
       "requiredTalentSpellIDs": [],
-      "note": "Learned active player activation only. Identity and Mage tree eligibility verified in12.1.5.70688. No fixed damage reduction, duration, immunity or survival judgment is established. Greater Invisibility110960 is a triggered effect, not a second activation.",
+      "note": "Learned active player activation only. Current effect is invisibility, untargetability and threat removal; the former damage reduction was removed. Excluded from default defensive availability displays. Eligible successful activations remain utility receipts, with no mitigation, duration or survival judgment. Greater Invisibility110960 is a triggered effect, not a second activation; ordinary Invisibility66 is not an accepted receipt alias.",
       "verificationScope": "current_identity_and_catalog_eligibility_only; runtime_facts_independent",
       "verificationBuild": "12.1.5.70688",
       "runtimeIdentity": {
@@ -8359,7 +8419,8 @@
         "https://wago.tools/db2/TraitDefinition/csv?build=12.1.5.70688&locale=enUS",
         "https://wago.tools/db2/TraitNodeEntry/csv?build=12.1.5.70688",
         "https://wago.tools/db2/TraitNode/csv?build=12.1.5.70688",
-        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688"
+        "https://wago.tools/db2/TraitTreeLoadout/csv?build=12.1.5.70688",
+        "alpha40-greater-invisibility-role.json"
       ],
       "traitEvidence": {
         "definitionID": 120889,
@@ -8368,7 +8429,8 @@
         "treeID": 658,
         "arcaneLoadoutID": 991
       },
-      "classificationIsProductConvention": true
+      "classificationIsProductConvention": true,
+      "role": "utility"
     }
   ],
   "supplementalIdentityAudit": {

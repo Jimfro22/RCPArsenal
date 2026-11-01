@@ -152,8 +152,8 @@ check(#model.rows==64 and model.truncated and model.examined==256 and model.unex
 
 -- Viewport filtering produces a separate presentation list with integer bounds.
 -- Damage grouping/share inputs remain intact; no out-of-window row is clamped.
-local function View(input,span,expected,maxHealth)
-    local before=Snapshot(input);local view=M:Viewport(input,maxHealth)
+local function View(input,span,expected,maxHealth,alignment)
+    local before=Snapshot(input);local view=M:Viewport(input,maxHealth,alignment)
     check(view.span==span and view.first==-span and view.last==0 and view.span==math.floor(view.span)and span>=5 and span<=8,'Viewport lost its bounded integer window')
     check(view.retainedCount==math.min(#input,64)and view.omitted==view.retainedCount-#view.rows,'Viewport omitted count lost retained-page scope')
     if expected then
@@ -195,4 +195,92 @@ retainedFirst[80].nativeIndex=1;retainedFirst[80].nativeOffset=0
 retainedFirst[79].amount=999999;retainedFirst[79].nativeOffset=-7.2
 view=View(retainedFirst,8,{80,1})
 check(view.retainedCount==64 and view.omitted==62 and view.examined==80 and view.truncated and not view.unexamined,'Viewport did not apply bounded fatal/major retention before filtering')
+
+-- A validated approximate use can widen the same integer window. These are
+-- frozen synthetic receipts, not an assertion that the two clocks coincide.
+local secret=setmetatable({},{__tostring=function()error('Secret formatted')end,__index=function()error('Secret indexed')end})
+function issecretvalue(value)return rawequal(value,secret)end
+local liveReads=0
+local function Forbidden()liveReads=liveReads+1;error('Viewport queried live state or scheduled work')end
+GetTime,UnitGUID=Forbidden,Forbidden
+C_Spell={GetSpellCooldown=Forbidden,GetSpellCharges=Forbidden};C_Item={GetItemCooldown=Forbidden}
+C_DeathRecap={GetRecapEvents=Forbidden};C_Timer={NewTimer=Forbidden,NewTicker=Forbidden,After=Forbidden}
+local function UsePage(ages,delta)
+    delta=delta or 0
+    local page={diedAt=100,localSessionStartedAt=60,casts={},native={recapID=50,
+        rows={Hit(3,-.6,10),Hit(2,0,20),Hit(1,delta,30)},clockDiagnostic={
+            localClock='GetTime',localDeathNoticeAt=100,localSessionStartedAt=60,
+            nativeFatalTimestamp=500+delta,nativeMaximumTimestamp=500,nativeRowCount=3}}}
+    for _,row in ipairs(page.native.rows)do row.timestamp=500+row.nativeOffset end
+    for i,age in ipairs(ages)do page.casts[i]={spellID=235450,observedAt=100-age,source='UNIT_SPELLCAST_SUCCEEDED'}end
+    return page
+end
+local function UseView(page,span,count)
+    local castBefore=Snapshot(page.casts);local alignment=M:AlignUses(page)
+    local alignedBefore,unalignedBefore=Snapshot(alignment.aligned),Snapshot(alignment.unaligned)
+    local result=View(page.native.rows,span,nil,1000,alignment)
+    local visible=0
+    for _,entry in ipairs(alignment.aligned)do
+        if entry.offset>=result.first and entry.offset<=result.last then visible=visible+1 end
+    end
+    check(visible==count,'Use viewport hid a valid in-range marker or clamped an older receipt')
+    Unchanged(page.casts,castBefore);Unchanged(alignment.aligned,alignedBefore);Unchanged(alignment.unaligned,unalignedBefore)
+    return result,alignment
+end
+local page=UsePage({5.6,6.5,4.6})
+view,model=UseView(page,7,3)
+check(model.anchorValid and #model.aligned==3 and #model.unaligned==0,'Screenshot-style receipts did not retain verified approximate alignment')
+check(model.aligned[1].row==page.casts[1]and model.aligned[2].row==page.casts[2],'Viewport reordered receipt identity')
+UseView(UsePage({5}),5,1)
+UseView(UsePage({5.01}),6,1)
+UseView(UsePage({8}),8,1)
+view,model=UseView(UsePage({8.01,4.6}),5,1)
+check(#model.aligned==2 and model.aligned[1].offset<-8,'Older use was removed from the frozen aligned result/full report')
+UseView(UsePage({8.01}),5,0)
+UseView(UsePage({0}),5,1)
+-- The fatal-to-maximum adjustment, not local receipt age, sets inclusion.
+view,model=UseView(UsePage({5.9},-.2),7,1)
+check(math.abs(model.aligned[1].offset+6.1)<1e-9 and math.abs(model.aligned[1].age-5.9)<1e-9,'Viewport discarded the shifted native fatal anchor')
+UseView(UsePage({7.9},-.2),5,0)
+view,model=UseView(UsePage({6.5,6.5,4.6}),7,3)
+check(model.aligned[1].row~=model.aligned[2].row and model.aligned[1].offset==model.aligned[2].offset,'Repeated captured uses were merged')
+for _,change in ipairs({
+    function(p)p.native.clockDiagnostic=nil end,
+    function(p)p.native.clockDiagnostic.localDeathNoticeAt=99 end,
+    function(p)p.native.clockDiagnostic.nativeFatalTimestamp=499 end,
+    function(p)p.native.clockDiagnostic.nativeMaximumTimestamp=math.huge end,
+})do
+    page=UsePage({6.5});change(page);view,model=UseView(page,5,0)
+    check(not model.anchorValid and #model.unaligned==1 and model.unaligned[1].row==page.casts[1],'Invalid anchor invented a marker or removed the fallback receipt')
+end
+page=UsePage({6.5});page.casts[1].source='DERIVED_FROM_AGGREGATE_ENDPOINT'
+view,model=UseView(page,5,0)
+check(model.anchorValid and #model.unaligned==1,'Unaligned derived use widened the viewport')
+page=UsePage({6.5});page.casts[1].observedAt=nil;UseView(page,5,0)
+-- Expansion may expose small damage as a consequence, but never modifies or
+-- clamps old rows; omitted damage counts remain about the retained damage list.
+page=UsePage({6.5});model=M:AlignUses(page)
+local oldSmall={Hit(4,-8.01,1),Hit(3,-7.1,1),Hit(2,-6.9,1),Hit(5,-.6,100),Hit(1,0,500)}
+view=View(oldSmall,7,{2,5,1},1000,model)
+check(view.omitted==2 and #oldSmall==5,'Use expansion changed omission scope or raw report rows')
+View({Hit(2,-7.2,100),Hit(1,0,50)},8,{2,1},1000,model)
+-- Foreign or malformed presentation data cannot override the validated anchor,
+-- public finite offset bounds, or the 64-entry work limit.
+local function Candidate(entries)return {anchorValid=true,approximate=true,aligned=entries,unaligned={{offset=-8}}}end
+local function Entry(offset)return {offset=offset,approximate=true}end
+for _,bad in ipairs({false,{},secret,{anchorValid=false,approximate=true,aligned={Entry(-8)}},
+    {anchorValid=1,approximate=true,aligned={Entry(-8)}},{anchorValid=true,aligned={Entry(-8)}},
+    {anchorValid=true,approximate=true,aligned=secret}})do View(page.native.rows,5,nil,1000,bad)end
+for _,badOffset in ipairs({math.huge,-math.huge,0/0,'-8',false,secret,-8.01,.01})do
+    View(page.native.rows,5,nil,1000,Candidate({Entry(badOffset)}))
+end
+View(page.native.rows,5,nil,1000,Candidate({secret,{offset=-8}}))
+local many={};for i=1,64 do many[i]=Entry(-1)end;many[65]=Entry(-8)
+View(page.native.rows,5,nil,1000,Candidate(many));many[64]=Entry(-8)
+View(page.native.rows,8,nil,1000,Candidate(many))
+local trust=issecretvalue;issecretvalue=nil
+View(page.native.rows,5,nil,1000,Candidate({Entry(-8)}))
+issecretvalue=function()error('Trust check failed')end
+View(page.native.rows,5,nil,1000,Candidate({Entry(-8)}));issecretvalue=trust
+check(liveReads==0,'Viewport invoked live state queries or scheduling')
 print('PASS: '..checks..' anchored grouping, viewport, largest/fatal identity, chronology and immutability assertions')

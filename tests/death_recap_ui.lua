@@ -5,6 +5,7 @@ source=source..[=[
 function methods:GetScript(name)return self.scripts[name]end
 function methods:SetAlpha(v)check(type(v)=='number'and v==v and v>=0 and v<=1,'Invalid native alpha');self.alpha=v end
 function methods:SetVertexColor(r,g,b)self.rgb={r,g,b}end
+function methods:SetTextColor(...)self.textColor={...}end
 function methods:SetAtlas(atlas)self.atlas=atlas end
 function methods:CreateLine()return object('Line',nil,self)end
 function methods:SetThickness(value)self.thickness=value end
@@ -100,7 +101,10 @@ for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter'
  for _,line in ipairs(b.statusLines)do check(line:IsShown()==(b.recordedState~=nil),'Proven state glyph was hidden or unknown state acquired a check/cross')end
  if tooltipSpell==235450 then foundOld=true;check(b.recordedState==nil and b.info.text=='?'and b.icon.rgb[1]==.55 and (help:find('not recorded',1,true)or help:find('not confirmed',1,true))and not help:find('Available when checked',1,true)and help:find('Checked 45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
  if tooltipItem==5512 then foundStock=true;check(b.recordedState==true and b.info.text=='✓'and b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
- if tooltipSpell==342245 then foundHold=true;check(b.recordedState==false and b.info.text=='×'and b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
+ if tooltipSpell==342245 then
+ for _,line in ipairs(b.statusLines)do check(line.color[1]==RA.Theme.Colors.danger[1]and line.color[2]==RA.Theme.Colors.danger[2]and line.color[3]==RA.Theme.Colors.danger[3]and line.thickness==2,'Confirmed unavailable cross is not clearly red')end
+ check(b.statusLines[1].start[3]==4 and b.statusLines[1].finish[3]==12 and b.statusLines[2].start[3]==12 and b.statusLines[2].finish[3]==4,'Unavailable badge strokes do not form an X')
+ foundHold=true;check(b.recordedState==false and b.info.text=='×'and b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
 local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
@@ -126,12 +130,53 @@ check(#objects==beforeFrames and #timers==beforeTimers and groupCalls==beforeGro
 local fatal=page.native.rows[4];fatal.nativeOffset=-1;page.native.rows[5]={nativeIndex=5,nativeOffset=0,spellID=126,kind='unknown'}
 U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.death.points[1][4]==timelineX(-1) and popup.fight.text=='Fight 1:40','Latest native time mislabeled as Death or clocks conflated')
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
+-- Header identity comes only from the frozen page. Its static class palette
+-- and measured name width must not turn historical rendering into live reads.
+do
+ local oldName,oldRealm,oldClass=page.playerName,page.playerRealm,page.class
+ local oldUnitName,oldFullName,oldUnitClass,oldClassAPI,oldPalette=UnitName,UnitFullName,UnitClass,C_ClassColor,RAID_CLASS_COLORS
+ local reads=0;local function NoIdentityRead()reads=reads+1;error('Historical UI queried live identity')end
+ UnitName,UnitFullName,UnitClass=NoIdentityRead,NoIdentityRead,NoIdentityRead;C_ClassColor={GetClassColor=NoIdentityRead}
+ RAID_CLASS_COLORS={MAGE={r=.25,g=.75,b=1},WARRIOR={r=.75,g=.5,b=.25},BOGUS={r=1,g=0,b=0}}
+ local function Color(r,g,b)
+  return popup.playerName.textColor[1]==r and popup.playerName.textColor[2]==g and popup.playerName.textColor[3]==b
+ end
+ local function Neutral()return Color(RA.Theme.Colors.text[1],RA.Theme.Colors.text[2],RA.Theme.Colors.text[3])end
+ page.playerName,page.playerRealm,page.class='Jímfro','CapturedRealm','MAGE';U:ShowLast()
+ check(popup.playerName:IsShown()and popup.playerName.text=='Jímfro'and popup.capturedFullName=='Jímfro-CapturedRealm'and Color(.25,.75,1),'Header omitted captured name/realm or ignored its captured class color')
+ check(popup.playerName.fontSize==14 and popup.playerName.points[1][4]==174 and popup.playerName.points[1][5]==-25 and popup.playerName.maxLines==1 and not popup.playerName.wordWrap and popup.title.fontSize==24,'Captured name changed title hierarchy or one-line geometry')
+ check(popup.playerName.width==popup.playerName:GetUnboundedStringWidth()and popup.playerName.width<280 and popup.info.points[1][4]==174+popup.playerName.width+8 and popup.info.points[1][4]+popup.info.width<550,'Short name reserved the full width or collided with header controls')
+ tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Player: Jímfro-CapturedRealm',1,true),'Info hover omitted full captured identity');popup.info:Fire('OnLeave')
+ page.playerName=string.rep('LongName',16);page.playerRealm='LongRealm';U:ShowLast()
+ check(popup.playerName.width==280 and popup.playerName.text==page.playerName and popup.info.points[1][4]==462 and popup.info.points[1][4]+popup.info.width<550,'Long name wrapped, lost full text or escaped its cap')
+ tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find(page.playerName..'-LongRealm',1,true),'Long-name ellipsis discarded full identity from help');popup.info:Fire('OnLeave')
+ page.playerName='UnknownClass';page.class='BOGUS';U:ShowLast();check(Neutral(),'Unknown captured class borrowed a palette entry')
+ page.class='WARRIOR';U:ShowLast();check(Color(.75,.5,.25),'Captured class change retained previous name color')
+ RAID_CLASS_COLORS.WARRIOR={r=2,g=.5,b=.25};U:Render();check(Neutral(),'Out-of-range static palette was accepted')
+ local hidden=setmetatable({},{__tostring=function()error('Secret header identity stringified')end});local public=issecretvalue
+ issecretvalue=function(value)return rawequal(value,hidden)or public(value)end
+ for _,bad in ipairs({false,hidden,'',string.rep('X',129),'Bad|r','Bad\nName'})do
+  page.playerName=bad;U:ShowLast();check(not popup.playerName:IsShown()and popup.playerName.text==''and popup.capturedFullName==nil and popup.info.points[1][4]==174,'Invalid legacy name became visible or borrowed another identity')
+ end
+ page.playerName='ValidName';page.playerRealm=hidden;page.class=hidden;U:ShowLast()
+ check(popup.playerName.text=='ValidName'and popup.capturedFullName=='ValidName'and Neutral(),'Secret realm/class erased public name or leaked into header')
+ issecretvalue=public;page.playerName,page.playerRealm,page.class=nil,nil,'MAGE';U:ShowLast()
+ check(not popup.playerName:IsShown()and popup.capturedFullName==nil and popup.info.points[1][4]==174,'Missing legacy identity retained stale name or changed the existing header')
+ U:Preview();check(popup.playerName.text=='Example Mage'and popup.capturedFullName=='Example Mage-Example Realm'and popup.coverage:IsShown()and Color(.25,.75,1),'Preview identity borrowed the real page or lost fictional class/name')
+ check(popup.coverage.points[1][4]==174+popup.playerName.width+8 and popup.info.points[1][4]==popup.coverage.points[1][4]+popup.coverage.width+8 and popup.info.points[1][4]+popup.info.width<550,'Preview label/name/info exceeded the shared header budget')
+ U:OpenShare();local samplePage=popup.shareChooser.page;popup.shareChooser.close:Fire('OnClick');samplePage.playerName,samplePage.playerRealm=nil,nil;U:Render()
+ check(not popup.playerName:IsShown()and popup.capturedFullName==nil and popup.coverage:IsShown()and popup.coverage.points[1][4]==174 and popup.info.points[1][4]==218,'Missing sample identity erased Preview or retained the named header layout')
+ U:ShowLast();check(not popup.playerName:IsShown()and not popup.coverage:IsShown()and popup.capturedFullName==nil,'Preview identity/color leaked into a missing-name live page')
+ check(reads==0,'Historical header issued a current-unit or live class-color query')
+ UnitName,UnitFullName,UnitClass,C_ClassColor,RAID_CLASS_COLORS=oldUnitName,oldFullName,oldUnitClass,oldClassAPI,oldPalette
+ page.playerName,page.playerRealm,page.class=oldName,oldRealm,oldClass
+end
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
 U:OpenShare();local liveForm=popup.shareChooser;local staleLiveSend=liveForm.channels.WHISPER:GetScript('OnClick')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
 check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context and popup.contextText=='Arcane Mage · The Coiled Altar · Mythic','Hidden context or Preview label incorrect')
-check(popup.info.points[1][4]==218 and popup.info.points[1][5]==-23,'Preview info target became an orphaned second-line glyph')
+check(popup.playerName.text=='Example Mage'and popup.coverage.points[1][4]==174+popup.playerName.width+8 and popup.info.points[1][4]==popup.coverage.points[1][4]+popup.coverage.width+8 and popup.info.points[1][5]==-23,'Preview info target did not follow its captured name and sample label')
 tooltipLines={};popup.info:Fire('OnEnter');local contextHelp=table.concat(tooltipLines,' ');check(contextHelp:find('Arcane Mage · The Coiled Altar · Mythic',1,true)and contextHelp:find('Fictional sample',1,true),'Hidden Preview context was lost from help');popup.info:Fire('OnLeave')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.healing:IsShown(),'Preview did not default to recorded death')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
@@ -343,9 +388,9 @@ for i,text in ipairs({'A',string.rep('Long',24),'A',string.rep('X',96)})do
 end
 page.native.rows[1].sourceName=oldSourceName;U:Preview()
 check(popup.height==360 and popup.supportExtra==0 and popup.fightSlotExtra==0,'Normal Preview retained artificial shelf/support/timer height')
-local expectedSlots={590,628,666,704,742,786,824};local slotCount=0
+local expectedSlots={590,628,666,704,748,786};local slotCount=0
 for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-76,'Seven fixed CD slots did not stay on one row')end
-check(slotCount==7,'Preview roster lost a CD slot')
+check(slotCount==6,'Preview did not exclude utility Greater Invisibility')
 check(not popup.health and popup.percent.points[1][4]==48 and popup.percent.width==58,'Selected health percentage is not aligned to the bottom timeline')
 check(popup.width==880 and popup.healthPanel.points[1][4]==48 and popup.healthPanel.width==784 and popup.hp.points[1][4]==552 and popup.hp.width==280 and popup.hp.justifyH=='RIGHT','Bottom selected health bar/value geometry changed')
 check(popup.healthPanel.points[1][5]==-320 and popup.percent.points[1][5]==-290 and popup.hp.points[1][5]==-297 and popup.healthPanel.points[1][4]==popup.rail.points[1][4]and popup.healthPanel.width==popup.rail.width,'Selected health bar is not below and aligned with the timeline')
@@ -579,6 +624,27 @@ local instanceQueued=timers[#timers];U:Hide();instanceQueued.callback();check(in
 U:Preview();popup.share:Fire('OnClick');local oldReady=liveForm.channels.SAY:GetScript('OnClick');liveForm.close:Fire('OnClick');popup.share:Fire('OnClick')
 local beforeStale=#chatCalls;oldReady(liveForm.channels.SAY);check(#chatCalls==beforeStale,'Old chooser generation submitted after reopen')
 choose(liveForm,'SAY');firstNext();check(#chatCalls==beforeStale+1,'Old SAY continuation acted on new report')
+U:Hide()
+-- Old captures cannot inherit today's Mirror talent. Utility uses remain
+-- visible as observed facts while both defensive availability surfaces omit them.
+page={id=777,diedAt=100,class='MAGE',specID=62,casts={{spellID=110959,name='Greater Invisibility',observedAt=94},{spellID=55342,name='Mirror Image',observedAt=93}},
+ native={rows={{nativeIndex=1,nativeOffset=0,kind='damage',amount=1,recordedHP=0}}},lastAlive={spells={
+ {spellID=110959,name='Greater Invisibility',known=true,cooldown='inactive',chargeQuery='not_applicable'},
+ {spellID=55342,name='Mirror Image',known=true,cooldown='inactive',chargeQuery='not_applicable'}},supplies={}}}
+U:ShowLast();check(#shelves()==2,'Legacy utility appeared on defensive availability shelf')
+check(#RA.DeathRecapEntry:GetAvailableRows(page)==0,'Legacy utility appeared on compact defensive card')
+local utilityChips=0
+for _,b in ipairs(objects)do if b.parent==popup and b.useGroup and b:IsVisible()then
+ utilityChips=utilityChips+1;check(b.useMeta.text:find('Utility',1,true),'Utility chip lost its visible role')
+ tooltipLines={};b:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Recorded utility use',1,true),'Utility hover implied defensive use')
+end end
+check(utilityChips==2,'Eligible utility receipts disappeared')
+local utilityReport=assert(R:BuildShareText(page))
+check(utilityReport:find('Greater Invisibility: utility use',1,true)and utilityReport:find('Mirror Image: utility use',1,true),'Full report reclassified legacy utility casts')
+page.lastAlive.spells[2].role='defensive';page.lastAlive.spells[2].defensiveTalentSpellID=1309497
+U:ShowLast();check(#shelves()==3 and #RA.DeathRecapEntry:GetAvailableRows(page)==1,'Captured learned Refractive Images qualification lost defensive shelf/card')
+U:Preview()
+for _,b in ipairs(shelves())do tooltipSpell=nil;b:Fire('OnEnter');check(tooltipSpell~=110959,'Preview restored Greater Invisibility defensive icon')end
 U:Hide()
 check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
 cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')

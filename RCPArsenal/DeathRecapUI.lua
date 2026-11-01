@@ -240,6 +240,42 @@ local function Number(value,positive)
     return value
 end
 local function Raw(value)return tostring(value)end
+local function CapturedText(value)
+    if type(issecretvalue)~="function"then return nil end
+    local ok,secret=pcall(issecretvalue,value)
+    if ok and secret==false and type(value)=="string"and #value>0 and #value<=128 and not value:find("[%c|]")then return value end
+end
+local CLASS_FILES={WARRIOR=true,PALADIN=true,HUNTER=true,ROGUE=true,PRIEST=true,DEATHKNIGHT=true,SHAMAN=true,MAGE=true,WARLOCK=true,MONK=true,DRUID=true,DEMONHUNTER=true,EVOKER=true}
+local function CapturedClassColor(value)
+    local class=CapturedText(value)
+    if not class or not CLASS_FILES[class]then return unpack(C.text)end
+    -- The class palette is static client metadata. Never query a current unit
+    -- or call a live class/identity API while rendering an old page.
+    local ok,r,g,b=pcall(function()
+        local color=RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+        return color and color.r,color and color.g,color and color.b
+    end)
+    r,g,b=Metric(r),Metric(g),Metric(b)
+    if ok and r and g and b and r>=0 and g>=0 and b>=0 and r<=1 and g<=1 and b<=1 then return r,g,b end
+    return unpack(C.text)
+end
+local function Header(page,example)
+    local name,realm=CapturedText(page.playerName),CapturedText(page.playerRealm)
+    frame.capturedFullName=name and(name..(realm and("-"..realm)or""))or nil
+    Text(frame.playerName,name or"");frame.playerName:SetTextColor(CapturedClassColor(page.class));frame.playerName:SetShown(name~=nil)
+    frame.coverage:SetShown(example)
+    if not name then
+        frame.coverage:SetWidth(70);Place(frame.coverage,"TOPLEFT",frame,"TOPLEFT",174,-26)
+        Place(frame.info,"TOPLEFT",frame,"TOPLEFT",example and 218 or 174,-23);return
+    end
+    local previewWidth=example and math.min(70,ReadMetric(frame.coverage,"GetUnboundedStringWidth")or frame.coverage:GetStringWidth())or 0
+    local cap=math.min(280,550-174-16-8-(example and previewWidth+8 or 0))
+    local width=math.min(cap,ReadMetric(frame.playerName,"GetUnboundedStringWidth")or frame.playerName:GetStringWidth())
+    frame.playerName:SetWidth(width)
+    local nextX=174+width+8
+    if example then frame.coverage:SetWidth(previewWidth);Place(frame.coverage,"TOPLEFT",frame,"TOPLEFT",nextX,-26);nextX=nextX+previewWidth+8 end
+    Place(frame.info,"TOPLEFT",frame,"TOPLEFT",nextX,-23)
+end
 local function ExactAmount(value)
     local text=string.format("%.0f",value)
     return text:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")
@@ -270,7 +306,7 @@ local function ActionPage(page,preview)
 end
 local function X(time)return 48+(time-domain.first)/(domain.last-domain.first)*784 end
 local function SamplePage()
-    local page={id=0,diedAt=132,class="MAGE",specID=62,encounter={encounterID=3429,name="The Coiled Altar",difficulty=16,startedAt=0},
+    local page={id=0,diedAt=132,class="MAGE",specID=62,playerName="Example Mage",playerRealm="Example Realm",encounter={encounterID=3429,name="The Coiled Altar",difficulty=16,startedAt=0},
         maxHealth=400000,healthPoints={{offset=-5,hp=372000}},transitions={-3.5,-2.2,-1.8,-.5},
         heals={{offset=-4.2,amount=9000,name="Flash Heal",spellID=2061,healer="Example healer",hp=336000},
             {offset=-3.15,amount=11000,name="Renew",spellID=139,healer="Example healer",hp=211000}},
@@ -410,6 +446,7 @@ local function Ensure()
     frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,BASE_HEIGHT);Point(frame,"CENTER",UIParent,"CENTER",0,50)
     frame:SetFrameStrata("DIALOG");frame:SetClampedToScreen(true);frame:EnableMouse(true);Surface(frame,C.canvasDeep);T:ApplyRounded(frame,{.48,.34,.52,.65},8,"border","BORDER")
     frame.title=Label(frame,"Death Log",24,20,-18,142);RA:ApplyFont(frame.title,24,"BOLD",false)
+    frame.playerName=Label(frame,"",14,174,-25,280,C.text);RA:ApplyFont(frame.playerName,14,"BOLD",false);frame.playerName:SetHeight(18);frame.playerName:SetWordWrap(false);frame.playerName:SetMaxLines(1);frame.playerName:Hide()
     frame.coverage=Label(frame,"Preview",10,174,-26,70,C.muted)
     frame.close=CreateFrame("Button",nil,frame);Size(frame.close,28,28);Point(frame.close,"TOPLEFT",frame,"TOPLEFT",832,-18)
     frame.close.label=Label(frame.close,"×",24,1,-1,26);frame.close:SetScript("OnClick",function()UI:Hide()end)
@@ -432,6 +469,7 @@ local function Ensure()
     frame.info.label=Label(frame.info,"i",12,4,0,12,C.textSoft)
     frame.info:SetScript("OnEnter",function(self)
         local lines={"Encounter",frame.contextText or"Personal recap"}
+        if frame.capturedFullName then lines[#lines+1]="Player: "..frame.capturedFullName end
         if IsExample()then lines[#lines+1]="Fictional sample"end
         if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
         if frame.viewport and frame.viewport.omitted>0 then lines[#lines+1]=frame.viewport.omitted.." retained events outside this timeline window; included in the full report"end
@@ -467,13 +505,14 @@ local function Roster(page,example,time)
         return {{spellID=342245,name="Alter Time",category="minor",cooldown="active",chargeQuery="not_applicable",exact=true},
             {spellID=45438,name="Ice Block",category="major",cooldown="active",chargeQuery="not_applicable",exact=true},
             {spellID=235450,name="Prismatic Barrier",category="minor",cooldown="active",chargeQuery="not_applicable",exact=true},
-            {spellID=55342,name="Mirror Image",category="minor",cooldown="inactive",chargeQuery="not_applicable",exact=true},
-            {spellID=110959,name="Greater Invisibility",category="minor",cooldown="inactive",chargeQuery="not_applicable",exact=true},
+            {spellID=55342,name="Mirror Image",category="minor",role="defensive",defensiveTalentSpellID=1309497,cooldown="inactive",chargeQuery="not_applicable",exact=true},
             {kind="stone",itemID=5512,name="Healthstone",cooldown="inactive",physicalCount=1,remainingUses=1,exact=true},
             {kind="potion",itemID=241304,name="Healing potion",physicalCount=0,cooldown="unknown",exact=true}}
     end
     local rows={};local sample=page.lastAlive
-    for _,row in ipairs(sample and sample.spells or page.knownEntries or{})do rows[#rows+1]=row end
+    for _,row in ipairs(sample and sample.spells or page.knownEntries or{})do
+        if R:GetRecordedUseRole(row)~="utility"then rows[#rows+1]=row end
+    end
     for _,row in ipairs(R:GetSupplyFamilies(page))do rows[#rows+1]=row end
     return rows
 end
@@ -524,7 +563,7 @@ local function Shelf(page,example,time)
         -- Expressway has no checkmark glyph. Draw both proven states so their
         -- meaning survives font changes; the unknown question mark is text.
         Text(b.info,state==true and"✓"or state==false and"×"or"?");b.info:SetShown(state==nil);b.recordedState=state
-        for _,line in ipairs(b.statusLines)do line:SetShown(state~=nil);line:SetColorTexture(unpack(state==true and C.success or pink))end
+        for _,line in ipairs(b.statusLines)do line:SetShown(state~=nil);line:SetColorTexture(unpack(state==true and C.success or C.danger))end
         if state==true then
             b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,3,-8);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,6,-11)
             b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,6,-11);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,13,-4)
@@ -665,10 +704,10 @@ local function CursorTime()
     if not x or not scale or scale<=0 then return nil end
     local logical=x/scale-frame:GetLeft();return domain.first+(logical-48)/784*(domain.last-domain.first),logical
 end
-local function PrepareCastMarkers(page,example)
+local function PrepareCastMarkers(page,example,alignment)
     frame.castMarkers=frame.castMarkers or{};HidePool(frame.castMarkers)
     for _,b in ipairs(frame.castMarkers)do HidePool(b.stems or{});HidePool(b.connectors or{})end
-    frame.castAlignment=not example and M:AlignUses(page)or nil
+    frame.castAlignment=alignment
     local visible,plotted={},{}
     for _,entry in ipairs(frame.castAlignment and frame.castAlignment.aligned or{})do
         if entry.offset>=domain.first and entry.offset<=domain.last then visible[#visible+1]=entry;plotted[entry.index]=true end
@@ -702,7 +741,7 @@ local function RenderCastMarkers(page,shelfExtra,rail,revision)
         frame.textExclusions[#frame.textExclusions+1]={left=b.iconX-27,right=b.iconX+27,top=y-2,bottom=y+44}
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision or IsExample()or(share and share:IsShown())then return end
-            Tooltip(self,{entry.row.name or"Recorded cast",string.format("~%.1fs before death; aligned to death notification.",entry.age),"Recorded successful cast · Timing is approximate"},entry.row.spellID,nil,lavender)
+            Tooltip(self,{entry.row.name or"Recorded cast",string.format("~%.1fs before death; aligned to death notification.",entry.age),R:GetRecordedUseRole(entry.row)=="utility"and"Recorded utility cast · Timing is approximate"or"Recorded successful cast · Timing is approximate"},entry.row.spellID,nil,lavender)
         end)
         b:SetScript("OnLeave",HideTooltip)
     end
@@ -752,7 +791,7 @@ local function RenderSupports(page,example,shelfExtra,rail,revision)
             local row=group.rows[#group.rows];local time,death=Number(row.observedAt),Number(page.diedAt)
             local age=time and death and death>=time and string.format("%.1fs",death-time)or"time unknown"
             local name=group.name or row.name or(group.spellID and("Spell "..group.spellID))or"Recorded use"
-            local detail=(#group.rows>1 and("×"..#group.rows.." · ")or"")..age
+            local detail=(R:GetRecordedUseRole(row)=="utility"and"Utility · "or"")..(#group.rows>1 and("×"..#group.rows.." · ")or"")..age
             Text(frame.useMeasure,detail);local detailWidth=ReadMetric(frame.useMeasure,"GetUnboundedStringWidth")or frame.useMeasure:GetStringWidth()
             Text(frame.useMeasure,name.."  "..detail)
             local width=math.min(230,math.max(90,(ReadMetric(frame.useMeasure,"GetUnboundedStringWidth")or frame.useMeasure:GetStringWidth())+44))
@@ -815,12 +854,13 @@ local function RenderSupports(page,example,shelfExtra,rail,revision)
                     local ability=detail.group;local receipt=detail.receipt
                     local name=ability.name or receipt.name or(ability.spellID and("Spell "..ability.spellID))or"Recorded use"
                     local count=#ability.rows>1 and(" · Use "..detail.index.."/"..#ability.rows)or""
-                    lines[#lines+1]={text=name..count.." · "..UseAge(page,receipt.observedAt),iconSpellID=ability.spellID}
+                    lines[#lines+1]={text=name..count..(R:GetRecordedUseRole(receipt)=="utility"and" · Utility"or"").." · "..UseAge(page,receipt.observedAt),iconSpellID=ability.spellID}
                     if self.detailMember==index then focusIndex=#lines end
                 end
                 Tooltip(self,lines,nil,nil,nil,focusIndex);return
             end
             local lines={row.name or"Recorded use",example and"Recorded defensive activation"or(#group.rows==1 and"Used once"or"Used "..#group.rows.." times")}
+            if R:GetRecordedUseRole(row)=="utility"then lines[#lines+1]="Recorded utility use"end
             local focusIndex
             if not example then
                 for index,receipt in ipairs(group.rows)do
@@ -884,10 +924,11 @@ function UI:Render()
     for _,b in ipairs(supportPool)do if b.lines then HidePool(b.lines)end;if b.activationStems then HidePool(b.activationStems)end end
     local rows=page.native and page.native.rows or{}
     local referenceMax=example and Number(page.maxHealth,true)or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
-    local viewport=M:Viewport(rows,referenceMax);frame.viewport=viewport
+    local alignment=not example and M:AlignUses(page)or nil
+    local viewport=M:Viewport(rows,referenceMax,alignment);frame.viewport=viewport
     model=M:Group(viewport.rows,example and page.transitions or{},{items=16});domain={first=viewport.first,last=viewport.last}
     frame.timeDomain=domain
-    local castExtra=PrepareCastMarkers(page,example);frame.castExtra=castExtra
+    local castExtra=PrepareCastMarkers(page,example,alignment);frame.castExtra=castExtra
     local supportExtra=PrepareSupportMarkers(page,example);frame.supportExtra=supportExtra
     local elapsed=page.encounter and page.encounter.startedAt and page.diedAt-page.encounter.startedAt
     Text(frame.fight,elapsed and string.format("Fight %d:%02d",math.floor(elapsed/60),math.floor(elapsed%60))or"")
@@ -897,9 +938,9 @@ function UI:Render()
         if b.timeX+b.visualWidth/2>deathX-fightWidth-4 and b.timeX-b.visualWidth/2<deathX+4 then fightExtra=20;break end
     end end
     frame.fightSlotExtra=fightExtra
-    frame.coverage:SetShown(example);frame.info:Show()
+    frame.info:Show();Header(page,example)
     frame.contextText=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
-    RefreshReminderSwitch();Place(frame.info,"TOPLEFT",frame,"TOPLEFT",example and 218 or 174,-23)
+    RefreshReminderSwitch()
     frame.share:SetEnabled(true);frame.share:SetAlpha(1)
     local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
     local tierTotal=math.max(1,math.ceil(#model.items/8));local tierEnd,tierCount={},{}
