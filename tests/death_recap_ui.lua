@@ -84,36 +84,41 @@ local function hover(index)
  for _,b in ipairs(hits())do for i,row in ipairs(b.group.rows)do if row.nativeIndex==index then b.member=i;b:Fire('OnEnter');return b end end end;error('Missing raw event '..index)
 end
 check(UISpecialFrames[1]=='RCPArsenalDeathRecap'and popup:GetScript('OnHide'),'Escape/nativehide cleanup missing')
-check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=428,'Composition lost Death Log hierarchy')
-check(popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check'and popup.shelfAge.text:find('45.0',1,true),'Real shelf falsely follows native clock or erases old check')
+check(popup.title.text=='Death Log'and popup.width==880 and popup.height>=360,'Composition lost Death Log hierarchy')
+local function NoHealthPlot()
+ check(not popup.graphBase and not popup.graphLabel and not popup.graphHelp and not popup.graphContext and not popup.healthPoint and not popup.pointPercent,'Removed health plot or sample marker returned')
+ check(not popup.absorb and not popup.absorbLabel and popup.healthPanel.healAbsorb==nil,'Shield absorption or healing debt contributed to selected health')
+end
+NoHealthPlot()
+check(popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check'and popup.shelfAge.text==''and not popup.shelfAge:IsShown(),'Real shelf lost check provenance or retained visible age text')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.healthBar:IsShown(),'Initial fatal health selection mismatch')
-check(popup.pointPercent.points[1][1]=='RIGHT'and popup.pointPercent.points[1][4]==-10,'Fatal percentage collides with tombstone')
-check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated skull art')
+check(popup.death:IsShown()and popup.healthContext.text:find('Killing blow',1,true),'Fatal selection lost its exact death label')
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
 for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
- if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==.55 and (help:find('not recorded',1,true)or help:find('not confirmed',1,true))and not help:find('Available when checked',1,true)and help:find('Checked 45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
- if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
- if tooltipSpell==342245 then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
+ check(b.statusBadge and #b.statusLines==2 and b.info:IsShown()==(b.recordedState==nil),'Recorded-state badge lost its drawn/text visibility contract')
+ for _,line in ipairs(b.statusLines)do check(line:IsShown()==(b.recordedState~=nil),'Proven state glyph was hidden or unknown state acquired a check/cross')end
+ if tooltipSpell==235450 then foundOld=true;check(b.recordedState==nil and b.info.text=='?'and b.icon.rgb[1]==.55 and (help:find('not recorded',1,true)or help:find('not confirmed',1,true))and not help:find('Available when checked',1,true)and help:find('Checked 45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
+ if tooltipItem==5512 then foundStock=true;check(b.recordedState==true and b.info.text=='✓'and b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
+ if tooltipSpell==342245 then foundHold=true;check(b.recordedState==false and b.info.text=='×'and b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
 check(foundOld and foundStock and foundHold,'Known shelf rows omitted')
 local grouped=hover(2);check(#grouped.group.rows==2,'Confirmed same-source burst not grouped')
 tooltipLines={};grouped:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 hits',1,true),'Group moment not explicit')
-local groupFocusX=popup.guide.points[1][4]
-grouped:Fire('OnMouseWheel',-1);check(grouped.group.rows[grouped.member].nativeIndex==3 and popup.selected.nativeIndex==2 and popup.healthPanel.selectedHP==90000 and popup.guide.points[1][4]==groupFocusX and groupFocusX==grouped.group.iconX,'Tooltip detail moved stable group focus/health')
-check(popup.healthPoint:IsVisible()and popup.pointPercent:IsVisible()
- and math.abs(popup.healthPoint.points[1][4]-(48+(popup.selected.nativeOffset-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784))<.001
- and math.abs(popup.healthPoint.points[1][5]-(popup.graphBase.points[1][5]+popup.selected.recordedHP/popup.healthGraphScale.maximum*60))<.001,'Packed group hid or moved its selected raw HP sample from true native time/HP')
+local groupFocusX=popup.guide.points[1][4];local groupArtwork=grouped.icon.texture
+grouped:Fire('OnMouseWheel',-1);check(grouped.group.rows[grouped.member].nativeIndex==3 and popup.selected.nativeIndex==3 and popup.healthPanel.selectedHP==80000 and grouped.icon.texture==groupArtwork and popup.guide.points[1][4]==groupFocusX and groupFocusX==grouped.group.iconX,'Member detail did not select exact HP or changed fixed cluster artwork/position')
+NoHealthPlot()
+check(popup.hp.text=='80000 / 100000'and popup.percent.text=='80%'and not popup.healing:IsShown(),'Selected member health lost its raw denominator or acquired healing')
 check(grouped.amountTarget and grouped.amountTarget:IsVisible(),'Amount has no actual hover/wheel target');grouped.amountTarget:Fire('OnEnter')
-local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==2,'Journal click also moved group focus')
-hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Redraw forgot group focus/detail')
-local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==2,'Stale render action changed selection')
+local click=grouped:GetScript('OnClick');click();check(popup.selected.nativeIndex==3,'Journal click changed selected member')
+hover(4);RA:FireCallback('ACCENT_THEME_CHANGED');for _,b in ipairs(hits())do if b.group.spellID==123 then grouped=b end end;grouped:Fire('OnEnter');check(popup.selected.nativeIndex==3 and grouped.group.rows[grouped.member].nativeIndex==3,'Redraw forgot selected member/detail')
+local staleClick=grouped:GetScript('OnClick');RA:FireCallback('ACCENT_THEME_CHANGED');staleClick();check(popup.selected.nativeIndex==3,'Stale render action changed selection')
 -- Scrub is bounded pointer input while hovering only; stationary pointer cannot
 -- undo wheel choice. No re-grouping or periodic capture is attached to it.
 local function timelineX(time)return 48+(time-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784 end
 local x=300+timelineX(-4.5);GetCursorPosition=function()return x,400 end
 grouped.span:Fire('OnEnter');check(popup.selected.nativeIndex==2,'Span scrub missed exact nearest event')
-grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==2 and grouped.group.rows[grouped.member].nativeIndex==3,'Stationary scrub changed focus or undid detail wheel')
+grouped.span:Fire('OnMouseWheel',-1);grouped.span:Fire('OnUpdate');check(popup.selected.nativeIndex==3 and grouped.group.rows[grouped.member].nativeIndex==3,'Stationary scrub undid exact selected member')
 x=x+32;grouped.span:Fire('OnUpdate');grouped.span:Fire('OnLeave');check(grouped.span:GetScript('OnUpdate')==nil,'Pointer tracker survived leave')
 local beforeFrames,beforeTimers,beforeGroups=#objects,#timers,groupCalls
 for i=1,50 do hover(2);hover(3)end
@@ -128,28 +133,22 @@ local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained 
 check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context and popup.contextText=='Arcane Mage · The Coiled Altar · Mythic','Hidden context or Preview label incorrect')
 check(popup.info.points[1][4]==218 and popup.info.points[1][5]==-23,'Preview info target became an orphaned second-line glyph')
 tooltipLines={};popup.info:Fire('OnEnter');local contextHelp=table.concat(tooltipLines,' ');check(contextHelp:find('Arcane Mage · The Coiled Altar · Mythic',1,true)and contextHelp:find('Fictional sample',1,true),'Hidden Preview context was lost from help');popup.info:Fire('OnLeave')
-check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.absorb:IsShown(),'Preview did not default to recorded death')
+check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.healing:IsShown(),'Preview did not default to recorded death')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
 check(not liveForm:IsShown(),'Preview inherited live report dialog');staleLiveSend(liveForm.channels.WHISPER)
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
 U:OpenShare();check(popup.shareChooser:IsShown(),'Private Preview report action missing');popup.shareChooser.close:Fire('OnClick')
-popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.shelfSource=='Preview death snapshot','Healing hover changed damage focus')
-for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeIndex==1,'Defensive hover changed damage focus');break end end
+popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeIndex==101 and popup.healthPanel.selectedHP==336000 and popup.healthPanel.effectiveHealing==9000 and popup.healing:IsShown()and popup.shelfSource=='Preview death snapshot','Preview heal did not select its own validated HP/healing segment')
+for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeIndex==101,'Defensive hover changed selected health');break end end
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
 local healerArtwork=0
 for _,b in ipairs(popup.healTargets)do check(not b.icon and b.label.text:sub(1,1)=='+','Healing regained large artwork')end
 -- Focused alpha31 presentation evidence. This proves drawing inputs/layers and
 -- decisions; only a native screenshot can confirm visible amber/ring pixels.
 U:Preview();local sever=hover(8)
-check(popup.hp.text=='128000 / 400000'and popup.hp.width==142 and popup.absorbLabel.width>=154,'Debt replaced/moved numerical HP')
-check(popup.absorb:GetFrameLevel()>popup.healthBar:GetFrameLevel()and popup.absorb.clips and popup.absorbFill.color[4]>.1,'Debt layer lacks backing/clip/above-bar order')
-local stripes=0
-for _,line in ipairs(popup.hatches)do if line:IsShown()then
- stripes=stripes+1;check(line.thickness==2 and line.start[3]>=0 and line.finish[3]<=popup.absorb.width and line.start[4]>=-14 and line.start[4]<=0 and line.finish[4]>=-14 and line.finish[4]<=0,'Hatch stroke escaped debt rectangle')
-end end
-check(stripes>1 and stripes<=40,'No bounded hatch geometry')
-check(popup.healthPoint.width==12 and #popup.healthPoint.discs==3 and popup.pointPercent.text=='32%','Selected ring/percentage missing')
+check(popup.hp.text=='128000 / 400000'and popup.healthPanel.selectedHP==128000 and popup.percent.text=='32%','Selected damage HP changed')
+NoHealthPlot();check(not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Damage or debt fabricated effective healing')
 local dashed=0;for _,t in ipairs(popup.guide.dashes)do if t:IsShown()then dashed=dashed+1;check(t.width==1 and t.height<=5,'Guide became solid')end end
 check(dashed>1 and dashed<=96,'Guide dashes not bounded')
 check(sever.selectedBorder:IsShown()and not sever.countBadge:IsShown(),'Singleton selected/count treatment wrong')
@@ -182,8 +181,8 @@ check(tooltipSpell==1299684 and GameTooltip.nativeDescription=='Native spell des
 check(single:find('51k damage',1,true)and not single:find('−2.30s',1,true)and not single:find('1/1',1,true)and not single:find('combined',1,true)and not single:find('fictional',1,true),'Singleton tooltip retained boilerplate')
 tooltipLines={};popup.healTargets[1]:Fire('OnEnter');local healHelp=table.concat(tooltipLines,' ')
 check(tooltipSpell==2061 and healHelp:find('+9k healing',1,true)and not healHelp:find('−4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
-check(popup.hp.text=='128000 / 400000'and popup.absorb:IsShown(),'Heal hover changed selected damage health/debt')
-local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
+check(popup.selected.nativeIndex==101 and popup.hp.text=='336000 / 400000'and popup.healing:IsShown()and popup.healthPanel.effectiveHealing==9000,'Preview heal did not select its own raw HP and effective healing')
+local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthBar:IsShown(),'Leave reset selection')
 check(not popup.bell and not popup.reminder.label and not U.OpenBell and popup.reminder:IsEnabled()and popup.share:IsEnabled(),'Unified Preview reminder action unavailable or obsolete bell remained')
 tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Open this report in chat',1,true),'Report help is unclear')
 -- Exercise the actual placement callback with measured mock UI rectangles.
@@ -242,11 +241,58 @@ end
 local copyPage=page;page={id=13,diedAt=100,casts={},native={recapID=4,rows={}}}
 U:ShowLast();check(popup.empty:IsShown()and not popup.context and not popup.health and popup.info.points[1][4]==174 and popup.info.points[1][5]==-23,'Empty live log restored labels or lost anchored help')
 for i=1,20 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
-U:ShowLast();local unknownGroup
-for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
-check(unknownGroup,'Unknown-event density fixture lost its summary')
+U:ShowLast();local unknownGroup;local unknownCount=0
+for _,b in ipairs(hits())do for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then
+ unknownCount=unknownCount+1;unknownGroup=b;check(#b.group.rows==1,'Unknown event was absorbed into a damage cluster')
+end end end
+check(unknownGroup and unknownCount==18,'Unknown-event density fixture lost original receipts')
 tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tooltipLines,' ')
-check(unknownCopy:find(' events',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits')
+check(tooltipSpell==unknownGroup.group.rows[1].spellID and unknownCopy:find('Amount unavailable',1,true)and not unknownCopy:find(' damage',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits: '..unknownCopy)
+page.native.rows[1].kind='unknown';U:ShowLast();tooltipLines={};hover(1)
+check(popup.healthContext.text:find('Death record',1,true)and not popup.healthContext.text:find('Killing blow',1,true)and not table.concat(tooltipLines,' '):find('Killing blow',1,true),'Unknown fatal event acquired a confirmed damage/killing-blow claim')
+-- Mixed sources/spells cluster by raw time. Artwork stays on the largest hit,
+-- while the exact fatal member and each original member retain their own HP.
+do
+ local clusterRows={
+  {nativeIndex=3,nativeOffset=-.4,spellID=731,name='Earlier largest',kind='damage',amount=50001,recordedHP=60000,sourceName='Visible caster',hideCaster=false},
+  {nativeIndex=2,nativeOffset=-.2,spellID=732,name='Middle hit',kind='damage',amount=15002,recordedHP=45000,sourceName='Hidden caster',hideCaster=true},
+  {nativeIndex=1,nativeOffset=0,spellID=733,name='Exact fatal',kind='damage',amount=10003,recordedHP=1234,sourceName='Restricted caster',hideCasterStatus='restricted'}}
+ page={id=14,diedAt=100,casts={},native={recapID=5,recapMaxHealth=100000,rows=clusterRows}}
+ U:ShowLast();local cluster=hits()[1]
+ check(#hits()==1 and #cluster.group.rows==3 and cluster.group.representative==clusterRows[1]and cluster.group.fatalRow==clusterRows[3],'Half-second mixed cluster lost largest artwork or exact fatal member')
+ check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and popup.percent.text=='1%','Fatal selection substituted largest-hit HP or invented zero health')
+ local art=cluster.icon.texture;tooltipLines={};tooltipSpell=nil;hover(1);local detail=table.concat(tooltipLines,' ')
+ check(cluster.icon.texture==art and tooltipSpell==733 and detail:find('3 hits',1,true)and detail:find('Contains killing blow',1,true),'Mixed fatal hover changed artwork or lost native selected-spell detail')
+ for _,fact in ipairs({'-0.4s · Earlier largest · 50,001 · Visible caster','-0.2s · Middle hit · 15,002','0.0s · Exact fatal · 10,003 · Killing blow · Health shown'})do
+  check(detail:find(fact,1,true),'Cluster detail lost exact original receipt: '..fact)
+ end
+ check(not detail:find('Hidden caster',1,true)and not detail:find('Restricted caster',1,true),'Mixed cluster exposed a hidden or restricted source')
+ cluster:Fire('OnMouseWheel',-1)
+ check(popup.selected==clusterRows[1]and popup.hp.text=='60000 / 100000'and tooltipSpell==731 and cluster.icon.texture==art,'Cluster wheel failed to wrap to original HP/native spell while preserving artwork')
+end
+-- The viewport is presentation-only. Important earlier hits extend it in whole
+-- seconds, while outside-window receipts remain in the copy report unchanged.
+do
+ local domainRows={
+  {nativeIndex=5,nativeOffset=-20,spellID=741,name='Historical tail',kind='damage',amount=90000,recordedHP=90000},
+  {nativeIndex=4,nativeOffset=-7.4,spellID=742,name='Small old hit',kind='damage',amount=1000,recordedHP=89000},
+  {nativeIndex=3,nativeOffset=-6.2,spellID=743,name='Important older hit',kind='damage',amount=21000,recordedHP=68000},
+  {nativeIndex=2,nativeOffset=-2,spellID=744,name='Largest recent hit',kind='damage',amount=50000,recordedHP=18000},
+  {nativeIndex=1,nativeOffset=0,spellID=745,name='Fatal recent hit',kind='damage',amount=80000,recordedHP=1234}}
+ page={id=15,diedAt=100,casts={},native={recapID=6,recapMaxHealth=100000,rows=domainRows}}
+ U:ShowLast()
+ check(popup.timeDomain.first==-7 and popup.timeDomain.last==0 and popup.viewport.omitted==2,'Eligible older native hit did not extend to the next whole second')
+ check(page.native.rows==domainRows and #page.native.rows==5 and domainRows[1].nativeOffset==-20,'Viewport cropped or retimed retained page history')
+ local report=assert(R:BuildShareText(page))
+ for _,row in ipairs(domainRows)do check(report:find(row.name,1,true),'Full report omitted original history outside the viewport')end
+ U:OpenShare();check(popup.shareChooser.copy:GetText()==report,'Visible report chooser copied only viewport events');popup.shareChooser.close:Fire('OnClick')
+ tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 retained events outside this timeline window; included in the full report',1,true),'Window clipping lost discoverable report disclosure');popup.info:Fire('OnLeave')
+ page.native.recapMaxHealth=nil;U:ShowLast();check(popup.timeDomain.first==-5 and popup.viewport.omitted==3,'Unavailable max health did not use the relative important-hit threshold')
+ domainRows[3].amount=25000;U:ShowLast();check(popup.timeDomain.first==-7,'Half-largest earlier hit did not extend the window')
+ domainRows[3].nativeOffset=-7.2;U:ShowLast();check(popup.timeDomain.first==-8,'Qualifying hit inside the last eight seconds did not extend to eight')
+ domainRows[3].nativeOffset=-8.01;U:ShowLast();check(popup.timeDomain.first==-5,'Older-than-eight hit or large fatal hit widened the window')
+ check(#page.native.rows==5 and assert(R:BuildShareText(page)):find('Historical tail',1,true),'Repeated viewport updates lost full retained history')
+end
 page=copyPage;U:Preview()
 -- Alpha32 companion tooltip, fixed Preview endpoint and actual reminder switch.
 U:Preview();check(popup.selected.nativeIndex==1 and not popup.context and not popup.health,'Removed labels returned or default death changed')
@@ -287,14 +333,15 @@ for i,text in ipairs({'A',string.rep('Long',24),'A',string.rep('X',96)})do
  else check(card.height==largeHeight,'Long non-space token did not wrap after reuse')end
 end
 page.native.rows[1].sourceName=oldSourceName;U:Preview()
-check(popup.height==428 and popup.supportExtra==0 and popup.fightSlotExtra==0,'Normal Preview retained artificial shelf/support/timer height')
+check(popup.height==360 and popup.supportExtra==0 and popup.fightSlotExtra==0,'Normal Preview retained artificial shelf/support/timer height')
 local expectedSlots={590,628,666,704,742,786,824};local slotCount=0
-for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-68,'Seven fixed CD slots did not stay on one row')end
+for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-76,'Seven fixed CD slots did not stay on one row')end
 check(slotCount==7,'Preview roster lost a CD slot')
-check(not popup.health and popup.percent.points[1][4]==20 and popup.percent.width==58 and popup.percent.justifyH=='RIGHT','Removed Health label or translated percentage grid regressed')
-check(popup.width==880 and popup.healthPanel.points[1][4]==94 and popup.healthPanel.width==324 and popup.hp.points[1][4]==94 and popup.hp.width==142 and popup.absorbLabel.width==154 and popup.absorbLabel.points[1][4]+popup.absorbLabel.width==418,'Translated Health bar/value/debt edges or widths disagree')
-check(popup.shelf.points[1][4]==550 and popup.shelf.width==28 and popup.shelfAge.points[1][4]==590,'CD label/check age detached from inventory')
-check(popup.tombstone.width==18 and popup.tombstone.height==20 and popup.tombstone.points[1][1]=='BOTTOM'and popup.tombstone.points[1][4]==846 and popup.tombstone.points[1][5]==-386,'Death marker intersects graph endpoint')
+check(not popup.health and popup.percent.points[1][4]==48 and popup.percent.width==58,'Selected health percentage is not aligned to the bottom timeline')
+check(popup.width==880 and popup.healthPanel.points[1][4]==48 and popup.healthPanel.width==784 and popup.hp.points[1][4]==552 and popup.hp.width==280 and popup.hp.justifyH=='RIGHT','Bottom selected health bar/value geometry changed')
+check(popup.healthPanel.points[1][5]==-320 and popup.percent.points[1][5]==-290 and popup.hp.points[1][5]==-297 and popup.healthPanel.points[1][4]==popup.rail.points[1][4]and popup.healthPanel.width==popup.rail.width,'Selected health bar is not below and aligned with the timeline')
+check(popup.shelf.points[1][4]==550 and popup.shelf.width==28 and popup.shelfAge.text==''and not popup.shelfAge:IsShown(),'CD shelf moved or visible age returned')
+NoHealthPlot()
 popup.reminder:Fire('OnEnter');check(not GameTooltip:IsShown()and popup.tooltipRecap:IsShown()and popup.tooltipRecap.lines[1].text=='Consumable reminder','Non-spell help is not a single card')
 local toggledFrom=db.personalTools.consumableReminder
 popup.reminder:Fire('OnClick');check(popup.tooltipRecap.lines[2].text=='Healthstone and healing-potion alerts.'and popup.tooltipRecap.lines[3].text==(db.personalTools.consumableReminder and'On · Click to turn off.'or'Off · Click to turn on.'),'Visible reminder help did not follow the setting')
@@ -374,13 +421,7 @@ shareForm.copyButton:Fire('OnClick');shareForm.copyButton:Fire('OnClick')
 check(shareForm.copy:HasFocus()and shareForm.copy:GetText()==shareForm.report.text and shareForm.status.text:find('too large',1,true),'Chunk failure lost plain copy or reason')
 shareForm.copy:Fire('OnEscapePressed');R.BuildShareMessages=buildMessages
 check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Copy Escape retained modal')
-U:Preview();hover(8);check(popup.absorbLabel.text=='80k heal absorb remaining'and popup.absorbLabel:GetUnboundedStringWidth()<=popup.absorbLabel.width and popup.hp.text=='128000 / 400000','Debt noun/state or HP value lost')
-local coralRuns,greenRuns=0,0
-for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==2 and o.width>16 then
- if o.color[1]==1 and o.color[2]==.46 then coralRuns=coralRuns+1 end
- if o.color[1]==RA.Theme.Colors.success[1]and o.color[2]==RA.Theme.Colors.success[2]then greenRuns=greenRuns+1 end
-end end
-check(coralRuns>0 and greenRuns>0,'Observed Preview damage/heal accents have no horizontal run')
+U:Preview();hover(8);NoHealthPlot();check(popup.hp.text=='128000 / 400000'and not popup.healing:IsShown(),'Selected damage health was replaced by debt or inferred healing')
 local wrappedSource=popup.tooltipRecap.lines[1]
 RA:ApplyFont(wrappedSource,13,'BOLD',false);hover(8)
 check(wrappedSource.wordWrap and wrappedSource.nonSpaceWrap and wrappedSource.maxLines==0 and wrappedSource.measuredWithHeight==0,'Font refresh/return skipped local wrap layout')
@@ -419,7 +460,7 @@ page={id=11,diedAt=100,sample=true,origin='example',maxHealth=400000,healthPoint
  native={recapID=2,recapMaxHealth=1000,rows={{nativeIndex=2,nativeOffset=-1,spellID=123,kind='damage',amount=10,recordedHP=750,exampleHP=99999},{nativeIndex=3,nativeOffset=-.7,spellID=124,kind='damage',amount=10},{nativeIndex=4,nativeOffset=-.5,spellID=125,kind='damage',amount=10,recordedHP=1200},{nativeIndex=1,nativeOffset=0,spellID=126,kind='damage',amount=10,recordedHP=0}}},
  casts={},knownEntries={{spellID=235450,name='Known without observation',category='minor'}}}
 U:ShowLast();oldJournal();check(opens==1,'Stale preview callback navigated')
-check(not popup.coverage:IsShown()and not popup.absorb:IsShown()and popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check','Real page adopted sample fields')
+check(not popup.coverage:IsShown()and not popup.healing:IsShown()and popup.shelf.text=='CDs'and popup.shelfSource=='Last recorded check','Real page adopted sample fields')
 for _,b in ipairs(popup.healTargets)do check(not b:IsVisible(),'Synthetic heals leaked into real page')end
 for _,obj in ipairs(objects)do if obj.width==30 and obj.parent==popup and obj.icon then check(not obj:IsVisible(),'Synthetic defensive interval/use leaked')end end
 hover(2);check(popup.healthPanel.selectedHP==750 and popup.percent.text=='75%','Native selected raw health wrong')
@@ -430,21 +471,20 @@ local secret=setmetatable({},{__tostring=function()error('Secret formatted')end}
 for _,value in ipairs({false,secret,-1,0/0,math.huge,-math.huge,'750',{}})do page.native.rows[1].recordedHP=value;U:ShowLast();hover(2);check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown(),'Bad HP became public value')end
 page.native.rows[1].recordedHP=750
 for _,value in ipairs({false,secret,0,-1,0/0,math.huge,'1000',{}})do page.native.recapMaxHealth=value;U:ShowLast();hover(2);check(popup.healthPanel.selectedHP==750 and not popup.healthBar:IsShown(),'Bad max erased raw HP or supplied bar')end
--- Every one of64retained rows is reachable even at identical times. Mixed
--- sums have no single spell artwork; fatal and largest preceding stay separate.
+-- Every retained row remains reachable even at identical times. A mixed
+-- temporal cluster keeps its largest-hit artwork and exact fatal receipt.
 page.native.recapMaxHealth=1000;page.native.rows={}
 for i=1,64 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1,spellID=100+i,kind='damage',amount=i,recordedHP=i}end
 U:ShowLast();local seen={}
 for _,b in ipairs(hits())do
  if b.group.last==b.group.first then check(not b.span:IsShown()and b.span:GetScript('OnEnter')==nil,'Equal-time group kept a colliding scrub hitbox')end
- if b.group.mixed then check(b.group.spellID==nil and not b.icon:IsShown(),'Mixed sum uses single-spell artwork')end
+ check(b.icon:IsShown()and b.group.representative and b.group.spellID==b.group.representative.spellID,'Cluster artwork lost the fixed largest-hit representative')
  for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[b.group.rows[b.member].nativeIndex]=true end
 end
 for i=1,64 do check(seen[i],'Dense group lost constituent '..i)end
 U:OpenShare();checkModal(popup.shareChooser);popup.shareChooser.close:Fire('OnClick')
--- Three overlapping positive spans keep their true bracket intervals while
--- ambiguous mouse frames are removed. Their distinct glyph/amount wheel paths
--- still expose every constituent.
+-- Interleaved source histories use chronological half-second clusters. Their
+-- exact spans and glyph/amount wheel paths still expose every constituent.
 page={id=12,diedAt=100,casts={},native={recapID=3,recapMaxHealth=1000,rows={}}}
 local nextIndex=2
 for group=1,3 do for member=1,3 do
@@ -458,12 +498,14 @@ for _,b in ipairs(hits())do
  if b.group.count>1 and not b.scrubAvailable then disabled=disabled+1;check(not b.span:IsShown()and b.span:GetScript('OnMouseWheel')==nil,'Ambiguous span still intercepts neighbor')end
  for i=1,#b.group.rows do b.amountTarget:Fire('OnMouseWheel',-1);overlapSeen[b.group.rows[b.member].nativeIndex]=true end
 end
-check(disabled>=2,'Overlapping positive-span component did not use fallback')
+for i,a in ipairs(hits())do if a.scrubAvailable then for j,b in ipairs(hits())do if j<i and b.scrubAvailable and a.group.tier==b.group.tier then
+ check(a.group.first>=b.group.last or b.group.first>=a.group.last,'Enabled cluster scrub spans overlap ambiguously')
+end end end end
 for i=1,11 do check(overlapSeen[i],'Fallback lost constituent '..i)end
 page=realPage
 local savedSpells=page.lastAlive.spells;page.lastAlive.spells={}
 for i=1,12 do page.lastAlive.spells[i]={spellID=500+i,name='Shelf '..i,observedAt=99,cooldown='inactive',category='minor'}end
-U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.points[1][5]-popup.guide.height==popup.graphBase.points[1][5],'Wrapped shelf left guide crossing its icons')
+U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.points[1][5]-popup.guide.height==popup.healthPanel.points[1][5]+40,'Wrapped shelf guide no longer stops before the selected health readout')
 page.lastAlive.spells=savedSpells
 U:ShowLast();U:OpenShare();local liveBeforePreview=popup.shareChooser
 local staleDestination=liveBeforePreview.channels.SAY:GetScript('OnClick')

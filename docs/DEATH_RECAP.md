@@ -1,106 +1,81 @@
-# Death Log — alpha.37 sharing and recorded evidence
+# Death Log — alpha.39 timeline and selected health
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
 opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
-Its amounts, selected-time states, health curve, heals, durations and healing
-debt are fictional. `/rcp recap` opens the one retained personal page this login.
+Its amounts, selected health, heals and effect durations are fictional.
+`/rcp recap` opens the one retained personal page this login.
 
-Automatic opening defaults OFF. The small RCP Death Log entry beside the visible
-Blizzard death dialog opens the current captured death, including a pending page.
-It disappears while the log is open and on release/resurrection/reset. Legacy
-unmarked auto-open settings migrate OFF once; later explicit choices persist.
-The optional Open after my death setting still enables automatic opening.
+Automatic opening defaults OFF. The compact alpha.38 availability card above the
+visible Blizzard death dialog opens the current captured death, including a
+pending page. It disappears while the log is open and on release, resurrection
+or reset. `/rcp recapentrypreview` shows its separate labelled sample outside
+combat. Its availability evidence remains frozen.
 
-The compact 880×428 base display has grouped damage below its native time rail,
-support above it and a shallow HP graph. A collision tier adds 100px; extra known
-shelf rows add 38px each. Encounter context stays in help and the complete report
-without a visible context subline. The health percentage, 324px bar, raw amount
-and healing debt move left together; the redundant Health label is removed.
-Their widths and the seven-CD row remain unchanged.
+The 880×360 base display aligns the native timeline and bottom health bar at
+x48–832. Additional damage lanes add84 units, shelf rows add38, and approximate
+cast lanes add48. The former recorded-HP graph is removed. Percentage, raw
+current/max and a full-width0–100% bar describe the **selected member**. Missing
+health clears the old value; known zero remains zero; above-max raw health stays
+readable without a clamped bar. Native HP before/after-hit semantics remain
+unspecified. No damage subtraction or forced fatal zero is used.
 
-Damage hover focuses the icon center. The top health value uses one stable group
-representative: fatal member if present, otherwise the member nearest the time
-midpoint, with earlier time/order breaking ties. The tooltip identifies that
-member and contains every original hit. Span motion and wheel change only the
-inspected tooltip constituent; dense lists scroll within a bounded companion.
-They do not move the focus line, health, shelf or border. Support and CD hovers
-are tooltip-only. Normal click retains verified Journal navigation.
+Damage clusters use a fixed **0.5-second window anchored at the first hit**.
+They may combine different sources and abilities. Unknown event types and known
+Preview transitions split clusters; density never merges distant hits. The tile
+shows total damage, ×count and the largest known individual hit's artwork. A
+partial known total is a lower bound, including ≥0; all-unknown amounts show an
+unavailable value. Artwork is representative, never a claim that one ability
+caused the whole total. Unknown amounts cannot establish a definitive largest
+hit. Killing-blow identity stays with original native index1 and is qualified
+as a death record when its event type is unknown.
 
-The focus line is not a timestamp: packed artwork can differ from its event
-positions. Actual graph samples never move. The selected mark/percentage appears only
-when the representative's actual point aligns within one physical pixel of the
-focus line. Preview retains its ring; live selection uses a thin tick so nearby
-tied samples stay visible. Real HP uses compact 6×2-unit sample ticks and neutral dashed joins between unambiguous
-adjacent samples; gaps and equal-time ambiguity break the joins. Preview uses consistent 2-unit step
-strokes, complete event-colored plateaus and subdued fill; defensive durations
-use stronger 4-unit strokes and end caps. The smaller tombstone sits clear of
-the actual known fatal HP point; unknown HP gets no invented graph endpoint.
+Hover, span motion and wheel inspection select the actual member's HP while the
+artwork remains fixed. Every original member keeps its own name, exact retained
+time (shown to one decimal), visible source and killing-blow identity in the bounded companion. The
+selection guide follows the packed tile and stops above the health readout;
+true-time brackets remain on the rail. Native spell/item descriptions, verified
+Journal actions, screen-aware companion placement and modal guards remain.
 
-Blue shield absorption uses compact positive text such as **+20k**. Its Shield
-help says how much damage a shield absorbed, without identifying an unrecorded
-shield source. It does not add health or describe remaining shield capacity.
-Green healing and the amber **heal absorb remaining** annotation keep their
-separate meanings. The full report still records the exact absorbed amount.
+The default viewport is **−5s to the latest native event**. Within the last eight
+seconds, a known positive nonfatal hit is important when it is at least20% of
+the recorded maximum health **or** at least50% of the largest known nonfatal hit
+in that interval. The earliest qualifying hit older than five seconds extends
+the view outward to a whole second, capped at−8s. Without a valid maximum, the
+relative criterion still applies. Without positive nonfatal amounts, the window
+stays five seconds. Filtering is presentation-only: older retained events remain
+in the full report, and encounter info discloses the omitted count. No old event
+is clamped onto the left edge or silently assigned a new time.
 
-Native spell/item descriptions remain intact beside the bounded recap companion.
-Pooled rows clear old height before wrapping and measuring. One ordinary help
-card, screen-aware placement and ownership-safe cleanup remain. Reminder changes
-the actual master setting through explicit clicks and preserves child settings.
-Preview stays fictional, isolated from recording and frozen at its death shelf.
-Native font rasterization, tooltip behavior and taint remain client acceptance.
+Blue absorption labels remain damage absorbed by an unidentified shield. They
+never add health or establish healing. Only the controlled Preview currently has
+effective-healing and post-heal HP evidence; hovering a Preview heal can show its
+green gained-health segment. Live pages have no verified effective-healing stream,
+so receive no green segment. Shield and healing-debt overlays are removed from
+the health bar.
 
-Only confirmed same-spell/source-instance bursts merge semantically, with a
-provisional0.6s adjacent gap and1.5s total span. Other spells may interleave.
-Known transitions split groups. Fatal and largest retained preceding damage
-remain separate. Crowded unconfirmed/mixed events use neutral counted summaries,
-never a combined amount under one spell icon. Raw timestamps/order are retained;
-rounded timestamps, names and amounts are never deduplication keys. Native
-sourceName is display evidence, not a stable instance ID. No native sourceGUID
-contract has been established. Group spans keep true time coordinates when artwork packs into two tiers; the
-visual group-focus locator follows the icon center without moving data points.
+Real data and timing boundaries
+------------------------------
+Association still uses the authoritative Current personal recap-ID set within a
+witnessed clean meter epoch. Update events are dirty hints; the selected native
+recap is never trusted. Up to64 normalized public rows retain independent amount,
+absorbed, overkill, resisted, blocked and health fields.
 
-Real data and selected-time limitations
---------------------------------------
-Association uses the authoritative Current personal recap-ID set within a witnessed
-clean meter epoch. Update events are dirty hints, never explicit-session bindings. The default
-selected recap is never trusted. Up to64 normalized public native rows are kept;
-a larger input is marked partial. Original index1 remains the killing identity,
-independently of maximum timestamp. Amount, absorbed, overkill, resisted and
-blocked stay separate recorded fields. They do not establish exact HP loss,
-shield provider, a defensive the player used, or a complete heal stream.
+**Cast-marker timing is approximate.** A captured successful-use receipt is placed
+at `observedAt - diedAt + nativeFatalTimestamp - nativeMaximumTimestamp`, aligning
+the frozen local death notification to the native fatal event. The visible `~`
+age and hover explain this approximation; notification delay is not measured.
+There is no validated exact conversion between native time and GetTime. Missing,
+stale or unreadable anchors leave the factual receipt unaligned rather than
+placing it at zero. Repeated receipts remain distinct. Recorded-use chips and
+bounded overflow preserve individual details, including uses outside the visible
+window. No active-effect duration or readiness verdict follows from a cast.
 
-Public finite event HP and one positive finite recap maximum support raw selected
-health and discrete graph marks. Known zero stays zero. Missing selection clears
-the previous value; above-max raw HP stays readable without a clamped bar. The
-maximum is a fixed recap reference. The live graph uses a labelled zero-based
-percentage range, rounded up to the next ten percentage points from all valid
-page samples, bounded from 10% to 100%. The range is fixed for that page, including
-selection changes; the top health bar always uses the true 0–100% maximum.
-The native-window hit count and span describe only the retained native rows.
-Before/after-hit semantics are unspecified.
-Dashed lines connect recorded samples as visual joins only; health between them
-is unknown. No fill, damage/absorb reconstruction, inferred heal or forced zero
-endpoint is added.
-
-**The native recap clock has no validated local GetTime conversion.** Real shelf
-heading is **Last recorded check**, with actual check ages relative to the death
-notice. It is not a snapshot at the selected native hit. Its hover identifies
-independent cooldown/charge/stock observations and pending/coverage gaps. Cast
-receipts appear in a separate Used before death row, grouped into compact chips
-with ability names, counts and latest local death-notice ages. Hover retains every
-individual receipt and bounded overflow exposes the remaining groups;
-no guessed native connector or
-effect duration is attached. The Example alone demonstrates one shared synthetic
-clock; its CD shelf is fixed to death while health/event selection changes. Full local histories, aura lifecycle and
-boss-heal-absorb collection are deferred until useful alignment/capability passes.
-
-Remaining boss healing debt is different from protective damage absorption.
-Example uses an amber hatch inside the HP track, including a no-heal interval;
-it is never additional HP. Real historical quantity/presence is not supplied by
-this build. UnitGetTotalHealAbsorbs can be secret; a live render does not prove
-historical scalar access or boss attribution. No opaque values, widget readback,
-combat-log parsing, aggregate differencing or new absorb/aura subscriptions ship.
+CDs show drawn checks and crosses only for proven available or unavailable frozen
+states; unresolved checks keep a question mark. The visible check-age caption is
+removed, while each hover preserves its check age and historical meaning. A
+Healthstone requires positively recorded remaining uses for a check mark. The
+shelf stays independent of timeline selection and approximate cast markers.
 
 Recorded check quality
 ----------------------
@@ -138,7 +113,7 @@ coverage epoch. No full state history is added.
 There are at most3 native attempts,1 extra recap-max getter and2 guarded GetTime
 reads per actual native event read. The accepted page stores one scalar clock
 summary. Presentation examines at most256 inputs for oversize triage, retains64,
-protects the inspected fatal/largest hit, and reports truncation/unexamined input.
+protects the retained fatal/largest hit, and reports truncation/unexamined input.
 Native normalized input is already capped64. Semantic/collision work is bounded
 by the small input; pooled drawing objects are reused. Only an actively hovered
 span has a pointer-motion callback, removed on leave/hide. It changes selection
@@ -148,8 +123,8 @@ Local fixture timings are not measurements of WoW CPU, RAM, taint or frame spike
 `/rcp recapstatus` includes existing safe counters plus the accepted page's local
 session/death notice/read brackets and native first/min/max/fatal timestamps.
 These are independent public scalars, not a clock conversion. Compare immediately
-after death during the ongoing pull and after combat. Correlation is evidence
-for review, never an automatic offset or native acceptance certificate.
+after death during the ongoing pull and after combat. The display uses only the explicitly approximate death-notice alignment above;
+these diagnostics do not certify exact synchronization or native acceptance.
 
 Actions and acceptance
 ----------------------
@@ -174,8 +149,9 @@ once. Preview interleaves its recorded fixture heals, defensive activations and
 explicit death with a single fictional fight clock. Real native rows remain in
 a clearly labelled latest-native-event-relative section; local cast/death
 observations have their own clock section. Native zero is not necessarily the
-fatal event. No local/native time bridge, missing live heal, aura duration,
-readiness or cast from a summary count is invented. Reports describe retained
+fatal event. The report keeps its original clock sections even when the display shows an
+approximate marker. No missing live heal, aura duration, readiness or cast from
+a summary count is invented. Reports describe retained
 capture, not complete encounter history.
 
 A destination click starts one ordinary-chat queue for PARTY, RAID, INSTANCE_CHAT or WHISPER,
@@ -202,8 +178,9 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: use the reviewed test candidate, restart WoW, verify alpha.37; inspect Arcane preview
-and stable group focus, tooltip-detail wheel and Journal. With recording enabled before a clean pull, compare
+Native owner test: use the reviewed test candidate, restart WoW, verify alpha.39; inspect Arcane Preview,
+selected-member health, fixed artwork, tooltip wheel, healing highlight and Journal.
+Compare approximate cast-marker ages with their actual recorded-use details. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
 charges/resets/pending changes, cache ages, context transitions, fit/scales/fonts,
@@ -283,8 +260,8 @@ Accepted IDs cannot repeat across meter epochs within an enable cycle; the bound
 
 Loading, unavailable and empty native pages hide the time rail, ticks and death
 axis labels until recorded events arrive. Recorded uses and the last-check shelf
-remain available independently. Preview keeps its fictional timeline and stepped
-health curve, described separately in its graph help.
+remain available independently. Alpha.39 replaces the former graph with the
+selected-health bar in both live and fictional Preview pages.
 
 Alpha.37 diagnostics
 --------------------

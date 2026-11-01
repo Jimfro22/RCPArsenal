@@ -1,67 +1,198 @@
+-- Presentation-only chronological clustering. Fixtures contain synthetic or
+-- screenshot-derived rows, never a claim about native combat-log availability.
 local checks=0;local function check(v,m)checks=checks+1;assert(v,m)end
 local RA={};assert(loadfile('RCPArsenal/DeathLogModel.lua'))('RCPArsenal',RA)
-local M=RA.DeathLogModel;local fixtures=assert(loadfile('tests/fixtures/death_log/synthetic_density.lua'))()
-for _,f in ipairs(fixtures)do
-    local before={};for i,row in ipairs(f.damage)do before[i]={row=row,time=row.nativeOffset,amount=row.amount,index=row.nativeIndex}end
-    local model=M:Group(f.damage,{})
-    local seen,n={},0;local fatal,major=0,0
+local M=RA.DeathLogModel
+local function Hit(index,time,amount,spell,source)
+    return {nativeIndex=index,nativeOffset=time,kind='damage',amount=amount,spellID=spell or index,
+        name='Spell '..(spell or index),sourceName=source,sourceKey=source,sourceConfirmed=source~=nil}
+end
+local function Snapshot(input)
+    local saved={}
+    for i,row in ipairs(input)do
+        local fields={};for key,value in pairs(row)do fields[key]=value end
+        saved[i]={row=row,fields=fields}
+    end
+    return saved
+end
+local function Unchanged(input,saved)
+    check(#input==#saved,'Grouping changed input length')
+    for i,old in ipairs(saved)do
+        check(input[i]==old.row,'Grouping reordered or replaced a raw row')
+        for key,value in pairs(old.fields)do check(old.row[key]==value,'Grouping changed captured field '..key)end
+        for key,value in pairs(old.row)do check(old.fields[key]==value,'Grouping added a captured field '..key)end
+    end
+end
+local function Verify(input,cuts,options)
+    local before=Snapshot(input);local model=M:Group(input,cuts or{},options)
+    local position,fatalCount,majorCount=0,0,0
     for _,item in ipairs(model.items)do
-        for _,row in ipairs(item.rows)do check(not seen[row],'Row duplicated');seen[row]=true;n=n+1 end
-        if item.fatal then fatal=fatal+1;check(#item.rows==1 and item.rows[1].nativeIndex==1,'Fatal hidden in aggregate')end
-        if item.major then major=major+1;check(#item.rows==1,'Largest preceding hit hidden')end
-        if item.mixed then check(item.spellID==nil,'Mixed amount retained single spell artwork')end
+        check(item.count==#item.rows and item.count>0,'Count omitted or duplicated a hit')
+        check(item.first==item.rows[1].nativeOffset and item.last==item.rows[#item.rows].nativeOffset,'Cluster shortened or invented its raw time span')
+        check(item.last-item.first<=.5,'Neighbor chaining/density pressure exceeded the fixed anchor window')
+        local amount,known,complete,representative,knownLargest,fatal,major=0,0,true,nil,nil,nil,false
+        for _,row in ipairs(item.rows)do
+            position=position+1;check(model.rows[position]==row,'Clusters lost raw chronological member order')
+            if row.amount~=nil then amount=amount+row.amount;known=known+1 else complete=false end
+            if row.kind=='damage'then
+                representative=representative or row
+                if row.amount~=nil and(not knownLargest or row.amount>knownLargest.amount)then knownLargest=row end
+            else check(#item.rows==1,'Unknown event was folded into a damage total')end
+            if row.nativeIndex==1 then fatal=row end
+            if row==model.major then major=true end
+        end
+        representative=knownLargest or representative or item.rows[1]
+        check(item.amount==amount and item.amountComplete==complete and item.knownAmounts==known,'Known total/unknown amount state changed')
+        check(item.representative==representative and item.spellID==representative.spellID and item.name==representative.name,'Artwork representative is not the largest known raw damage hit')
+        check(item.fatalRow==fatal and(item.fatal==true)==(fatal~=nil),'Fatal identity was inferred from time, amount or artwork')
+        check((item.major==true)==major,'Major flag does not identify the group containing the largest preceding hit')
+        if item.fatal then fatalCount=fatalCount+1 end
+        if item.major then majorCount=majorCount+1 end
     end
-    check(n==#f.damage and fatal==1 and major==1,'Lost raw row/fatal/major')
-    for i,saved in ipairs(before)do check(f.damage[i]==saved.row and saved.row.nativeOffset==saved.time and saved.row.amount==saved.amount and saved.row.nativeIndex==saved.index,'Grouping mutated raw input')end
-    check(model.operations<=512,'Grouping exceeded deterministic work bound')
+    check(position==#model.rows and #model.rows<=64,'Retained member count exceeded64 or lost a raw hit')
+    check(model.operations<=64,'Grouping reintroduced a density/backtracking work loop')
+    if model.major then check(majorCount==1,'Largest preceding hit was duplicated or omitted')end
+    local retainedFatal=0;for _,row in ipairs(model.rows)do if row.nativeIndex==1 then retainedFatal=retainedFatal+1 end end
+    check(fatalCount==retainedFatal,'Fatal retained row disappeared from cluster metadata')
+    Unchanged(input,before)
+    return model
 end
-local second=M:Group(fixtures[2].damage,{})
-check(#second.items==5 and second.items[1].count==4 and second.items[3].count==2,'Synthetic nine-hit example did not preserve early/late bursts')
-check(second.items[2].first>second.items[1].first and second.items[2].first<second.items[1].last and second.items[4].first>second.items[3].first and second.items[4].first<second.items[3].last,'Interleaved separate hits lost true interval placement')
-check(second.items[1].rows[1].sourceKey~=second.items[3].rows[1].sourceKey,'Different source instances merged')
-local duplicate={}
-for i=1,16 do duplicate[i]={nativeIndex=i,nativeOffset=-1,kind='damage',spellID=55,sourceName='Same visible name',amount=i}end
-local unknown=M:Group(duplicate,{},{items=16})
-check(#unknown.items==16,'Source names falsely establish one source instance')
-for _,row in ipairs(duplicate)do row.sourceKey='A';row.sourceConfirmed=true end
-local known=M:Group(duplicate,{},{items=16})
-local n=0;for _,g in ipairs(known.items)do n=n+#g.rows end
-check(n==16,'Equal spell/exact time rows were deduped')
-local transition={
- {nativeIndex=2,nativeOffset=-2,spellID=55,sourceKey='A',sourceConfirmed=true,kind='damage',amount=1},
- {nativeIndex=3,nativeOffset=-1.8,spellID=55,sourceKey='A',sourceConfirmed=true,kind='damage',amount=1},
- {nativeIndex=4,nativeOffset=-1.6,spellID=55,sourceKey='A',sourceConfirmed=true,kind='damage',amount=1},
- {nativeIndex=5,nativeOffset=-1,spellID=99,sourceKey='A',sourceConfirmed=true,kind='damage',amount=100},
- {nativeIndex=1,nativeOffset=0,spellID=55,sourceKey='A',sourceConfirmed=true,kind='damage',amount=1}}
-local split=M:Group(transition,{-1.9},{items=16});check(#split.items==4 and split.items[1].count==1 and split.items[2].count==2,'Important transition was crossed')
-local mixed=M:Group(duplicate,{}, {items=3})
-check(#mixed.items<=3,'Dense grouping cap not applied')
+check(M.LIMITS.window==.5,'Approved anchored damage window changed')
+
+-- Different abilities/sources and missing source identity do not prevent a
+-- nearby damage cluster. Largest damage is artwork; no source is inferred.
+local cross={Hit(4,-1,10,100,'A'),Hit(3,-.9,40,200,'B'),Hit(2,-.8,20,300,nil),Hit(1,0,1,400,'C')}
+local model=Verify(cross)
+check(#model.items==2 and model.items[1].count==3 and model.items[1].amount==70,'Cross-source/cross-ability nearby damage did not cluster')
+check(model.items[1].representative==cross[2]and model.items[1].mixed and model.items[1].sourceKey==nil,'Cluster lost largest artwork or claimed one source')
+local noSource={Hit(2,-.5,1,100),Hit(3,-.4,2,100),Hit(1,0,3,100)}
+model=Verify(noSource)
+check(#model.items==1 and model.items[1].count==3,'Unknown source identity blocked the presentation cluster')
+
+-- The window is inclusive at the exact half-second boundary. Values just
+-- outside remain separate, and nearby neighbor chains cannot enlarge it.
+local boundary={Hit(5,-1,1),Hit(4,-.5,2),Hit(3,-.499999999,3),Hit(2,-.2,4),Hit(1,.1,5)}
+model=Verify(boundary)
+check(#model.items==3 and model.items[1].count==2 and model.items[2].count==2,'Half-second boundary was rounded or a neighbor chain escaped its anchor')
+local chain={Hit(4,-2,1),Hit(3,-1.6,2),Hit(2,-1.2,3),Hit(1,0,4)}
+model=Verify(chain,{}, {items=1,nearby=99,burst=99,window=99})
+check(#model.items==3 and model.items[1].count==2 and model.overflow,'Legacy options/density target widened the fixed grouping window')
+local distant={};for i=1,64 do distant[i]=Hit(i,i*.6,1)end
+model=Verify(distant,{}, {items=2})
+check(#model.items==64 and model.overflow and model.operations==64,'Density pressure merged distant clusters or exceeded one grouping pass')
+
+-- Explicit Preview transitions and unknown events are barriers; a transition
+-- exactly at the first hit is already on its new side and does not split ties.
+local transition={Hit(2,-2,1),Hit(3,-1.8,2),Hit(4,-1.6,3),Hit(1,0,4)}
+model=Verify(transition,{-1.9})
+check(#model.items==3 and model.items[1].count==1 and model.items[2].count==2,'Cluster crossed an explicit transition')
+model=Verify(transition,{-2,-1.8})
+check(#model.items==3 and model.items[2].first==-1.8,'Boundary transition was assigned to the wrong side')
+local unknown={Hit(2,-1,10),{nativeIndex=3,nativeOffset=-.9,kind='unknown',name='Unclassified',amount=8},Hit(4,-.8,20),Hit(1,0,1)}
+model=Verify(unknown)
+check(#model.items==4 and model.items[2].representative==unknown[2]and model.items[2].amount==8,'Unknown record was dropped or relabelled as damage')
+
+-- Missing amounts are not zero. Known zero can still be the best known damage
+-- representative; absorbed/overkill facts do not change the damage total.
+local partial={Hit(3,-1,nil),Hit(2,-.9,0),Hit(1,-.8,8)}
+partial[3].absorbed=900;partial[3].overkill=4;partial[3].recordedHP=9
+model=Verify(partial)
+check(model.items[1].amount==8 and not model.items[1].amountComplete and model.items[1].representative==partial[3],'Missing damage became zero or absorption/overkill inflated total')
+partial[3].amount=nil;model=Verify(partial)
+check(model.items[1].representative==partial[2]and model.items[1].amount==0 and model.items[1].knownAmounts==1 and not model.items[1].amountComplete,'Known zero lost to unknown amount')
+partial[2].amount=nil;model=Verify(partial)
+check(model.items[1].representative==partial[1]and model.items[1].knownAmounts==0 and not model.items[1].amountComplete,'All-unknown cluster lacks deterministic raw fallback')
+
+-- Native index1 remains fatal even when it is neither latest nor largest. Its
+-- HP/overkill are not substituted by the icon representative's observations.
+local fatal={Hit(2,-.4,500,200),Hit(1,-.3,10,100),Hit(3,0,300,300)}
+fatal[1].recordedHP=700;fatal[1].overkill=0;fatal[2].recordedHP=17;fatal[2].overkill=90
+model=Verify(fatal)
+local cluster=model.items[1]
+check(#model.items==1 and cluster.representative==fatal[1]and cluster.fatalRow==fatal[2]and cluster.major,'Largest/fatal members were forcibly separated or conflated')
+check(cluster.fatalRow.recordedHP==17 and cluster.fatalRow.overkill==90 and cluster.last==0,'Fatal endpoint was replaced by largest/latest event')
+local unknownFatal={Hit(2,-.1,200),{nativeIndex=1,nativeOffset=0,kind='unknown',amount=1,name='Death record'}}
+model=Verify(unknownFatal)
+check(#model.items==2 and model.items[2].fatalRow==unknownFatal[2],'Unknown fatal identity was fabricated as damage or lost')
+
+-- Ties retain native index order, then original input order for equal index.
+-- Equal facts are separate events; equal amounts pick earliest raw chronology.
+local a,b,c,d=Hit(8,-1,30,10),Hit(4,-1,30,20),Hit(4,-1,30,30),Hit(1,-.8,30,40)
+local tied={a,b,c,d};model=Verify(tied)
+check(model.rows[1]==b and model.rows[2]==c and model.rows[3]==a and model.rows[4]==d,'Equal-time/index sorting is unstable')
+check(model.items[1].representative==b and model.items[1].count==4 and model.items[1].amount==120,'Equal facts were deduplicated or artwork tie-breaking changed')
+for i=1,20 do local again=M:Group(tied,{})
+    check(again.rows[1]==b and again.rows[2]==c and again.items[1].representative==b,'Repeated grouping changed stable tie order')
+end
+local shuffled={cross[4],cross[3],cross[1],cross[2]};local shuffledModel=Verify(shuffled)
+check(shuffledModel.items[1].representative==cross[2]and shuffledModel.items[1].count==3,'Input enumeration changed unique-time grouping')
+
+-- Shared synthetic and screenshot-derived fixtures exercise the same product
+-- grouping for Preview/live. Every retained raw hit stays accessible.
+local fixtures=assert(loadfile('tests/fixtures/death_log/synthetic_density.lua'))()
+for _,fixture in ipairs(fixtures)do Verify(fixture.damage)end
+local second=Verify(fixtures[2].damage)
+check(#second.items==4 and second.items[1].count==4 and second.items[3].count==3,'Anchored screenshot-style bursts were not chronological cross-ability clusters')
 local references=assert(loadfile('tests/fixtures/death_log/screenshot_density.lua'))()
-for _,f in ipairs(references)do
-    local g=M:Group(f.damage,{});local seen,count={},0
-    for _,item in ipairs(g.items)do
-        local previous=-math.huge
-        for _,row in ipairs(item.rows)do check(not seen[row.screenshotID],'Screenshot row duplicated');seen[row.screenshotID]=true;count=count+1;check(row.nativeOffset>=previous,'Mixed constituents lost chronology');previous=row.nativeOffset end
-        if item.fatal then check(#item.rows==1,'Screenshot fatal was grouped')end
-        if item.major then check(#item.rows==1,'Screenshot major preceding hit was grouped')end
-    end
-    check(count==#f.damage and not g.truncated,'Screenshot retained constituents lost to old16row cap')
-    if f.id=='log2'then check(#g.items==5,'Screenshot log2 overlapping bursts failed five-item composition')end
-    if f.id=='log3'then check(g.major.amount==671890 and count==37,'Screenshot log3 large preceding hit or dense rows lost')end
+for _,fixture in ipairs(references)do
+    local result=Verify(fixture.damage)
+    check(#result.rows==#fixture.damage and not result.truncated,'Screenshot rows lost to an obsolete density cap')
+    if fixture.id=='log2'then check(#result.items==4,'Screenshot log2 did not use the shared half-second rule')end
+    if fixture.id=='log3'then check(result.major.amount==671890 and #result.rows==37,'Screenshot largest preceding hit/raw row count changed')end
 end
-local oversized={}
-for i=1,80 do oversized[i]={nativeIndex=i+1,nativeOffset=i-80,spellID=i,kind='damage',amount=i}end
-oversized[80].nativeIndex=1;oversized[79].amount=999999
-local bounded=M:Group(oversized,{})
+
+-- Inspect at most256 inputs; retain at most64 with inspected fatal/largest
+-- preserved. No later unexamined event is silently claimed as captured.
+local oversized={};for i=1,300 do oversized[i]=Hit(i+1,i-300,i)end
+oversized[256].nativeIndex=1;oversized[255].amount=999999;oversized[300].amount=9999999
+model=Verify(oversized)
 local fatalKept,majorKept=false,false
-for _,row in ipairs(bounded.rows)do fatalKept=fatalKept or row==oversized[80];majorKept=majorKept or row==oversized[79]end
-check(#bounded.rows==64 and bounded.truncated and fatalKept and majorKept,'Oversize cap lost inspected fatal/major or failed disclosure')
-local overlap={}
-for i,t in ipairs({-5,-4.7,-4.9,-4.8,-3,0})do overlap[i]={nativeIndex=i==6 and 1 or i+1,nativeOffset=t,spellID=i<=2 and 1 or i<=4 and 2 or 3,sourceKey=i<=2 and 'A'or'B',sourceConfirmed=true,kind='damage',amount=i==5 and 1000 or 1}end
-local compact=M:Group(overlap,{}, {items=3})
-check(compact.items[1].mixed and compact.items[1].first==-5 and compact.items[1].last==-4.7,'Overlapping compaction shortened true span')
-for i=2,#compact.items[1].rows do check(compact.items[1].rows[i-1].nativeOffset<=compact.items[1].rows[i].nativeOffset,'Overlapping compaction wheel chronology moved backward')end
-local blocked=M:Group(overlap,{-4.85},{items=3})
-for _,item in ipairs(blocked.items)do check(not(item.first< -4.85 and item.last>=-4.85),'Mixed compaction concealed an important transition')end
-local start=os.clock();for i=1,1000 do M:Group(duplicate,{})end
-print('PASS: '..checks..' Death Log synthetic grouping assertions;1000 builds '..string.format('%.4fs',os.clock()-start)..' (local Lua timing, not WoW CPU)')
+for _,row in ipairs(model.rows)do fatalKept=fatalKept or row==oversized[256];majorKept=majorKept or row==oversized[255]end
+check(#model.rows==64 and model.truncated and model.examined==256 and model.unexamined and fatalKept and majorKept and model.major==oversized[255],'Bounded retention lost inspected fatal/largest or read beyond its disclosed scan')
+
+-- Viewport filtering produces a separate presentation list with integer bounds.
+-- Damage grouping/share inputs remain intact; no out-of-window row is clamped.
+local function View(input,span,expected,maxHealth)
+    local before=Snapshot(input);local view=M:Viewport(input,maxHealth)
+    check(view.span==span and view.first==-span and view.last==0 and view.span==math.floor(view.span)and span>=5 and span<=8,'Viewport lost its bounded integer window')
+    check(view.retainedCount==math.min(#input,64)and view.omitted==view.retainedCount-#view.rows,'Viewport omitted count lost retained-page scope')
+    if expected then
+        check(#view.rows==#expected,'Viewport retained the wrong number of visible rows')
+        for i,index in ipairs(expected)do check(view.rows[i].nativeIndex==index,'Viewport changed chronological row identity or edge-clamped an excluded event')end
+    end
+    for _,row in ipairs(view.rows)do check(row.nativeOffset>=view.first and row.nativeOffset<=view.last,'Viewport contains an out-of-window raw time')end
+    Unchanged(input,before)
+    return view
+end
+View({},5,{})
+View({Hit(2,-4.8,10),Hit(1,0,5)},5,{2,1})
+View({Hit(2,-5.2,10),Hit(1,0,5)},6,{2,1})
+View({Hit(2,-7.2,10),Hit(1,0,5)},8,{2,1})
+View({Hit(2,-8,10),Hit(1,0,5)},8,{2,1})
+View({Hit(2,-7,10),Hit(3,-1,100),Hit(1,0,500)},5,{3,1},1000)
+View({Hit(2,-6.1,20),Hit(3,-1,100),Hit(1,0,500)},7,{2,3,1},100)
+View({Hit(2,-6.1,40),Hit(3,-1,50),Hit(1,0,500)},7,{2,3,1},1000)
+View({Hit(2,-5.1,25),Hit(3,-1,50),Hit(1,0,500)},6,{2,3,1},1000)
+View({Hit(2,-5.1,24.999),Hit(3,-1,50),Hit(1,0,500)},5,{3,1},1000)
+View({Hit(2,-7.2,20),Hit(3,-6.2,60),Hit(4,-1,100),Hit(1,0,500)},8,{2,3,4,1},100)
+for _,invalidMax in ipairs({0,-1,math.huge,-math.huge,0/0,'100',false,{}})do
+    View({Hit(2,-6.1,40),Hit(3,-1,50),Hit(1,0,500)},7,{2,3,1},invalidMax)
+    View({Hit(2,-6.1,20),Hit(3,-1,100),Hit(1,0,500)},5,{3,1},invalidMax)
+end
+View({Hit(1,-7,999999)},5,{})
+View({Hit(2,-8.000001,999999),Hit(1,0,5)},5,{1},100)
+View({Hit(2,-7,nil),Hit(3,-6,0),Hit(1,0,nil)},5,{1},100)
+local edges={Hit(2,-5,1),Hit(3,-5.000001,0),Hit(4,.000001,1),Hit(1,0,1)}
+local view=View(edges,5,{2,1})
+check(#M:Group(edges,{}).rows==4 and #view.rows==2,'Viewport filter rewrote the complete retained grouping/report input')
+local unknownAge={Hit(3,-7,nil),Hit(4,-6,0),{nativeIndex=5,nativeOffset=-7.5,kind='unknown',amount=100000},Hit(2,-4,1),Hit(1,0,1)}
+view=View(unknownAge,5,{2,1});check(view.omitted==3,'Unknown or zero damage widened the viewport')
+local allUnknown={{nativeIndex=2,nativeOffset=-4,kind='unknown',amount=200},Hit(3,-2,nil),Hit(1,0,nil)}
+View(allUnknown,5,{2,3,1})
+local retainedFirst={}
+for i=1,80 do retainedFirst[i]=Hit(i+1,-20-i,1)end
+retainedFirst[80].nativeIndex=1;retainedFirst[80].nativeOffset=0
+retainedFirst[79].amount=999999;retainedFirst[79].nativeOffset=-7.2
+view=View(retainedFirst,8,{80,1})
+check(view.retainedCount==64 and view.omitted==62 and view.examined==80 and view.truncated and not view.unexamined,'Viewport did not apply bounded fatal/major retention before filtering')
+print('PASS: '..checks..' anchored grouping, viewport, largest/fatal identity, chronology and immutability assertions')

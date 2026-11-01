@@ -24,6 +24,11 @@ check(stone.familyState==false and potion.familyState==nil,'Verified family abse
 stone,potion=family({a},100);check(potion.familyState==nil,'Ended coverage became available')
 a.pendingAt=96;stone,potion=family({a});check(potion.familyState==nil,'Pending item became available');a.pendingAt=nil
 a.physicalCount=0;stone,potion=family({a});check(potion.familyState==nil,'Conflicting stock was converted to zero/positive');a.physicalCount=1
+local uncertainStone={kind='stone',itemID=5512,physicalCount=1,cooldown='inactive',observedAt=99}
+stone=family({uncertainStone});check(stone.familyState==nil,'Carried stone with unknown remaining uses became available')
+uncertainStone.remainingUses=1;stone=family({uncertainStone});check(stone.familyState==true,'Recorded remaining stone use lost availability')
+uncertainStone.remainingUses=0;stone=family({uncertainStone});check(stone.familyState==false,'Confirmed empty stone lost unavailable state')
+uncertainStone.remainingUses=nil;uncertainStone.cooldown='active';stone=family({uncertainStone});check(stone.familyState==false,'Confirmed active stone cooldown lost unavailable state')
 -- Restricted charge state must never use inactive normal CD as availability.
 check(R:ClassifyRecordedCheck({cooldown='inactive',chargeQuery='unreadable',chargeReason='restricted'})==nil,'Restricted charges became ready')
 check(R:ClassifyRecordedCheck({cooldown='inactive',chargeQuery='not_applicable'})==true,'Established noncharge inactive fact was lost')

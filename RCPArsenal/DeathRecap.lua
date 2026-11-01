@@ -422,7 +422,10 @@ function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
         if row.familyAbsenceVerified or row.physicalCount==0 then return false,(row.itemID and"No stock of this item"or"No item in the complete bag check")..suffix end
         if row.physicalCount and row.physicalCount>0 and row.remainingUses==0 then return false,"Empty"..suffix end
         local stock=row.physicalCount and row.physicalCount>0 or row.remainingUses and row.remainingUses>0
-        if stock and row.cooldown=="inactive"then return true,"Off cooldown"..suffix end
+        if stock and row.cooldown=="inactive"then
+            if row.kind=="stone"and not(row.remainingUses and row.remainingUses>0)then return nil,"Off cooldown when checked; remaining uses were not confirmed"end
+            return true,"Off cooldown"..suffix
+        end
         if stock and row.cooldown=="active"then return false,"Cooldown active"..suffix end
         return nil,row.cooldown=="inactive"and"Off cooldown when checked; stock was not confirmed"or"Item state was not fully recorded"
     end

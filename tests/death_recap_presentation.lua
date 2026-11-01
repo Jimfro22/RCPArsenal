@@ -22,18 +22,27 @@ for _,b in ipairs(objects)do if b.parent==popup and b.useGroup and b:IsVisible()
  check(popup.selected==selected,'Use hover changed selected health')
  check(b.useLabel.text=='Barrier'and b.useMeta.text=='1.0s'and b.height==30 and b.icon.width==26,'Use chip lost its visible name/latest age or changed its original icon/row height')
 end end
-local function X(t)return 48+(t-popup.timeDomain.first)/(popup.timeDomain.last-popup.timeDomain.first)*784 end
-local dots,joins=0,0
-for _,o in ipairs(objects)do if o.parent==popup and o:IsVisible()and o.color then
- if o.kind=='Texture'and o.width==6 and o.height==2 and o.drawLayer=='OVERLAY'and o.color[4]==.95 then dots=dots+1 end
- if o.kind=='Line'and o.color[4]==.5 then
-  joins=joins+1;local first,last=o.start[3],o.finish[3]
-  check((first>=X(-1)-.001 and last<=X(-.7)+.001)or(first>=X(-.2)-.001 and last<=X(0)+.001),'Health join crossed explicit missing sample')
-  check(o.thickness==1,'Health join lost one-physical-pixel thickness')
+local function NoHealthPlot()
+ for _,key in ipairs({'healthPoint','pointPercent','healthGraphScale','graphBase','graphHelp','graphLabel','graphContext','graphScaleTicks','absorb','absorbLabel','hatches'})do
+  check(popup[key]==nil,'Removed health plot/debt field remains: '..key)
  end
-end end
-check(dots==4 and joins>0,'Live health dots/dashed sample joins absent or missing health synthesized')
-page.native.rows[5].recordedHP=nil;U:ShowLast();check(popup.healthPanel.selectedHP==nil and not popup.healthPoint:IsShown(),'Unknown fatal HP gained zero endpoint')
+ check(popup.healthPanel.width==popup.rail.width and popup.healthPanel.points[1][4]==popup.rail.points[1][4], 'Selected health bar is not aligned with the native timeline')
+ check(popup.healthPanel.points[1][5]<popup.rail.points[1][5] and popup.percent.points[1][5]>popup.healthPanel.points[1][5]and popup.hp.points[1][5]>popup.healthPanel.points[1][5],'Selected health bar or its metadata left the bottom composition')
+end
+local function SelectNative(index)
+ for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then
+  for member,row in ipairs(button.group.rows)do if row.nativeIndex==index then button.member=member;button:Fire('OnEnter');return button,row end end
+ end end
+ error('No visible native row '..index)
+end
+NoHealthPlot()
+for i,v in ipairs(values)do
+ local index=i==5 and 1 or i+1;SelectNative(index)
+ check(popup.healthPanel.selectedHP==v[2], 'Selected member substituted another retained HP sample')
+ check(popup.healthBar:IsShown()==(v[2]~=nil),'Missing selected health was synthesized or public zero erased')
+ check(not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Native health acquired a healing contribution')
+end
+page.native.rows[5].recordedHP=nil;U:ShowLast();check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown()and popup.percent.text=='—','Unknown fatal HP gained zero health')
 page.native.rows={}
 for i=1,64 do page.native.rows[i]={nativeIndex=i,nativeOffset=0,kind='damage',amount=i,absorbed=100,recordedHP=1000,name='Hit '..i}end
 U:ShowLast();local cluster
@@ -67,9 +76,19 @@ page.native=denseNative
 page.lastAlive.spells={{spellID=235450,cooldown='active',observedAt=50,cooldownAt=50,chargesAt=99,chargeQuery='public',currentCharges=1,maxCharges=2}}
 page.lastAlive.supplies={}
 for i=1,32 do page.lastAlive.supplies[i]={kind='potion',itemID=100+i,physicalCount=1,remainingUses=i,cooldown='inactive',observedAt=99,carriedAt=50}end
-U:ShowLast();check(popup.shelfAge.text=='Last check · 1.0s pre-death','Charge verdict age used old cooldown time')
+U:ShowLast();check(not popup.shelfAge:IsShown()and popup.shelfAge.text=='','Shelf retained visible check-age text')
 local shelves={};for _,b in ipairs(objects)do if b.parent==popup and b.icon and b.width==32 and b:IsVisible()then shelves[#shelves+1]=b end end
 check(#shelves==3,'Item candidates expanded into multiple family shelf icons')
+local chargeAgeFound=false
+for _,b in ipairs(shelves)do
+ check(b.info.text==(b.recordedState==true and'✓'or b.recordedState==false and'×'or'?'),'Shelf glyph disagrees with recorded availability')
+ tooltipSpell=nil;tooltipLines={};b:Fire('OnEnter')
+ if tooltipSpell==235450 then
+  chargeAgeFound=true;local copy=table.concat(tooltipLines,' ')
+  check(copy:find('Checked 1.0s',1,true)and not copy:find('Checked 50.0s',1,true),'Hidden shelf age was lost from hover or charge verdict borrowed old cooldown time')
+ end
+end
+check(chargeAgeFound,'Recorded spell check was omitted from shelf hover')
 local family
 for _,b in ipairs(shelves)do if b.wheel then family=b end end
 check(family,'Multi-item family cannot be inspected');family:Fire('OnEnter')
@@ -80,7 +99,7 @@ check(found and found.recapY+found.height-card.scroll:GetVerticalScroll()<=card.
 local populated=page.native;page.encounter={startedAt=10};page.native=nil;page.nativeAttempts=1
 local function CheckEmptyAxis(label)
  U:Render()
- check(popup.selected==nil and popup.selectedItem==nil and popup.healthPanel.selectedHP==nil and not popup.guide:IsShown()and not popup.healthPoint:IsShown(),label..' redraw retained stale selected event geometry')
+ check(popup.selected==nil and popup.selectedItem==nil and popup.healthPanel.selectedHP==nil and not popup.guide:IsShown()and not popup.healthBar:IsShown()and not popup.healing:IsShown(),label..' redraw retained stale selected event geometry')
  check(not popup.rail:IsShown()and not popup.fight:IsShown()and not popup.death:IsShown()and popup.deathX==nil,label..' retained a native time axis')
  for i=1,6 do check(not popup.ticks[i]:IsShown()and not popup.tickMarks[i]:IsShown()and popup.tickLabels[i]=='',label..' retained a fabricated tick')end
  check(popup.empty:IsShown()and popup.usesLabel:IsShown(),label..' hid the empty status or independent recorded uses')
@@ -97,42 +116,39 @@ page.native={recapID=50,recapMaxHealth=100000,rows={}};CheckEmptyAxis('Empty nat
 page.native=populated;RA:FireCallback('DEATH_RECAP_CHANGED','native')
 check(popup.rail:IsShown()and popup.fight:IsShown()and popup.death:IsShown()and not popup.empty:IsShown(),'Filled native page did not restore its axis')
 for i=1,6 do check(popup.ticks[i]:IsShown()and popup.tickMarks[i]:IsShown(),'Filled native page retained hidden tick objects')end
--- The frozen page determines a zero-based scale; inspecting different groups
--- never changes it. Invalid/out-of-range samples remain holes, not clamped data.
+-- The selected original row alone determines health. The native recap maximum
+-- remains its denominator; invalid values stay unknown and absorption adds no HP.
 local function NativeHP(values,maximum)
  page.native={recapID=50,recapMaxHealth=maximum,rows={}}
- for i,hp in ipairs(values)do page.native.rows[i]={nativeIndex=i==#values and 1 or i+1,nativeOffset=i-#values,kind='damage',amount=1,recordedHP=hp}end
+ for i,hp in ipairs(values)do page.native.rows[i]={nativeIndex=i==#values and 1 or i+1,nativeOffset=(i-#values)*.1,kind='damage',amount=1,recordedHP=hp}end
  U:ShowLast()
 end
-for _,case in ipairs({{5000,10},{26000,30},{99000,100},{0,10}})do
- NativeHP({case[1],1000},100000)
- check(popup.healthGraphScale.upper==case[2]and popup.healthGraphScale.maximum==100000*case[2]/100,'Live graph upper bound did not round up to the next tenth of the reference maximum')
- check(popup.graphScaleTicks[1].text==case[2]..'%'and popup.graphScaleTicks[2].text==case[2]/2 ..'%'and popup.graphScaleTicks[3].text=='0%','Live graph tick labels do not identify the visible range')
- local fixed=popup.healthGraphScale
- for _,button in ipairs(objects)do if button.parent==popup and button.group and button:IsVisible()then button:Fire('OnEnter');check(popup.healthGraphScale==fixed,'Hover rescaled the captured page')end end
- check(popup.healthBar.minimum==0 and popup.healthBar.maximum==100000,'Lower graph scale changed the upper health bar denominator')
+for _,value in ipairs({0,5000,26000,99000,100000})do
+ NativeHP({value,1000},100000);SelectNative(2)
+ check(popup.healthPanel.selectedHP==value and popup.hp.text==value..' / 100000'and popup.percent.text==string.format('%.0f%%',value/100000*100),'Selected raw health/value percentage was rescaled or replaced')
+ check(popup.healthBar.minimum==0 and popup.healthBar.maximum==100000,'Selected health denominator changed with visible samples')
+ check(not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Native selected health gained an inferred heal')
+ NoHealthPlot()
 end
-for _,ceiling in ipairs({10000,100000})do
- NativeHP({1000,ceiling},100000)
- check(popup.selected.nativeIndex==1 and popup.healthGraphScale.upper==ceiling/1000 and popup.pointPercent.text==ceiling/1000 ..'%'and popup.pointPercent.points[1][5]==-10,'Selected live graph ceiling percentage overlaps the recorded-window caption')
-end
-NativeHP({100000,1000},100000)
-check(popup.pointPercent.points[1][5]==10,'Low live HP percentage lost its above-point position')
 local hidden=setmetatable({},{__tostring=function()error('Secret health stringified')end})
 local publicCheck=issecretvalue;issecretvalue=function(v)return rawequal(v,hidden)or publicCheck(v)end
-NativeHP({26000,hidden,100001,-1,0/0,math.huge,'5000',false,1000},100000)
-check(popup.healthGraphScale.upper==30 and popup.healthGraphScale.count==2,'Invalid health affected the live scale or became valid marks')
-local marks,segments=0,0
-for _,o in ipairs(objects)do if o.parent==popup and o:IsVisible()and o.color then
- if o.kind=='Texture'and o.width==6 and o.height==2 and o.color[4]==.95 then marks=marks+1 end
- if o.kind=='Line'and o.color[4]==.5 then segments=segments+1 end
-end end
-check(marks==2 and segments==0,'Invalid health samples were clamped or bridged')
-NativeHP({hidden,false,-1},100000)
-check(not popup.healthGraphScale and not popup.graphBase:IsShown()and not popup.graphHelp:IsShown(),'Unavailable health fabricated a graph scale')
-for _,tick in ipairs(popup.graphScaleTicks)do check(not tick:IsShown(),'Unavailable health retained a scale tick')end
-NativeHP({26000,1000},hidden)
-check(not popup.healthGraphScale and not popup.healthPoint:IsShown(),'Secret maximum gained a scale/selected marker')
+for _,bad in ipairs({hidden,false,-1,0/0,math.huge,'5000',{}})do
+ NativeHP({bad,1000},100000);SelectNative(2)
+ check(popup.healthPanel.selectedHP==nil and not popup.healthBar:IsShown()and popup.percent.text=='—'and popup.hp.text=='Health not recorded','Invalid selected health became zero, a bar or a percentage')
+end
+NativeHP({100001,1000},100000);SelectNative(2)
+check(popup.healthPanel.selectedHP==100001 and popup.hp.text=='100001 / 100000'and not popup.healthBar:IsShown()and popup.percent.text=='—','Out-of-scale raw HP was clamped or used as valid percentage')
+for _,maximum in ipairs({hidden,false,0,-1,0/0,math.huge,'100000',{}})do
+ NativeHP({26000,1000},maximum);SelectNative(2)
+ check(popup.healthPanel.selectedHP==26000 and popup.hp.text=='26000'and popup.healthPanel.selectedMax==nil and not popup.healthBar:IsShown()and popup.percent.text=='—','Unavailable maximum erased public raw HP or fabricated a health denominator')
+end
+NativeHP({26000,1000},100000)
+page.native.rows[1].absorbed=100000;page.native.rows[1].effectiveHealing=25000;page.native.rows[1].exampleHP=99999
+page.heals={{offset=-.1,amount=25000,effectiveHealing=25000,exampleHP=99999}};page.sample=true;page.origin='example'
+U:ShowLast();SelectNative(2)
+check(popup.healthPanel.selectedHP==26000 and not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Live forged sample/absorption fields contributed to health')
+for _,target in ipairs(popup.healTargets)do check(not target:IsVisible(),'Live forged sample created a selectable healing event')end
+page.heals=nil;page.sample=nil;page.origin=nil
 issecretvalue=publicCheck
 
 -- Names, counts and latest ages fit the original row; any remaining verified
@@ -152,7 +168,7 @@ for _,count in ipairs({8,9,64,8})do
  check(#chips<=8,'Use overflow expanded the single row')
  check(chips[1].useGroup.spellID==600+count,'Newest use group did not lead the row')
  for _,button in ipairs(chips)do
-  check(button.height==30 and button.points[1][4]>=33 and button.points[1][4]+button.width<=847,'Named use chips escaped their original single row bounds')
+  check(button.height==30 and button.points[1][5]==-76 and button.points[1][4]>=48 and button.points[1][4]+button.width<=536,'Named use chips escaped their bounded row beside the CD shelf')
   if button.useGroup then for _,receipt in ipairs(button.useGroup.rows)do check(not seen[receipt],'Use receipt appears in multiple chips');seen[receipt]=true;receipts=receipts+1 end end
  end
  if overflow then
@@ -175,22 +191,110 @@ page.casts={{spellID=701,name='Single',observedAt=99}};U:ShowLast();chips,overfl
 check(#chips==1 and not overflow and chips[1].icon:IsShown()and not chips[1].wheel,'Pooled overflow state survived a sparse page')
 page.casts={};for i=1,8 do page.casts[i]={spellID=700+i,name='A',observedAt=99}end
 U:ShowLast();chips,overflow=UseChips()
-check(#chips==8 and not overflow,'Eight compact named chips needlessly hid a fitting ability')
+check(#chips==5 and overflow and overflow.useOverflow.groupCount==4,'Compact receipt row did not reserve bounded space for overflow')
+local compactReceipts=0;for _,chip in ipairs(chips)do if chip.useGroup then compactReceipts=compactReceipts+#chip.useGroup.rows end end
+check(compactReceipts+#overflow.useOverflow.rows==8,'Compact receipt overflow omitted an original use')
 page.casts={{spellID=701,name=string.rep('Long ability ',12),observedAt=98},{spellID=701,name=string.rep('Long ability ',12),observedAt=99}}
 U:ShowLast();chips,overflow=UseChips();local long=chips[1]
 check(#chips==1 and long.width<=230 and long.useLabel.width>0 and long.useLabel.maxLines==1 and long.useMeta.text=='×2 · 1.0s'and long.useMeta.width>=long.useMeta:GetUnboundedStringWidth(),'Long name clipped the independent count/latest age or expanded the bounded row')
+-- Only validated native/local anchors admit approximate successful-cast
+-- markers. Their positions do not turn a receipt into healing or readiness.
+do
+ local originalPage=page
+ page={id=502,diedAt=100,localSessionStartedAt=60,lastAlive={spells={{spellID=235450,name='Barrier',observedAt=99,cooldown='held'}},supplies={}},casts={
+  {spellID=235450,name='Old retained Barrier',observedAt=93,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=235450,name='First recent Barrier',observedAt=98.5,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=235450,name='Repeated recent Barrier',observedAt=98.5,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=55342,name='Derived Mirror',observedAt=99,source='DERIVED_FROM_AGGREGATE_ENDPOINT'}},native={recapID=51,recapMaxHealth=100000,rows={
+  {nativeIndex=3,nativeOffset=-2,timestamp=1998,kind='damage',amount=100,recordedHP=26000},
+  {nativeIndex=1,nativeOffset=-.25,timestamp=1999.75,kind='damage',amount=1000,recordedHP=1000},
+  {nativeIndex=2,nativeOffset=0,timestamp=2000,kind='unknown',recordedHP=1000}},clockDiagnostic={localClock='GetTime',localDeathNoticeAt=100,localSessionStartedAt=60,nativeFatalTimestamp=1999.75,nativeMaximumTimestamp=2000,nativeRowCount=3}}}
+ local function NoCastMarkers(message)
+  check(popup.castMarkerCount==0 and popup.castExtra==0,message..' retained a cast lane')
+  for _,marker in ipairs(popup.castMarkers)do
+   check(not marker:IsShown(),message..' retained a cast marker')
+   for _,lines in ipairs({marker.stems,marker.connectors})do for _,line in ipairs(lines)do check(not line:IsShown(),message..' retained a cast connector')end end
+  end
+ end
+ U:ShowLast();local firstMarker=popup.castMarkers[1]
+ check(popup.castAlignment.anchorValid and #popup.castAlignment.aligned==3 and #popup.castAlignment.unaligned==1 and popup.castMarkerCount==2,'Cast alignment lost repeated successes, included derived receipt or clamped an older cast into view')
+ check(popup.castExtra==48 and #page.casts==4 and popup.timeDomain.first==-5,'Approximate markers changed the native time window or retained receipt list')
+ check(#popup.castFallback==2 and popup.castFallback[1]==page.casts[1]and popup.castFallback[2]==page.casts[4],'Fallback did not retain only the offscreen and unaligned receipts')
+ local fallbackSeen={};local fallbackCount=0
+ for _,chip in ipairs(UseChips())do
+  local receipts=chip.useGroup and chip.useGroup.rows or{}
+  for _,row in ipairs(receipts)do fallbackSeen[row]=true;fallbackCount=fallbackCount+1 end
+  for _,detail in ipairs(chip.useOverflow and chip.useOverflow.rows or{})do fallbackSeen[detail.receipt]=true;fallbackCount=fallbackCount+1 end
+ end
+ check(fallbackCount==2 and fallbackSeen[page.casts[1]]and fallbackSeen[page.casts[4]]and not fallbackSeen[page.casts[2]]and not fallbackSeen[page.casts[3]],'Fallback chips duplicated plotted receipts or omitted unplotted receipts')
+ local beforeHP,beforeSelected=popup.healthPanel.selectedHP,popup.selected;local shelfStates={}
+ for _,button in ipairs(objects)do if button.parent==popup and button.recordedState~=nil and button:IsVisible()then shelfStates[button]=button.recordedState end end
+ local seenReceipt={}
+ for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i]
+  seenReceipt[marker.entry.index]=true
+  check(marker.entry.row==page.casts[marker.entry.index]and marker.entry.offset==-1.75 and marker.entry.age==1.5 and marker.age.text=='~1.5s','Approximate marker lost exact receipt or death-notice-relative age')
+  check(marker.timeX==48+3.25/5*784 and marker.iconX>=48 and marker.iconX<=832 and marker:IsShown(),'Packed cast marker retimed its connector or escaped the native axis')
+  tooltipLines={};tooltipSpell=nil;marker:Fire('OnEnter');local copy=table.concat(tooltipLines,' ')
+  check(tooltipSpell==235450 and copy:find('~1.5s before death; aligned to death notification.',1,true)and copy:find('Recorded successful cast · Timing is approximate',1,true),'Approximate cast tooltip lost its explicit alignment disclosure')
+  check(popup.selected==beforeSelected and popup.healthPanel.selectedHP==beforeHP and not popup.healing:IsShown(),'Cast marker changed raw selected HP or synthesized healing')
+  for button,state in pairs(shelfStates)do check(button.recordedState==state,'Cast marker inferred a cooldown availability change')end
+  marker:Fire('OnLeave')
+ end
+ check(seenReceipt[2]and seenReceipt[3]and not seenReceipt[1]and not seenReceipt[4],'Cast markers deduplicated repeats or exposed an unaligned receipt')
+ check(firstMarker.iconX~=popup.castMarkers[2].iconX and firstMarker.timeX==popup.castMarkers[2].timeX,'Equal-time cast packing moved their actual-time connector positions')
+ local report=assert(R:BuildShareText(page));check(report:find('Old retained Barrier',1,true)and report:find('Derived Mirror',1,true),'Cast viewport filtering cropped the full original-use report')
+ local stale=firstMarker:GetScript('OnEnter');U:Render();stale(firstMarker);check(not popup.tooltipRecap:IsShown(),'Old cast-marker callback survived redraw')
+ U:OpenShare();firstMarker:Fire('OnEnter');check(not popup.tooltipRecap:IsShown()and popup.selected==beforeSelected,'Cast-marker hover bypassed the report modal');popup.shareChooser.close:Fire('OnClick')
+ for i=1,13 do page.casts[i]={spellID=235450,name='Repeated Barrier',observedAt=99,source='UNIT_SPELLCAST_SUCCEEDED'}end
+ U:ShowLast();check(popup.castMarkerCount==13 and popup.castExtra==96,'Dense cast receipts were dropped or failed to reserve another marker lane')
+ check(#popup.castFallback==0 and #popup.recordedUseGroups==0 and #UseChips()==0 and not popup.usesLabel:IsShown(),'Fully plotted receipts retained duplicate fallback chips or caption')
+ local counts={};for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i];counts[marker.lane]=(counts[marker.lane]or 0)+1;check(marker.timeX==48+3.75/5*784,'Dense packing changed cast time')end
+ check(counts[1]<=12 and counts[2]<=12,'Cast marker lane exceeded its packing capacity')
+ page.native.clockDiagnostic.localDeathNoticeAt=99;U:ShowLast();NoCastMarkers('Stale clock anchor')
+ check(#page.casts==13 and #popup.recordedUseGroups[1].rows==13,'Unaligned marker cleanup discarded factual use receipts')
+ check(#popup.castFallback==13 and popup.usesLabel:IsShown(),'Stale anchor did not restore all retained receipts to fallback')
+ for i,row in ipairs(popup.castFallback)do check(row==page.casts[i],'Stale-anchor fallback substituted or reordered an original receipt')end
+ page.native.clockDiagnostic.localDeathNoticeAt=100;page.native.clockDiagnostic.nativeFatalTimestamp=hidden
+ issecretvalue=function(v)return rawequal(v,hidden)or publicCheck(v)end
+ U:ShowLast();NoCastMarkers('Secret clock anchor');issecretvalue=publicCheck
+ page.native.clockDiagnostic.nativeFatalTimestamp=1999.75;U:ShowLast();check(popup.castMarkerCount==13,'Valid cast anchors did not restore markers')
+ local hiddenCallback=popup.castMarkers[1]:GetScript('OnEnter');U:Hide();hiddenCallback(popup.castMarkers[1]);check(not popup.tooltipRecap:IsShown(),'Hidden cast marker callback reopened details')
+ U:Preview();NoCastMarkers('Preview mode');check(popup.castAlignment==nil,'Preview borrowed live clock alignment')
+ page=originalPage;U:ShowLast()
+end
 page.native=nil;U:Render()
-U:Preview();tooltipLines={};popup.graphHelp:Fire('OnEnter');local previewHelp=table.concat(tooltipLines,' ')
+U:Preview();NoHealthPlot()
 check(popup.rail:IsShown()and popup.death:IsShown(),'Preview did not restore its example timeline')
-check(previewHelp:find('fictional example',1,true)and previewHelp:find('stepped health curve',1,true)and not previewHelp:find('Dashed',1,true),'Preview graph help describes the real sample graph')
-check(popup.graphLabel.text=='HP'and popup.graphLabel.width==40 and popup.healthPoint.width==12 and popup.healthPoint.height==12 and not popup.graphContext:IsShown(),'Live scale changed Preview composition')
-check(popup.pointPercent.points[1][5]==10,'Live graph ceiling avoidance changed Preview percentage placement')
-for _,tick in ipairs(popup.graphScaleTicks)do check(not tick:IsShown(),'Live scale ticks leaked into Preview')end
-for _,disc in ipairs(popup.healthPoint.discs)do check(disc:IsShown(),'Preview lost its original selected health marker')end
+local healTarget=popup.healTargets[1];local healRow=healTarget.entry.row
+local previewHP,previewHeal=healRow.exampleHP,healRow.effectiveHealing
+healTarget:Fire('OnEnter')
+local function Near(a,b)return type(a)=='number'and math.abs(a-b)<.00001 end
+check(popup.selected==healRow and popup.healthPanel.selectedHP==336000 and popup.hp.text=='336000 / 400000'and popup.percent.text=='84%','Preview heal did not select its explicit post-heal HP')
+check(popup.healthPanel.effectiveHealing==9000 and popup.healing:IsShown()and Near(popup.healing.width,9000/400000*popup.healthPanel.width)and Near(popup.healing.points[1][4],(336000-9000)/400000*popup.healthPanel.width),'Preview effective-heal segment does not occupy the recorded post-heal portion')
+tooltipLines={};popup.healthPanel:Fire('OnEnter');local previewHelp=table.concat(tooltipLines,' ')
+check(previewHelp:find('9k effective healing',1,true)and previewHelp:find('Fictional sample',1,true),'Synthetic healing contribution lost its provenance')
+issecretvalue=function(v)return rawequal(v,hidden)or publicCheck(v)end
+for _,bad in ipairs({hidden,false,-1,0,0/0,math.huge,'9000',{},336001})do
+ healRow.effectiveHealing=bad;U:Render();popup.healTargets[1]:Fire('OnEnter')
+ check(popup.healthPanel.selectedHP==336000 and popup.healthPanel.effectiveHealing==nil and not popup.healing:IsShown(),'Invalid/excess synthetic heal created a green contribution')
+end
+healRow.effectiveHealing=previewHeal
+for _,bad in ipairs({hidden,false,-1,0/0,math.huge,'336000',{},400001})do
+ healRow.exampleHP=bad;U:Render();popup.healTargets[1]:Fire('OnEnter')
+ check(popup.healthPanel.effectiveHealing==nil and not popup.healing:IsShown(),'Unknown/out-of-range synthetic post-heal HP created a green contribution')
+end
+issecretvalue=publicCheck;healRow.exampleHP=previewHP;healRow.effectiveHealing=previewHeal;U:Render();SelectNative(1)
+check(popup.healthPanel.selectedHP==0 and not popup.healing:IsShown()and popup.healthPanel.effectiveHealing==nil,'Leaving Preview healing retained its green contribution')
+local absorbed
+for _,target in ipairs(popup.supportMarkers)do if target:IsShown()and target.entry.kind=='absorbed'then absorbed=target;break end end
+check(absorbed~=nil,'Preview protective absorption disappeared')
+selected=popup.selected;absorbed:Fire('OnEnter')
+check(popup.selected==selected and popup.healthPanel.selectedHP==0 and not popup.healing:IsShown(),'Protective absorption changed selected HP or became effective healing')
+popup.healTargets[1]:Fire('OnEnter')
 for _,button in ipairs(objects)do if button.parent==popup and button.icon and button.width==30 and button:IsVisible()then
  check(not button.useLabel or not button.useLabel:IsShown()and not button.useMeta:IsShown(),'Live use chip labels leaked into Preview')
 end end
 for _,line in ipairs(popup.tooltipRecap.lines)do check(not line.recapAmount or not line.recapAmount:IsShown()and not line.recapTime:IsShown(),'Absorb amount/time columns leaked into an ordinary Preview tooltip')end
-io.write('PASS: '..checks..' actual-UI pooled artwork, HP gaps, receipt provenance, tooltip reachability and check-age assertions\n')
+io.write('PASS: '..checks..' actual-UI pooled artwork, selected health, synthetic healing, receipt provenance, tooltip reachability and hidden check-age assertions\n')
 ]=]
 assert(loadstring(source,'death-recap-presentation-fixture'))()

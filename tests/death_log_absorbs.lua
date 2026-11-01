@@ -39,7 +39,7 @@ check(together.spellID==nil and together.sourceKey==nil and together.shieldSpell
 for i,index in ipairs({3,4,5})do check(together.rows[i].nativeIndex==index,'Exact-time member order lost retained native-index ties')end
 for i,saved in ipairs(before)do check(mixed[i]==saved.row and mixed[i].recordedHP==saved.hp and mixed[i].timestamp==saved.time,'Absorption grouping mutated the raw input order, HP or time')end
 local damage=M:Group(mixed,{},{items=16})
-check(#damage.rows==4 and #damage.items==4,'Generic absorption clustering changed damage semantic groups')
+check(#damage.rows==4 and #damage.items==1 and damage.items[1].count==4,'Nearby cross-ability damage did not retain all four raw hits in its independent half-second cluster')
 
 local owner=assert(loadfile('tests/fixtures/death_log/owner_recap_3066.lua'))().NewPage()
 groups=M:GroupAbsorbs(owner.native.rows,function(t)return 48+(t+1.804)/1.804*784 end,function()return 40 end)
