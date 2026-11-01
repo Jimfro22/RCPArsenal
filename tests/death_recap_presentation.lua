@@ -54,7 +54,29 @@ for i=1,32 do family:Fire('OnMouseWheel',-1)end
 card=popup.tooltipRecap;local found
 for _,line in ipairs(card.lines)do if line:IsShown()and line.text:find('Item 132:',1,true)then found=line end end
 check(found and found.recapY+found.height-card.scroll:GetVerticalScroll()<=card.height,'Last family candidate was truncated/unreachable')
+local populated=page.native;page.encounter={startedAt=10};page.native=nil;page.nativeAttempts=1
+local function CheckEmptyAxis(label)
+ U:Render()
+ check(popup.selected==nil and popup.selectedItem==nil and popup.healthPanel.selectedHP==nil and not popup.guide:IsShown()and not popup.healthPoint:IsShown(),label..' redraw retained stale selected event geometry')
+ check(not popup.rail:IsShown()and not popup.fight:IsShown()and not popup.death:IsShown()and popup.deathX==nil,label..' retained a native time axis')
+ for i=1,6 do check(not popup.ticks[i]:IsShown()and not popup.tickMarks[i]:IsShown()and popup.tickLabels[i]=='',label..' retained a fabricated tick')end
+ check(popup.empty:IsShown()and popup.usesLabel:IsShown(),label..' hid the empty status or independent recorded uses')
+ local shelfCount,useCount=0,0
+ for _,b in ipairs(objects)do if b.parent==popup and b.icon and b:IsVisible()then
+  if b.width==32 then shelfCount=shelfCount+1 elseif b.width==30 then useCount=useCount+1 end
+ end end
+ check(shelfCount==3 and useCount==1,label..' hid independent supply/spell evidence or use receipts')
+ U:ShowLast();check(not popup.rail:IsShown()and not popup.guide:IsShown(),label..' manual reopen restored fabricated geometry')
+end
+CheckEmptyAxis('Loading native recap')
+page.nativeAttempts=R.LIMITS.attempts;CheckEmptyAxis('Unavailable native recap')
+page.native={recapID=50,recapMaxHealth=100000,rows={}};CheckEmptyAxis('Empty native packet')
+page.native=populated;RA:FireCallback('DEATH_RECAP_CHANGED','native')
+check(popup.rail:IsShown()and popup.fight:IsShown()and popup.death:IsShown()and not popup.empty:IsShown(),'Filled native page did not restore its axis')
+for i=1,6 do check(popup.ticks[i]:IsShown()and popup.tickMarks[i]:IsShown(),'Filled native page retained hidden tick objects')end
+page.native=nil;U:Render()
 U:Preview();tooltipLines={};popup.graphHelp:Fire('OnEnter');local previewHelp=table.concat(tooltipLines,' ')
+check(popup.rail:IsShown()and popup.death:IsShown(),'Preview did not restore its example timeline')
 check(previewHelp:find('fictional example',1,true)and previewHelp:find('stepped health curve',1,true)and not previewHelp:find('Dashed',1,true),'Preview graph help describes the real sample graph')
 io.write('PASS: '..checks..' actual-UI pooled artwork, HP gaps, receipt provenance, tooltip reachability and check-age assertions\n')
 ]=]

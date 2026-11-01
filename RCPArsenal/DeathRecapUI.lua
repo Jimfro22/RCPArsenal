@@ -755,13 +755,14 @@ function UI:Render()
     contentShift=shelfExtra;extraHeight=shelfExtra+supportExtra+fightExtra+(secondTier and TIER_GAP or 0);Size(frame,880,BASE_HEIGHT+extraHeight)
     local viewWidth,viewHeight=UIParent:GetWidth(),UIParent:GetHeight()
     if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(BASE_HEIGHT+extraHeight)))end
-    local rail=202+shelfExtra+supportExtra+fightExtra;Place(frame.rail,"TOPLEFT",frame,"TOPLEFT",48,-rail);Size(frame.rail,784,1)
+    local hasTimeline=example or #model.rows>0
+    local rail=202+shelfExtra+supportExtra+fightExtra;Place(frame.rail,"TOPLEFT",frame,"TOPLEFT",48,-rail);Size(frame.rail,784,1);frame.rail:SetShown(hasTimeline)
     for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;local x=X(time)
-        Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=time==0 and"0s"or string.format(not example and domain.last-domain.first<5 and"%s%.1fs"or"%s%.0fs",time<0 and"−"or"",math.abs(time));Text(frame.ticks[i],frame.tickLabels[i])
-        Place(frame.tickMarks[i],"TOPLEFT",frame,"TOPLEFT",x,-rail+4);Size(frame.tickMarks[i],1,8)
+        Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=hasTimeline and(time==0 and"0s"or string.format(not example and domain.last-domain.first<5 and"%s%.1fs"or"%s%.0fs",time<0 and"−"or"",math.abs(time)))or"";Text(frame.ticks[i],frame.tickLabels[i]);frame.ticks[i]:SetShown(hasTimeline)
+        Place(frame.tickMarks[i],"TOPLEFT",frame,"TOPLEFT",x,-rail+4);Size(frame.tickMarks[i],1,8);frame.tickMarks[i]:SetShown(hasTimeline)
     end
-    Place(frame.fight,"TOPRIGHT",frame,"TOPRIGHT",-20,-rail+25)
-    frame.death:Hide()
+    Place(frame.fight,"TOPRIGHT",frame,"TOPRIGHT",-20,-rail+25);frame.fight:SetShown(hasTimeline)
+    frame.death:Hide();frame.deathX=nil
     for _,row in ipairs(model.rows)do if row.nativeIndex==1 then
         local x=X(row.nativeOffset);frame.deathX=x;Place(frame.death,"TOP",frame,"TOPLEFT",x,-rail-10);Text(frame.death,"Death");frame.death:Show()
         for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;if math.abs(X(time)-x)<32 then Text(frame.ticks[i],"");frame.tickLabels[i]=""end end
@@ -931,10 +932,10 @@ function UI:Render()
         end)
     end
     DrawGraph(page,example)
-    local choice=selected
+    local choice=#model.rows>0 and selected or nil
     if not choice then for _,row in ipairs(model.rows)do if row.nativeIndex==(example and page.defaultSelection or 1)then choice=row end end end
     choice=choice or model.rows[1]
-    if choice then local item;for _,g in ipairs(model.items)do for _,row in ipairs(g.rows)do if row==choice then item=g end end end;Select(page,choice,item,true)else Health(page,{nativeOffset=0},example);Shelf(page,example,0)end
+    if choice then local item;for _,g in ipairs(model.items)do for _,row in ipairs(g.rows)do if row==choice then item=g end end end;Select(page,choice,item,true)else selected=nil;frame.selected=nil;frame.selectedItem=nil;Health(page,{nativeOffset=0},example);Shelf(page,example,0)end
 end
 function UI:ShowLast()
     local page=R:GetPage();if not page then RA:Print("No log recorded this session");return false end

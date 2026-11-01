@@ -260,8 +260,15 @@ without trustworthy GCD context and pending/restricted charges remain unknown.
 Charge-based verdicts use the charge check's age. Unchanged tracked spell rosters
 preserve use history. Spell-only updates do not rescan supplies.
 
-A restricted first meter update does not invalidate an already witnessed clean
-alive baseline. A newly reported Current epoch with no readable alive baseline
+If a guarded Current read fails after a meter update, it does not invalidate an
+already witnessed clean alive baseline. This conditional failure handling does
+not establish that combat normally makes the meter unreadable. A newly reported
+Current epoch with no readable alive baseline
 remains unavailable; later data cannot reconstruct that prior observation.
 Accepted IDs cannot repeat across meter epochs within an enable cycle; the bounded
 256-ID retention limit fails unavailable rather than dropping anti-reuse evidence.
+
+Loading, unavailable and empty native pages hide the time rail, ticks and death
+axis labels until recorded events arrive. Recorded uses and the last-check shelf
+remain available independently. Preview keeps its fictional timeline and stepped
+health curve, described separately in its graph help.
