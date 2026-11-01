@@ -120,12 +120,14 @@ U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.d
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
-U:OpenBell();local enable=button('ENABLE');check(enable,'Live reminder confirmation missing')
+U:OpenShare();local liveForm=button('SEND WHISPER').parent;local staleLiveSend=liveForm.send:GetScript('OnClick')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
-check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and popup.context:IsShown()and popup.context.text:find('Arcane Mage · The Coiled Altar · Mythic',1,true),'Preview context/label incorrect')
+check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context and popup.contextText=='Arcane Mage · The Coiled Altar · Mythic','Hidden context or Preview label incorrect')
+check(popup.info.points[1][4]==218 and popup.info.points[1][5]==-23,'Preview info target became an orphaned second-line glyph')
+tooltipLines={};popup.info:Fire('OnEnter');local contextHelp=table.concat(tooltipLines,' ');check(contextHelp:find('Arcane Mage · The Coiled Altar · Mythic',1,true)and contextHelp:find('Fictional sample',1,true),'Hidden Preview context was lost from help');popup.info:Fire('OnLeave')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.absorb:IsShown(),'Preview did not default to recorded death')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
-check(not enable:IsVisible(),'Preview inherited live action popover');enable:Fire('OnClick')
+check(not liveForm:IsShown(),'Preview inherited live report dialog');staleLiveSend()
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
 U:OpenShare();check(button('SEND WHISPER'),'Private Preview report action missing');button('CLOSE'):Fire('OnClick')
@@ -154,7 +156,10 @@ check(groupedPreview.countBadge:IsShown()and groupedPreview.countBadge.width>=24
 local absorbed=hover(5);check(not absorbed.absorbBadge,'Damage icon retained a shield badge')
 local blueCount=0
 for _,marker in ipairs(popup.supportMarkers)do if marker:IsShown()and marker.entry.kind=='absorbed'then
- blueCount=blueCount+1;check(marker.entry.amount==20000 and marker.label.text=='20k absorbed'and marker.timeX==48+1.4/5*784,'Absorbed marker changed amount/time')
+ blueCount=blueCount+1;check(marker.entry.amount==20000 and marker.label.text=='+20k'and marker.timeX==48+1.4/5*784 and marker.color[1]==.36 and marker.color[2]==.70 and marker.color[3]==1,'Absorbed marker changed amount/time or blue identity')
+ local markerSelected,markerHP=popup.selected,popup.healthPanel.selectedHP;tooltipSpell=nil;tooltipLines={};marker:Fire('OnEnter');local shieldHelp=table.concat(tooltipLines,' ')
+ check(not GameTooltip:IsShown()and tooltipSpell==nil and popup.tooltipRecap.lines[1].text=='Shield absorb'and shieldHelp:find('20,000 damage absorbed by a shield.',1,true)and not shieldHelp:find('healing',1,true)and not shieldHelp:find('remaining',1,true),'Shield help invented healing, capacity or source identity')
+ check(popup.selected==markerSelected and popup.healthPanel.selectedHP==markerHP and #popup.healTargets==2,'Absorption hover changed selected health or became healing');marker:Fire('OnLeave')
 end end
 check(blueCount==1,'Recorded absorption was omitted or counted twice')
 local function cross(x,first,last,r)return x>r.left-2 and x<r.right+2 and first<r.bottom+2 and last>r.top-2 end
@@ -176,7 +181,7 @@ tooltipLines={};popup.healTargets[1]:Fire('OnEnter');local healHelp=table.concat
 check(tooltipSpell==2061 and healHelp:find('+9k healing',1,true)and not healHelp:find('−4.20s',1,true)and healHelp:find('Healer:',1,true)and not healHelp:find('Example healing',1,true),'Healing tooltip lost spell-specific native identity/summary')
 check(popup.hp.text=='128000 / 400000'and popup.absorb:IsShown(),'Heal hover changed selected damage health/debt')
 local retained=popup.selected;popup.healTargets[1]:Fire('OnLeave');check(popup.selected==retained and popup.healthPoint:IsShown(),'Leave reset selection')
-check(popup.bell:IsEnabled()and popup.share:IsEnabled()and popup.bell.alpha==1,'Private Preview actions unavailable')
+check(not popup.bell and not popup.reminder.label and not U.OpenBell and popup.reminder:IsEnabled()and popup.share:IsEnabled(),'Unified Preview reminder action unavailable or obsolete bell remained')
 tooltipLines={};popup.share:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('Open this report in chat',1,true),'Report help is unclear')
 -- Exercise the actual placement callback with measured mock UI rectangles.
 local rects={};local oldLeft,oldBottom,oldScale=methods.GetLeft,methods.GetBottom,methods.GetEffectiveScale
@@ -232,6 +237,7 @@ for _,older in ipairs(staleTargets)do
  newer:Fire('OnLeave');check(not GameTooltip:IsShown(),'Stale leave cleared newer owner tracking')
 end
 local copyPage=page;page={id=13,diedAt=100,casts={},native={recapID=4,rows={}}}
+U:ShowLast();check(popup.empty:IsShown()and not popup.context and not popup.health and popup.info.points[1][4]==174 and popup.info.points[1][5]==-23,'Empty live log restored labels or lost anchored help')
 for i=1,12 do page.native.rows[i]={nativeIndex=i,nativeOffset=-1+i*.01,spellID=500+i,kind=i<=2 and 'damage' or 'unknown',amount=i==2 and 200 or nil}end
 U:ShowLast();local unknownGroup
 for _,b in ipairs(hits())do if b.group.mixed then for _,row in ipairs(b.group.rows)do if row.kind=='unknown'then unknownGroup=b end end end end
@@ -240,7 +246,7 @@ tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tool
 check(unknownCopy:find(' events',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits')
 page=copyPage;U:Preview()
 -- Alpha32 companion tooltip, fixed Preview endpoint and actual reminder switch.
-U:Preview();check(popup.selected.nativeIndex==1 and popup.context:IsShown()and popup.health.text=='Health','Header/default death changed')
+U:Preview();check(popup.selected.nativeIndex==1 and not popup.context and not popup.health,'Removed labels returned or default death changed')
 local shelfPositions={};for _,b in ipairs(shelves())do shelfPositions[b]={b.points[1][4],b.points[1][5],b.icon.rgb[1]}end
 local h=popup.healTargets[1];h:Fire('OnEnter')
 for b,pos in pairs(shelfPositions)do check(b.points[1][4]==pos[1]and b.points[1][5]==pos[2]and b.icon.rgb[1]==pos[3],'Hover reordered/changed death shelf')end
@@ -249,6 +255,10 @@ check(recap:IsShown()and recap.width>=220 and recap.width<=360 and recap.lines[1
 check(recap.lines[1].text=='+9k healing'and recap.lines[2].text:find('Healer:',1,true),'Companion lost healing recap facts')
 GameTooltip:Fire('OnTooltipCleared');check(recap:IsShown(),'Same-owner native refresh discarded recap facts')
 h:Fire('OnLeave');check(not recap:IsShown(),'Companion survived owned leave')
+check(popup.reminder.points[1][4]==578 and popup.reminder.points[1][5]==-18 and popup.reminder.width==72 and popup.reminder.height==28,'Reminder compound target moved or widened the header')
+check(popup.reminder.icon.parent==popup.reminder and popup.reminder.icon.width==22 and popup.reminder.icon.height==22 and popup.reminder.icon.points[1][1]=='LEFT','Reminder icon is not inside the same click target')
+check(popup.reminder.track.parent==popup.reminder and popup.reminder.track.width==40 and popup.reminder.track.height==20 and popup.reminder.track.points[1][1]=='RIGHT'and popup.reminder.knob.width==18,'Existing reminder switch geometry changed')
+check(popup.reminder.icon.texture=='Interface\\Icons\\INV_Potion_51','Reminder illustration changed with inventory or uses unverified art')
 local previousReminder=db.personalTools.consumableReminder
 popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder~=previousReminder and popup.reminder.enabledSetting==db.personalTools.consumableReminder,'Reminder switch did not change/synchronize actual setting')
 RA.PersonalTools:SetOption('consumableReminder',previousReminder);check(popup.reminder.enabledSetting==previousReminder,'External setting did not synchronize switch')
@@ -278,13 +288,13 @@ check(popup.height==428 and popup.supportExtra==0 and popup.fightSlotExtra==0,'N
 local expectedSlots={590,628,666,704,742,786,824};local slotCount=0
 for _,b in ipairs(shelves())do slotCount=slotCount+1;check(b.points[1][4]==expectedSlots[slotCount]and b.points[1][5]==-68,'Seven fixed CD slots did not stay on one row')end
 check(slotCount==7,'Preview roster lost a CD slot')
-check(popup.health.text=='Health'and popup.health.width==58 and popup.percent.justifyH=='RIGHT','Health label/percentage grid missing')
-check(popup.healthPanel.points[1][4]==162 and popup.healthPanel.width==324 and popup.hp.points[1][4]==162 and popup.absorbLabel.points[1][4]+popup.absorbLabel.width==486,'Health bar/value/debt edges disagree')
+check(not popup.health and popup.percent.points[1][4]==20 and popup.percent.width==58 and popup.percent.justifyH=='RIGHT','Removed Health label or translated percentage grid regressed')
+check(popup.width==880 and popup.healthPanel.points[1][4]==94 and popup.healthPanel.width==324 and popup.hp.points[1][4]==94 and popup.hp.width==142 and popup.absorbLabel.width==154 and popup.absorbLabel.points[1][4]+popup.absorbLabel.width==418,'Translated Health bar/value/debt edges or widths disagree')
 check(popup.shelf.points[1][4]==550 and popup.shelf.width==28 and popup.shelfAge.points[1][4]==590,'CD label/check age detached from inventory')
 check(popup.tombstone.width==18 and popup.tombstone.height==20 and popup.tombstone.points[1][1]=='BOTTOM'and popup.tombstone.points[1][4]==846 and popup.tombstone.points[1][5]==-386,'Death marker intersects graph endpoint')
 popup.reminder:Fire('OnEnter');check(not GameTooltip:IsShown()and popup.tooltipRecap:IsShown()and popup.tooltipRecap.lines[1].text=='Consumable reminder','Non-spell help is not a single card')
 local toggledFrom=db.personalTools.consumableReminder
-popup.reminder:Fire('OnClick');check(popup.tooltipRecap.lines[2].text==(db.personalTools.consumableReminder and'On · Click to turn off.'or'Off · Click to turn on.'),'Visible reminder help did not follow the setting')
+popup.reminder:Fire('OnClick');check(popup.tooltipRecap.lines[2].text=='Healthstone and healing-potion alerts.'and popup.tooltipRecap.lines[3].text==(db.personalTools.consumableReminder and'On · Click to turn off.'or'Off · Click to turn on.'),'Visible reminder help did not follow the setting')
 RA.PersonalTools:SetOption('consumableReminder',toggledFrom)
 local function checkModal(form)
  check(form.mouseEnabled and form:GetFrameStrata()=='DIALOG'and popup.actionShield:IsShown()and popup.actionShield.mouseEnabled,'Modal lacks an input barrier')
@@ -298,6 +308,7 @@ check(not GameTooltip:IsShown()and not popup.tooltipRecap:IsShown(),'Opening sha
 check(not shareForm.copy.template and not shareForm.recipient.template and shareForm.copy.textInsets[1]==10,'Native default editbox chrome/insets remained')
 local fullReport=shareForm.report
 check(#fullReport.entries==16 and fullReport.entries[16].kind=='death','Full Preview events/death missing')
+check(fullReport.text:find('Arcane Mage',1,true)and fullReport.text:find('The Coiled Altar',1,true)and fullReport.text:find('Mythic',1,true),'Hidden popup context disappeared from the full report')
 local expectedTimes={-4.8,-4.6,-4.4,-4.2,-3.6,-3.5,-3.15,-3,-2.8,-2.3,-1.8,-1.3,-1.1,-.9,0,0}
 for i,time in ipairs(expectedTimes)do check(fullReport.entries[i].time==time,'Preview report chronology changed')end
 local axeCount=0;for _,event in ipairs(fullReport.entries)do if event.line:find('Axegrinder',1,true)then axeCount=axeCount+1 end end
@@ -314,7 +325,7 @@ button('SELECT TEXT'):Fire('OnClick');check(shareForm.copy:IsShown()and shareFor
 shareForm.copy:SetText('Changed report');shareForm.copy:Fire('OnTextChanged',true);check(shareForm.copy:GetText()==fullReport.text and shareForm.report==fullReport,'Copy field altered frozen report')
 local heldSelection=popup.selected;popup.healTargets[1]:Fire('OnEnter');hover(2);check(popup.selected==heldSelection and not popup.tooltipRecap:IsShown(),'Underlying chart reacted through modal')
 popup.actionShield:Fire('OnClick');check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Outside click retained modal/barrier')
-U:OpenBell();checkModal(button('ENABLE',true).parent);button('CANCEL'):Fire('OnClick');check(not popup.actionShield:IsShown(),'Reminder close retained input barrier')
+check(not popup.actionShield:IsShown(),'Closed report retained input barrier')
 U:Preview();hover(8);check(popup.absorbLabel.text=='80k heal absorb remaining'and popup.absorbLabel:GetUnboundedStringWidth()<=popup.absorbLabel.width and popup.hp.text=='128000 / 400000','Debt noun/state or HP value lost')
 local coralRuns,greenRuns=0,0
 for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==2 and o.width>16 then
@@ -420,13 +431,15 @@ check(button('SEND NEXT LINE')and button('CANCEL')and not previewForm.channels.W
 open:Fire('OnClick');check(#chatCalls==2 and chatCalls[2].text==previewForm.messages[2],'Manual SAY did not preserve second line')
 button('CANCEL'):Fire('OnClick');check(previewForm:IsShown()and previewForm.jobStatus=='stopped'and previewForm.status.text:find('Stopped 2 / ',1,true),'Cancellation hid partial progress')
 open:Fire('OnClick');check(#chatCalls==2,'Stopped report restarted')
-U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Preview did not enable actual reminder')
+local modalReminder=db.personalTools.consumableReminder;popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder==modalReminder,'Reminder toggled through the report modal')
+button('CLOSE'):Fire('OnClick');popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder,'Preview did not enable actual reminder')
 for k,v in pairs(prefs)do if k~='consumableReminder'then check(db.personalTools[k]==v,'Preview toggle changed child preferences')end end
-U:OpenBell();button('DISABLE'):Fire('OnClick');check(not db.personalTools.consumableReminder,'Preview did not disable actual reminder')
-RA.PersonalTools:SetOption('consumableReminder',true);U:OpenBell();check(button('DISABLE'),'Reminder action failed to follow external setting');button('DISABLE'):Fire('OnClick')
-U:OpenBell();local oldEnable=button('ENABLE');U:Preview();oldEnable:Fire('OnClick');check(not db.personalTools.consumableReminder,'Stale Preview reminder action affected replacement page')
+popup.reminder:Fire('OnClick');check(not db.personalTools.consumableReminder,'Preview did not disable actual reminder')
+RA.PersonalTools:SetOption('consumableReminder',true);check(popup.reminder.enabledSetting,'Reminder action failed to follow external setting');popup.reminder:Fire('OnClick')
+local staleReminder=popup.reminder:GetScript('OnClick');U:Hide();staleReminder();check(not db.personalTools.consumableReminder,'Hidden reminder callback changed the setting')
 local sampleCalls=#chatCalls
-U:ShowLast();U:OpenBell();button('ENABLE'):Fire('OnClick');check(db.personalTools.consumableReminder,'Explicit live reminder confirmation failed')
+U:ShowLast();local reminderPage=page;page={id=999,diedAt=100};popup.reminder:Fire('OnClick');check(not db.personalTools.consumableReminder,'Stale live page changed reminder setting');page=reminderPage
+U:ShowLast();popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder,'Explicit live reminder toggle failed')
 RA.PersonalTools:SetOption('consumableReminder',false)
 db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check(popup:IsShown(),'Auto popup missing')
 popup:Hide();check(not popup.selected,'Native hide did not clear private selected context');RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')

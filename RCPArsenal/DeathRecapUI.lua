@@ -2,7 +2,7 @@ local _,RA=...
 local UI={};RA.DeathRecapUI=UI
 local R,T=RA.DeathRecap,RA.Theme
 local C=T.Colors
-local frame,share,bell,actionShield,current,sample,examplePage
+local frame,share,actionShield,current,sample,examplePage
 local Point,Size=T.SetPoint,T.SetSize
 local function Text(region,value)RA:SetVisualText(region,value or "")end
 local function Font(parent,size,weight,color)
@@ -152,7 +152,7 @@ local function RecapBox(lines,color,heading,focusIndex)
     tooltipRecap.scroll:SetVerticalScroll(math.min(total-height,scroll));tooltipRecap:Show()
 end
 local function Tooltip(button,lines,spellID,itemID,color,focusIndex)
-    if(share and share:IsShown())or(bell and bell:IsShown())then return end
+    if(share and share:IsShown())then return end
     if not GameTooltip then return end
     local previousOwner,previousNative=tooltipOwner,tooltipNative
     tooltipBuilding=true
@@ -346,7 +346,7 @@ local function StopMotion()
 end
 function UI:Hide()
     if closing then return end;closing=true
-    StopMotion();HideTooltip();if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end;if bell then bell:Hide()end;if actionShield then actionShield:Hide()end
+    StopMotion();HideTooltip();if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end;if actionShield then actionShield:Hide()end
     if frame then
         frame:Hide();frame.selected,frame.selectedItem=nil,nil;frame.healthPanel:SetScript("OnEnter",nil)
         for _,b in ipairs(damagePool)do b.group=nil;b:SetScript("OnEnter",nil);b:SetScript("OnClick",nil);b:SetScript("OnMouseWheel",nil)
@@ -364,7 +364,7 @@ local function RefreshReminderSwitch()
     Place(b.knob,enabled and"RIGHT"or"LEFT",b.track,enabled and"RIGHT"or"LEFT",enabled and-1 or 1,0)
     b.knob:SetVertexColor(enabled and 1 or .56,enabled and 1 or .55,enabled and 1 or .66,enabled and 1 or .85)
     if tooltipOwner==b and not tooltipNative and tooltipRecap and tooltipRecap:IsShown()then
-        RecapBox({"Consumable reminder",enabled and"On · Click to turn off."or"Off · Click to turn on."},nil,true);PositionTooltip()
+        RecapBox({"Consumable reminder","Healthstone and healing-potion alerts.",enabled and"On · Click to turn off."or"Off · Click to turn on."},nil,true);PositionTooltip()
     end
 end
 local function Ensure()
@@ -372,42 +372,38 @@ local function Ensure()
     frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,BASE_HEIGHT);Point(frame,"CENTER",UIParent,"CENTER",0,50)
     frame:SetFrameStrata("DIALOG");frame:SetClampedToScreen(true);frame:EnableMouse(true);Surface(frame,C.canvasDeep);T:ApplyRounded(frame,{.48,.34,.52,.65},8,"border","BORDER")
     frame.title=Label(frame,"Death Log",24,20,-18,142);RA:ApplyFont(frame.title,24,"BOLD",false)
-    frame.context=Label(frame,"",12,20,-50,466,C.textSoft);frame.context:SetHeight(14)
     frame.coverage=Label(frame,"Preview",10,174,-26,70,C.muted)
     frame.close=CreateFrame("Button",nil,frame);Size(frame.close,28,28);Point(frame.close,"TOPLEFT",frame,"TOPLEFT",832,-18)
     frame.close.label=Label(frame.close,"×",24,1,-1,26);frame.close:SetScript("OnClick",function()UI:Hide()end)
-    frame.bell=CreateFrame("Button",nil,frame);Size(frame.bell,20,26);Point(frame.bell,"TOPLEFT",frame,"TOPLEFT",496,-19)
-    frame.bell.label=Label(frame.bell,"!",18,0,0,20);RA:ApplyFont(frame.bell.label,18,"BOLD",false);Place(frame.bell.label,"CENTER",frame.bell,"CENTER",0,0);frame.bell:SetScript("OnClick",function()UI:OpenBell()end)
     frame.share=CreateFrame("Button",nil,frame);Size(frame.share,136,28);Point(frame.share,"TOPLEFT",frame,"TOPLEFT",674,-19)
     frame.share.icon=frame.share:CreateTexture(nil,"ARTWORK");Size(frame.share.icon,22,22);Point(frame.share.icon,"LEFT",frame.share,"LEFT",0,0)
     RA:RegisterVisualTexture(frame.share.icon,T.Assets.NavActions,T.Assets.White);frame.share.label=Label(frame.share,"Post to chat",12,28,-7,108)
     frame.share:SetScript("OnClick",function()UI:OpenShare()end)
-    frame.reminder=CreateFrame("Button",nil,frame);Size(frame.reminder,130,26);Point(frame.reminder,"TOPLEFT",frame,"TOPLEFT",520,-19)
-    frame.reminder.label=Font(frame.reminder,12);Place(frame.reminder.label,"LEFT",frame.reminder,"LEFT",0,0);Text(frame.reminder.label,"Reminder")
+    frame.reminder=CreateFrame("Button",nil,frame);Size(frame.reminder,72,28);Point(frame.reminder,"TOPLEFT",frame,"TOPLEFT",578,-18)
+    frame.reminder.icon=frame.reminder:CreateTexture(nil,"ARTWORK");Size(frame.reminder.icon,22,22);Point(frame.reminder.icon,"LEFT",frame.reminder,"LEFT",0,0)
+    RA:RegisterVisualTexture(frame.reminder.icon,"Interface\\Icons\\INV_Potion_51",T.Assets.White)
     frame.reminder.track=CreateFrame("Frame",nil,frame.reminder);Size(frame.reminder.track,40,20);Place(frame.reminder.track,"RIGHT",frame.reminder,"RIGHT",0,0);Surface(frame.reminder.track,C.input)
     frame.reminder.knob=frame.reminder.track:CreateTexture(nil,"OVERLAY");Size(frame.reminder.knob,18,18);RA:RegisterVisualTexture(frame.reminder.knob,T.Assets.SliderThumb,T.Assets.White)
-    frame.reminder:SetScript("OnClick",function()if not(share and share:IsShown())and not(bell and bell:IsShown())and ActionPage(current,IsExample())then RA.PersonalTools:SetOption("consumableReminder",not RA.PersonalTools:GetState().consumableReminder);RefreshReminderSwitch()end end)
-    frame.reminder:SetScript("OnEnter",function(self)Tooltip(self,{"Consumable reminder",RA.PersonalTools:GetState().consumableReminder and"On · Click to turn off."or"Off · Click to turn on."})end)
+    frame.reminder:SetScript("OnClick",function()if not(share and share:IsShown())and ActionPage(current,IsExample())then RA.PersonalTools:SetOption("consumableReminder",not RA.PersonalTools:GetState().consumableReminder);RefreshReminderSwitch()end end)
+    frame.reminder:SetScript("OnEnter",function(self)Tooltip(self,{"Consumable reminder","Healthstone and healing-potion alerts.",RA.PersonalTools:GetState().consumableReminder and"On · Click to turn off."or"Off · Click to turn on."})end)
     frame.reminder:SetScript("OnLeave",HideTooltip);RefreshReminderSwitch()
-    for _,b in ipairs({frame.bell,frame.share})do
-        if b.SetMotionScriptsWhileDisabled then b:SetMotionScriptsWhileDisabled(true)end
-        b:SetScript("OnEnter",function(self)Tooltip(self,{self==frame.bell and"Consumable reminder"or"Post to chat",self==frame.bell and"Turn the healing-item reminder on or off"or"Open this report in chat"})end)
-        b:SetScript("OnLeave",HideTooltip)
-    end
-    frame.info=CreateFrame("Button",nil,frame);Size(frame.info,16,20);Point(frame.info,"TOPLEFT",frame,"TOPLEFT",247,-23)
+    if frame.share.SetMotionScriptsWhileDisabled then frame.share:SetMotionScriptsWhileDisabled(true)end
+    frame.share:SetScript("OnEnter",function(self)Tooltip(self,{"Post to chat","Open this report in chat"})end)
+    frame.share:SetScript("OnLeave",HideTooltip)
+    frame.info=CreateFrame("Button",nil,frame);Size(frame.info,16,20);Point(frame.info,"TOPLEFT",frame,"TOPLEFT",218,-23)
     frame.info.label=Label(frame.info,"i",12,4,0,12,C.textSoft)
     frame.info:SetScript("OnEnter",function(self)
-        local lines={"Encounter",IsExample()and"Fictional sample"or(frame.context.textValue or"Personal recap")}
+        local lines={"Encounter",frame.contextText or"Personal recap"}
+        if IsExample()then lines[#lines+1]="Fictional sample"end
         if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
         Tooltip(self,lines)
     end);frame.info:SetScript("OnLeave",HideTooltip)
-    frame.health=Label(frame,"Health",12,20,-75,58,C.textSoft);frame.health:SetHeight(18);frame.health:SetJustifyV("MIDDLE")
-    frame.percent=Label(frame,"—",20,88,-72,58,pink);frame.percent:SetHeight(24);frame.percent:SetJustifyV("MIDDLE");frame.percent:SetJustifyH("RIGHT");RA:ApplyFont(frame.percent,20,"BOLD",false)
-    frame.healthPanel=CreateFrame("Button",nil,frame);Size(frame.healthPanel,HEALTH_WIDTH,18);Point(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",162,-75)
+    frame.percent=Label(frame,"—",20,20,-72,58,pink);frame.percent:SetHeight(24);frame.percent:SetJustifyV("MIDDLE");frame.percent:SetJustifyH("RIGHT");RA:ApplyFont(frame.percent,20,"BOLD",false)
+    frame.healthPanel=CreateFrame("Button",nil,frame);Size(frame.healthPanel,HEALTH_WIDTH,18);Point(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",94,-75)
     frame.healthTrack=frame.healthPanel:CreateTexture(nil,"BACKGROUND");frame.healthTrack:SetAllPoints(frame.healthPanel);frame.healthTrack:SetColorTexture(unpack(C.surfaceRaised))
     frame.healthBar=CreateFrame("StatusBar",nil,frame.healthPanel);Size(frame.healthBar,HEALTH_WIDTH,14);Point(frame.healthBar,"TOPLEFT",frame.healthPanel,"TOPLEFT",0,-2)
     frame.healthBar:SetStatusBarTexture(T.Assets.White);frame.healthBar:SetStatusBarColor(unpack(pink))
-    frame.hp=Label(frame,"",11,162,-100,142,C.muted)
+    frame.hp=Label(frame,"",11,94,-100,142,C.muted)
     frame.absorb=CreateFrame("Frame",nil,frame.healthPanel);frame.absorb:SetFrameLevel(frame.healthBar:GetFrameLevel()+2);frame.absorb:SetClipsChildren(true);frame.absorb:Hide();frame.hatches={}
     frame.absorbFill=frame.absorb:CreateTexture(nil,"BACKGROUND");frame.absorbFill:SetAllPoints(frame.absorb);frame.absorbFill:SetColorTexture(amber[1],amber[2],amber[3],.12)
     if type(frame.absorb.CreateLine)=="function"then
@@ -416,7 +412,7 @@ local function Ensure()
         frame.absorbNative=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbNative:SetAllPoints(frame.absorb);frame.absorbNative:SetAtlas("RaidFrame-Absorb-Overlay");frame.absorbNative:SetVertexColor(unpack(amber))
     end
     frame.absorbEdge=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbEdge:SetColorTexture(amber[1],amber[2],amber[3],1)
-    frame.absorbLabel=Label(frame,"",11,332,-100,154,amber);frame.absorbLabel:SetJustifyH("RIGHT");frame.absorbLabel:SetWordWrap(true);frame.absorbLabel:SetMaxLines(0)
+    frame.absorbLabel=Label(frame,"",11,264,-100,154,amber);frame.absorbLabel:SetJustifyH("RIGHT");frame.absorbLabel:SetWordWrap(true);frame.absorbLabel:SetMaxLines(0)
     frame.shelf=Label(frame,"Cooldowns",12,550,-75,28,C.textSoft);frame.shelf:SetHeight(18);frame.shelf:SetJustifyV("MIDDLE")
     frame.shelfAge=Label(frame,"",10,590,-106,266,C.muted)
     frame.rail=frame:CreateTexture(nil,"ARTWORK");frame.rail:SetColorTexture(.58,.53,.65,.70)
@@ -558,10 +554,10 @@ local function Representative(item)
 end
 local function Select(page,row,item,force)
     if page~=current or not row then return end
-    if not force and((share and share:IsShown())or(bell and bell:IsShown()))then return end
+    if not force and((share and share:IsShown()))then return end
     if item then row=Representative(item)end
     if not force and selected==row and frame.selectedItem==item then return end
-    selected=row;frame.selected=row;frame.selectedItem=item;Text(frame.health,"Health");Health(page,row,IsExample(),item);Shelf(page,IsExample(),row.nativeOffset)
+    selected=row;frame.selected=row;frame.selectedItem=item;Health(page,row,IsExample(),item);Shelf(page,IsExample(),row.nativeOffset)
     local focusX=item and item.iconX or X(row.nativeOffset)
     Place(frame.guide,"TOPLEFT",frame,"TOPLEFT",focusX,-130-(contentShift or 0));Size(frame.guide,1,GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));Guide(focusX,130+(contentShift or 0),GRAPH_BOTTOM+extraHeight);frame.guide:Show()
     for _,b in ipairs(damagePool)do if b.selectedBorder then b.selectedBorder:SetShown(b:IsShown()and b.group==item)end end
@@ -644,7 +640,7 @@ local function PrepareSupportMarkers(page,example)
         local b=frame.supportMarkers[i]or CreateFrame("Button",nil,frame);frame.supportMarkers[i]=b
         b.label=b.label or Font(b,13,"BOLD");b.label:SetJustifyH("CENTER");Place(b.label,"CENTER",b,"CENTER",0,0)
         b.color=entry.kind=="healing"and C.success or absorbBlue;b.label:SetTextColor(unpack(b.color))
-        Text(b.label,entry.kind=="healing"and"+"..Amount(entry.amount)or Amount(entry.amount).." absorbed")
+        Text(b.label,"+"..Amount(entry.amount))
         b.visualWidth=ReadMetric(b.label,"GetUnboundedStringWidth")or b.label:GetStringWidth()
         b.markerWidth=math.max(28,b.visualWidth+8);b.label:SetWidth(b.visualWidth)
         local x=X(entry.row.nativeOffset);local lane=1
@@ -676,10 +672,9 @@ function UI:Render()
     end end
     frame.fightSlotExtra=fightExtra
     frame.coverage:SetShown(example);frame.info:Show()
-    Text(frame.context,(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or""))
-    frame.context.textValue=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
-    RefreshReminderSwitch();frame.context:Show();Place(frame.info,"TOPLEFT",frame,"TOPLEFT",math.min(486,24+(ReadMetric(frame.context,"GetUnboundedStringWidth")or frame.context:GetStringWidth())),-48)
-    frame.share:SetEnabled(true);frame.share:SetAlpha(1);frame.bell:SetEnabled(true);frame.bell:SetAlpha(1)
+    frame.contextText=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
+    RefreshReminderSwitch();Place(frame.info,"TOPLEFT",frame,"TOPLEFT",example and 218 or 174,-23)
+    frame.share:SetEnabled(true);frame.share:SetAlpha(1)
     local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
     local tierEnd={-100,-100};local spanEnd={-math.huge,-math.huge};local secondTier=false
     for _,item in ipairs(model.items)do
@@ -731,7 +726,7 @@ function UI:Render()
         T:SetRoundedColor(b,item.fatal and C.danger or C.lineStrong,"base");b.selectedBorder:Hide()
         b.span=b.span or CreateFrame("Button",nil,frame);Size(b.span,math.max(1,last-first),12);Place(b.span,"CENTER",frame,"TOPLEFT",(first+last)/2,-spanY);b.scrubAvailable=item.count>1 and last>first;b.span:SetShown(b.scrubAvailable)
         local function ChooseMember(i,target)
-            if current~=page or example~=IsExample()or revision~=renderRevision or(share and share:IsShown())or(bell and bell:IsShown())then return end
+            if current~=page or example~=IsExample()or revision~=renderRevision or(share and share:IsShown())then return end
             memberChoices[groupKey]=item.rows[i].nativeIndex;b.member=i;Select(page,item.rows[i],item);SelectedTooltip(b,page,target)
         end
         b.amountTarget=b.amountTarget or CreateFrame("Button",nil,frame);b.amountWidth=math.max(46,math.min(84,b.amount:GetStringWidth()+8));b.damageY=y;b.spanY=spanY;Size(b.amountTarget,b.amountWidth,22);Place(b.amountTarget,"BOTTOM",b,"TOP",0,12);b.amountTarget:Show()
@@ -839,14 +834,18 @@ function UI:Render()
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision or example~=IsExample()then return end
             if entry.kind=="healing"then Tooltip(self,{row.name,"+"..Amount(entry.amount).." healing","Healer: "..row.healer},row.spellID,nil,C.success)
-            else Tooltip(self,{"Protective absorption",Amount(entry.amount).." absorbed","Shield source not recorded"},row.spellID,nil,absorbBlue)end
+            else
+                local amount=Raw(entry.amount);local whole,rest=amount:match("^(%d+)(.*)$")
+                if whole then amount=whole:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")..rest end
+                Tooltip(self,{"Shield absorb",amount.." damage absorbed by a shield."},nil,nil,absorbBlue)
+            end
         end);b:SetScript("OnLeave",HideTooltip)
     end
     DrawGraph(page,example)
     local choice=selected
     if not choice then for _,row in ipairs(model.rows)do if row.nativeIndex==(example and page.defaultSelection or 1)then choice=row end end end
     choice=choice or model.rows[1]
-    if choice then local item;for _,g in ipairs(model.items)do for _,row in ipairs(g.rows)do if row==choice then item=g end end end;Select(page,choice,item,true)else Text(frame.health,"Health");Health(page,{nativeOffset=0},example);Shelf(page,example,0)end
+    if choice then local item;for _,g in ipairs(model.items)do for _,row in ipairs(g.rows)do if row==choice then item=g end end end;Select(page,choice,item,true)else Health(page,{nativeOffset=0},example);Shelf(page,example,0)end
 end
 function UI:ShowLast()
     local page=R:GetPage();if not page then RA:Print("No log recorded this session");return false end
@@ -856,7 +855,7 @@ function UI:Preview()
     self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();return true
 end
 local function HideActionShieldIfUnused()
-    if actionShield and not(share and share:IsShown())and not(bell and bell:IsShown())then actionShield:Hide()end
+    if actionShield and not(share and share:IsShown())then actionShield:Hide()end
 end
 local function ShowActionShield()
     if not actionShield then
@@ -865,32 +864,11 @@ local function ShowActionShield()
         local shade=actionShield:CreateTexture(nil,"BACKGROUND");shade:SetAllPoints(actionShield);shade:SetColorTexture(0,0,0,.25)
         actionShield:SetScript("OnClick",function()
             if share then share.copy:ClearFocus();share.recipient:ClearFocus();share:Hide()end
-            if bell then bell:Hide()end
             actionShield:Hide()
         end)
         frame.actionShield=actionShield
     end
     actionShield:SetFrameLevel(frame:GetFrameLevel()+18);actionShield:Show()
-end
-function UI:OpenBell()
-    StopMotion();HideTooltip()
-    if not ActionPage(current,IsExample())then return end
-    if share then share:Hide()end
-    if not bell then
-        bell=CreateFrame("Frame",nil,frame);bell:SetFrameStrata("DIALOG");bell:SetFrameLevel(frame:GetFrameLevel()+20);bell:EnableMouse(true);Size(bell,350,110);Point(bell,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(bell,C.surface)
-        bell:SetScript("OnHide",HideActionShieldIfUnused)
-        bell.title=Label(bell,"",12,12,-12,326)
-        Label(bell,"Your threshold, sound and appearance stay saved.",10,12,-34,326,C.textSoft)
-        bell.action=Button(bell,"ENABLE",100,function()
-            if not bell:IsShown()or not ActionPage(bell.page,bell.preview)then return end
-            RA.PersonalTools:SetOption("consumableReminder",bell.desired);bell:Hide()
-        end);Point(bell.action,"BOTTOMLEFT",bell,"BOTTOMLEFT",12,12)
-        local cancel=Button(bell,"CANCEL",100,function()bell:Hide()end);Point(cancel,"BOTTOMRIGHT",bell,"BOTTOMRIGHT",-12,12)
-    end
-    bell.page,bell.preview=current,IsExample();bell.desired=not RA.PersonalTools:GetState().consumableReminder
-    Text(bell.title,bell.desired and"Turn the consumable reminder on?"or"Turn the consumable reminder off?")
-    Text(bell.action.label,bell.desired and"ENABLE"or"DISABLE")
-    bell:SetFrameLevel(frame:GetFrameLevel()+20);bell:Show();ShowActionShield()
 end
 local function ScrollShare(value,fromSlider)
     value=Metric(value);if not value then return end
@@ -965,7 +943,6 @@ function UI:OpenShare()
     StopMotion();HideTooltip()
     if not ActionPage(current,IsExample())then return end
     R:CancelShare("Report replaced")
-    if bell then bell:Hide()end
     if not share then
         share=CreateFrame("Frame",nil,frame);share:SetFrameStrata("DIALOG");share:SetFrameLevel(frame:GetFrameLevel()+20);share:EnableMouse(true);Size(share,600,396);Point(share,"CENTER",frame,"CENTER",0,0);Surface(share,{C.surface[1],C.surface[2],C.surface[3],1})
         share:SetScript("OnHide",function()R:CancelShare("Report closed");share.copy:ClearFocus();share.recipient:ClearFocus();HideActionShieldIfUnused()end)

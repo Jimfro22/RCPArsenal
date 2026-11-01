@@ -1,4 +1,4 @@
-# Death Log — alpha.34 complete reports and composition test build
+# Death Log — alpha.35 compact header and shield-label polish
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -8,9 +8,10 @@ debt are fictional. `/rcp recap` opens the one retained personal page this login
 
 The compact 880×428 base display has grouped damage below its native time rail,
 support above it and a shallow HP graph. A collision tier adds 100px; extra known
-shelf rows add 38px each. The visible encounter context, Health row and CDs use a
-shared alignment grid. Health has no timestamp suffix. Values align to the left
-of the 324px bar; healing debt aligns to its right. Seven CD icons share a row.
+shelf rows add 38px each. Encounter context stays in help and the complete report
+without a visible context subline. The health percentage, 324px bar, raw amount
+and healing debt move left together; the redundant Health label is removed.
+Their widths and the seven-CD row remain unchanged.
 
 Damage hover focuses the icon center. The top health value uses one stable group
 representative: fatal member if present, otherwise the member nearest the time
@@ -27,6 +28,12 @@ focus line. Real HP remains discrete. Preview uses consistent 2-unit step
 strokes, complete event-colored plateaus and subdued fill; defensive durations
 use stronger 4-unit strokes and end caps. The smaller tombstone sits clear of
 the actual known fatal HP point; unknown HP gets no invented graph endpoint.
+
+Blue shield absorption uses compact positive text such as **+20k**. Its Shield
+help says how much damage a shield absorbed, without identifying an unrecorded
+shield source. It does not add health or describe remaining shield capacity.
+Green healing and the amber **heal absorb remaining** annotation keep their
+separate meanings. The full report still records the exact absorbed amount.
 
 Native spell/item descriptions remain intact beside the bounded recap companion.
 Pooled rows clear old height before wrapping and measuring. One ordinary help
@@ -128,8 +135,12 @@ for review, never an automatic offset or native acceptance certificate.
 
 Actions and acceptance
 ----------------------
-Reminder `!` opens an explicit on/off action; the adjacent Reminder switch stays
-synchronized with the real Personal Tools setting and preserves child preferences.
+A fixed potion icon and the existing switch form one reminder click target.
+Click either part to toggle the real consumable-reminder master. Its hover
+explains Healthstone and healing-potion alerts and updates the on/off state
+immediately. The switch stays synchronized with external setting changes and
+preserves child preferences. The former exclamation and redundant dialog are
+removed. Encounter help remains next to the title/Preview row.
 Post to chat opens a centered 600×396 dialog with a read-only, scrollable snapshot
 of the exact outgoing plain-text messages. SELECT TEXT exposes the same immutable
 text for manual copying. Destination, recipient, message count and submission
@@ -168,7 +179,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.34; inspect Arcane preview
+Native owner test: pull main, restart WoW, verify alpha.35; inspect Arcane preview
 and stable group focus, tooltip-detail wheel and Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,

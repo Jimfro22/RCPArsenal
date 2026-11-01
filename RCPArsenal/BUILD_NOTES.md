@@ -1,3 +1,13 @@
+# 0.15.3-alpha.35 narrow Death Log polish
+
+The visible encounter subline and redundant Health label are removed. Context remains available in help and the complete report. The percentage, fixed-width bar, raw amount and healing-debt annotation move left together; the CD row, timeline, graph and popup dimensions remain fixed.
+
+Recorded shield absorption displays compact blue positive text such as +20k. Hover explains damage absorbed by a shield in one concise card, without borrowing the incoming damage spell tooltip or identifying an unrecorded shield source. Green healing, amber heal-absorb remaining and exact report amounts retain their separate meanings.
+
+A fixed potion icon and existing switch now form one compact reminder click target. Its hover explains the feature and follows the current saved on/off state. The redundant exclamation, label and unused dialog are removed; info help is anchored beside the title/Preview row.
+
+Full report submission, Missing provider-class chat, recorder/association/data/availability semantics and the actual synchronized healing-item reminder behavior remain intact. GitHub test candidate; native acceptance remains separate. No CurseForge, tag, release or install.
+
 # 0.15.3-alpha.34 complete Death Log reports and refined composition
 
 Post to chat reviews the full immutable report in a scrollable dialog. Each retained hit stays separate, with recorded absorption, Preview heals/activations and death. Explicit clicks queue Party/Raid/Whisper messages at one-second spacing; Say uses one click per line. Public restrictions are rechecked for every submission; cancellation/context changes stop unsent work. UTF-8 chunks preserve the complete report. Progress means submitted, not confirmed delivered. Real native and local clocks remain separate; no missing live healing, duration or readiness is invented.
