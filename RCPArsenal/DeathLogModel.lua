@@ -38,6 +38,17 @@ function Model:GroupAbsorbs(input,position,measure)
         end
     end
     table.sort(groups,function(a,b)return Sort(a.row,b.row)end)
+    -- Exact-time credits share one visual total, regardless of incoming spell
+    -- or source. Each distinct hit remains a member; no shield attribution or
+    -- internal ordering beyond the retained native index is inferred.
+    local exact={}
+    for _,group in ipairs(groups)do
+        local tail=exact[#exact]
+        if tail and tail.first==group.first then
+            tail.rows[#tail.rows+1]=group.row;tail.amount=tail.amount+group.amount
+        else exact[#exact+1]=group end
+    end
+    groups=exact
     for pass=1,self.LIMITS.rows do
         local ends={};local fits=true
         for _,group in ipairs(groups)do

@@ -92,7 +92,7 @@ check(popup.tombstone.atlas=='deathrecap-icon-tombstone','Death used fabricated 
 check(not button('DETAILS ›')and not button('Grouped')and not button('Individual'),'Unapproved controls appeared')
 local foundOld,foundStock,foundHold=false,false,false
 for _,b in ipairs(shelves())do tooltipLines={};tooltipSpell=nil;b:Fire('OnEnter');local help=table.concat(tooltipLines,' ')
- if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==.55 and help:find('Normal cooldown was inactive',1,true)and help:find('charge state was not established',1,true)and help:find('45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
+ if tooltipSpell==235450 then foundOld=true;check(b.icon.rgb[1]==.55 and (help:find('not recorded',1,true)or help:find('not confirmed',1,true))and not help:find('Available when checked',1,true)and help:find('Checked 45.0s',1,true),'Unknown charge availability became ready or erased the independent inactive fact/age')end
  if tooltipItem==5512 then foundStock=true;check(b.icon.rgb[1]==1 and help:find('Carried: 1',1,true)and help:find('Uses left: 1',1,true),'Old cache/fresh stock or generic unusability erased cooldown fact')end
  if tooltipSpell==342245 then foundHold=true;check(b.icon.rgb[1]==.4 and b.icon.alpha==1,'On hold state not precise static dim')end
 end
@@ -121,17 +121,17 @@ U:ShowLast();check(popup.ticks[6].text=='0s'and popup.death:IsShown()and popup.d
 fatal.nativeOffset=0;page.native.rows[5]=nil;U:ShowLast()
 -- Preview identity and complete synthetic selected-time display.
 local beforePage=page;local diagnostics=R:GetDiagnostics();local prefs={};for k,v in pairs(db.personalTools)do prefs[k]=v end
-U:OpenShare();local liveForm=button('SEND WHISPER').parent;local staleLiveSend=liveForm.send:GetScript('OnClick')
+U:OpenShare();local liveForm=popup.shareChooser;local staleLiveSend=liveForm.channels.WHISPER:GetScript('OnClick')
 local reads=pageReads;U:Preview();check(pageReads==reads,'Preview read retained real page')
 check(popup.coverage:IsShown()and popup.coverage.text=='Preview'and not popup.context and popup.contextText=='Arcane Mage · The Coiled Altar · Mythic','Hidden context or Preview label incorrect')
 check(popup.info.points[1][4]==218 and popup.info.points[1][5]==-23,'Preview info target became an orphaned second-line glyph')
 tooltipLines={};popup.info:Fire('OnEnter');local contextHelp=table.concat(tooltipLines,' ');check(contextHelp:find('Arcane Mage · The Coiled Altar · Mythic',1,true)and contextHelp:find('Fictional sample',1,true),'Hidden Preview context was lost from help');popup.info:Fire('OnLeave')
 check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.percent.text=='0%'and not popup.absorb:IsShown(),'Preview did not default to recorded death')
 check(popup.shelf.text=='CDs'and popup.shelfSource=='Preview death snapshot','Example shelf not tied to exact selected moment')
-check(not liveForm:IsShown(),'Preview inherited live report dialog');staleLiveSend()
+check(not liveForm:IsShown(),'Preview inherited live report dialog');staleLiveSend(liveForm.channels.WHISPER)
 for k,v in pairs(prefs)do check(db.personalTools[k]==v,'Preview changed preferences')end
 check(page==beforePage and R:GetDiagnostics().nativeReads==diagnostics.nativeReads,'Preview changed recorder')
-U:OpenShare();check(button('SEND WHISPER'),'Private Preview report action missing');button('CLOSE'):Fire('OnClick')
+U:OpenShare();check(popup.shareChooser:IsShown(),'Private Preview report action missing');popup.shareChooser.close:Fire('OnClick')
 popup.healTargets[1]:Fire('OnEnter');check(popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0 and popup.shelfSource=='Preview death snapshot','Healing hover changed damage focus')
 for _,obj in ipairs(objects)do if obj.parent==popup and obj.icon and obj.width==30 and obj:IsVisible()then obj:Fire('OnEnter');check(popup.selected.nativeIndex==1,'Defensive hover changed damage focus');break end end
 RA:FireCallback('ACCENT_THEME_CHANGED');check(popup.guide:IsShown(),'Support selection disappeared on redraw')
@@ -304,29 +304,74 @@ local function checkModal(form)
  end end
  for _,o in ipairs(objects)do if o~=form and under(o,form)and(o.kind=='Button'or o.kind=='EditBox')then check(o:GetFrameLevel()>form:GetFrameLevel(),'Modal control is below its background')end end
 end
-hover(8);U:OpenShare();local shareForm=button('SEND WHISPER').parent;checkModal(shareForm)
+-- Two-click chooser: opening freezes readable facts and sends nothing.
+local chatCalls,chatRestricted,chatPermission,homeGroup,homeRaid,instanceGroup={},false,true,false,false,false
+local targetPlayer,targetName,targetRealm,targetGUID=false,nil,nil,nil
+LE_PARTY_CATEGORY_HOME,LE_PARTY_CATEGORY_INSTANCE=1,2
+C_ChatInfo.InChatMessagingLockdown=function()return chatRestricted end
+C_SocialRestrictions={CanSendChat=function()return chatPermission end}
+C_ChatInfo.SendChatMessage=function(text,channel,_,target)chatCalls[#chatCalls+1]={text=text,channel=channel,target=target}end
+IsInGroup=function(category)return category==2 and instanceGroup or(category==1 and homeGroup)end
+IsInRaid=function(category)return category==1 and homeRaid end
+UnitIsPlayer=function(unit)return unit=='target'and targetPlayer end
+UnitFullName=function(unit)if unit=='target'then return targetName,targetRealm end;return 'Test','Realm'end
+UnitGUID=function(unit)return unit=='target'and targetGUID or'Player-1-AAAA'end
+local function setTarget(name,guid)
+ targetPlayer=name~=nil;targetName,targetRealm,targetGUID=name,name and'Realm'or nil,guid
+ event('PLAYER_TARGET_CHANGED')
+end
+local function choose(form,channel)
+ local action=form.channels[channel];action:Fire('OnMouseDown');action:Fire('OnMouseUp');action:Fire('OnClick')
+end
+hover(8);popup.share:Fire('OnClick');local shareForm=popup.shareChooser;checkModal(shareForm)
+check(#chatCalls==0,'Opening chooser submitted chat')
 check(not GameTooltip:IsShown()and not popup.tooltipRecap:IsShown(),'Opening share retained old tooltip')
-check(not shareForm.copy.template and not shareForm.recipient.template and shareForm.copy.textInsets[1]==10,'Native default editbox chrome/insets remained')
+check(not shareForm.copy.template and not shareForm.recipient and not shareForm.send and shareForm.copy.textInsets[1]==10,'Typed recipient/separate Send/default editbox chrome remained')
 local fullReport=shareForm.report
 check(#fullReport.entries==16 and fullReport.entries[16].kind=='death','Full Preview events/death missing')
 check(fullReport.text:find('Arcane Mage',1,true)and fullReport.text:find('The Coiled Altar',1,true)and fullReport.text:find('Mythic',1,true),'Hidden popup context disappeared from the full report')
 local expectedTimes={-4.8,-4.6,-4.4,-4.2,-3.6,-3.5,-3.15,-3,-2.8,-2.3,-1.8,-1.3,-1.1,-.9,0,0}
 for i,time in ipairs(expectedTimes)do check(fullReport.entries[i].time==time,'Preview report chronology changed')end
-local axeCount=0;for _,event in ipairs(fullReport.entries)do if event.line:find('Axegrinder',1,true)then axeCount=axeCount+1 end end
+local axeCount=0;for _,item in ipairs(fullReport.entries)do if item.line:find('Axegrinder',1,true)then axeCount=axeCount+1 end end
 check(axeCount==6 and fullReport.entries[15].line:find('45,000 damage; 19,000 overkill; fatal hit',1,true),'Report collapsed hits or confused inspected hit with fatal')
 check(fullReport.entries[5].line:find('20,000 absorbed',1,true)and fullReport.entries[4].line:find('9,000 healing',1,true),'Full report lost support facts')
-check(shareForm.width==600 and shareForm.height==396 and shareForm.reportScroll.clips and shareForm.scrollMaximum>0,'Full report lacks bounded scrolling viewport')
-check(not shareForm.copy:IsShown()and not shareForm.copy:HasFocus()and shareForm.channels.WHISPER.selected:IsShown(),'Readonly surface/default destination missing')
-check(not shareForm.send:IsEnabled()and shareForm.send.alpha==.45 and shareForm.status.text:find('recipient',1,true),'Blank Whisper looks ready to send')
-shareForm.recipient:SetText('Bad Name');shareForm.recipient:Fire('OnTextChanged',true);check(not shareForm.send:IsEnabled(),'Invalid Whisper recipient enabled send')
+check(shareForm.width==316 and not shareForm.expanded and not shareForm.reportScroll:IsShown()and not shareForm.scrollbar:IsShown(),'Default share is not a compact chooser')
+check(not shareForm.channels.WHISPER:IsEnabled()and not shareForm.channels.PARTY:IsEnabled()and not shareForm.channels.RAID:IsEnabled()and not shareForm.channels.INSTANCE_CHAT:IsShown(),'Unavailable destination looks ready')
+check(shareForm.channels.SAY:IsEnabled()and shareForm.channels.SAY.detail.text=='One line per click','SAY fallback is hidden or promises whole-report activation')
+check(shareForm.context.text:find(#shareForm.messages..' messages',1,true),'Accurate transport count missing')
+check(eventFrame.registered.PLAYER_TARGET_CHANGED,'Open chooser did not subscribe to target changes')
+setTarget('Friend','Player-1-ABC123')
+check(shareForm.channels.WHISPER:IsEnabled()and shareForm.channels.WHISPER.detail.text=='Friend-Realm','Current player target did not populate Whisper')
+shareForm.channels.WHISPER:Fire('OnEnter');check(shareForm.tip:IsShown()and shareForm.tip.text.text=='Friend-Realm','Full target hover missing')
+shareForm.channels.WHISPER:Fire('OnLeave');check(not shareForm.tip:IsShown(),'Target hover survived leave')
+local savedWhisper=shareForm.channels.WHISPER:GetScript('OnClick')
+setTarget('Other','Player-1-ABC124');setTarget('Friend','Player-1-ABC123');savedWhisper(shareForm.channels.WHISPER)
+check(#chatCalls==0 and shareForm.status.text:find('Target changed',1,true),'Old target callback sent after target changed away and back')
+local longName=string.rep('Long',16);setTarget(longName,'Player-1-ABC125')
+shareForm.channels.WHISPER:Fire('OnEnter');check(shareForm.tip.text.text==longName..'-Realm'and shareForm.tip.text.height>=shareForm.tip.text.naturalWrappedHeight,'Long target name was truncated in hover')
+shareForm.channels.WHISPER:Fire('OnLeave')
+local originalCompactHeight=shareForm.height;setTarget(nil);check(shareForm.height==originalCompactHeight,'Target availability resized chooser')
+homeGroup=true;homeRaid=true;instanceGroup=true;event('GROUP_ROSTER_UPDATE')
+check(shareForm.channels.PARTY:IsEnabled()and shareForm.channels.RAID:IsEnabled()and shareForm.channels.INSTANCE_CHAT:IsShown()and #chatCalls==0,'Group change failed explicit capabilities or auto-submitted')
+homeGroup=false;homeRaid=false;instanceGroup=false;event('GROUP_ROSTER_UPDATE')
+check(not shareForm.channels.PARTY:IsEnabled()and not shareForm.channels.INSTANCE_CHAT:IsShown(),'Group loss retained stale destinations')
+shareForm.copyButton:Fire('OnClick')
+check(shareForm.width==600 and shareForm.height==396 and shareForm.reportScroll.clips and shareForm.scrollMaximum>0 and shareForm.reportScroll:IsShown(),'Expanded full report lacks bounded scrolling viewport')
+check(not shareForm.copy:IsShown()and not shareForm.copy:HasFocus(),'Copy expansion stole focus before selection')
 shareForm.reportScroll:Fire('OnMouseWheel',-10000);check(shareForm.reportScroll:GetVerticalScroll()==shareForm.scrollMaximum,'Wheel cannot reach last report line')
 shareForm.scrollbar:SetValue(0);check(shareForm.scrollPosition==0,'Scrollbar cannot return to report start')
-button('SAY'):Fire('OnClick');check(shareForm.reportScroll.height==212 and not shareForm.recipient:IsShown()and shareForm.channels.SAY.selected:IsShown()and shareForm.send:IsEnabled()and shareForm.send.alpha==1,'Destination selection/reclaimed space/primary state missing')
-button('SELECT TEXT'):Fire('OnClick');check(shareForm.copy:IsShown()and shareForm.copy:GetText()==fullReport.text,'Selectable report differs from immutable preview')
+shareForm.copyButton:Fire('OnClick');check(shareForm.copy:IsShown()and shareForm.copy:GetText()==fullReport.text,'Selectable plain report differs from immutable facts')
 shareForm.copy:SetText('Changed report');shareForm.copy:Fire('OnTextChanged',true);check(shareForm.copy:GetText()==fullReport.text and shareForm.report==fullReport,'Copy field altered frozen report')
+shareForm.back:Fire('OnClick');check(shareForm.width==316 and not shareForm.reportScroll:IsShown()and not shareForm.copy:HasFocus(),'Returning to destinations retained expanded copy input')
 local heldSelection=popup.selected;popup.healTargets[1]:Fire('OnEnter');hover(2);check(popup.selected==heldSelection and not popup.tooltipRecap:IsShown(),'Underlying chart reacted through modal')
-popup.actionShield:Fire('OnClick');check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Outside click retained modal/barrier')
-check(not popup.actionShield:IsShown(),'Closed report retained input barrier')
+popup.actionShield:Fire('OnClick');check(not shareForm:IsShown()and not popup.actionShield:IsShown()and not eventFrame.registered.PLAYER_TARGET_CHANGED,'Outside click retained modal/barrier/target subscription')
+-- A transport failure cannot hide the independent full plain copy.
+local buildMessages=R.BuildShareMessages;R.BuildShareMessages=function()return nil,'Report too large; select text to copy it'end
+U:OpenShare();check(shareForm:IsShown()and shareForm.messageError and not shareForm.channels.SAY:IsEnabled(),'Chunk failure hid report or enabled transport')
+shareForm.copyButton:Fire('OnClick');shareForm.copyButton:Fire('OnClick')
+check(shareForm.copy:HasFocus()and shareForm.copy:GetText()==shareForm.report.text and shareForm.status.text:find('too large',1,true),'Chunk failure lost plain copy or reason')
+shareForm.copy:Fire('OnEscapePressed');R.BuildShareMessages=buildMessages
+check(not shareForm:IsShown()and not popup.actionShield:IsShown(),'Copy Escape retained modal')
 U:Preview();hover(8);check(popup.absorbLabel.text=='80k heal absorb remaining'and popup.absorbLabel:GetUnboundedStringWidth()<=popup.absorbLabel.width and popup.hp.text=='128000 / 400000','Debt noun/state or HP value lost')
 local coralRuns,greenRuns=0,0
 for _,o in ipairs(objects)do if o.parent==popup and o.kind=='Texture'and o:IsShown()and o.color and o.drawLayer=='ARTWORK'and o.height==2 and o.width>16 then
@@ -394,7 +439,7 @@ for _,b in ipairs(hits())do
  for i=1,#b.group.rows do b:Fire('OnMouseWheel',-1);seen[b.group.rows[b.member].nativeIndex]=true end
 end
 for i=1,64 do check(seen[i],'Dense group lost constituent '..i)end
-U:OpenShare();checkModal(button('SEND WHISPER').parent);button('CLOSE'):Fire('OnClick')
+U:OpenShare();checkModal(popup.shareChooser);popup.shareChooser.close:Fire('OnClick')
 -- Three overlapping positive spans keep their true bracket intervals while
 -- ambiguous mouse frames are removed. Their distinct glyph/amount wheel paths
 -- still expose every constituent.
@@ -418,20 +463,23 @@ local savedSpells=page.lastAlive.spells;page.lastAlive.spells={}
 for i=1,12 do page.lastAlive.spells[i]={spellID=500+i,name='Shelf '..i,observedAt=99,cooldown='inactive',category='minor'}end
 U:ShowLast();hover(2);check(popup.guide.points[1][5]< -130 and popup.guide.points[1][5]-popup.guide.height==popup.graphBase.points[1][5],'Wrapped shelf left guide crossing its icons')
 page.lastAlive.spells=savedSpells
-U:ShowLast();U:OpenShare();local open=button('SEND WHISPER');check(open,'Live share absent')
-local chatCalls={};C_ChatInfo.InChatMessagingLockdown=function()return false end;C_SocialRestrictions={CanSendChat=function()return true end}
-C_ChatInfo.SendChatMessage=function(text,channel,_,target)chatCalls[#chatCalls+1]={text=text,channel=channel,target=target}end
-U:Preview();open:Fire('OnClick');check(#chatCalls==0,'Stale send callback acted in Preview')
-U:OpenShare();local previewForm=open.parent;local previewPage=previewForm.page
+U:ShowLast();U:OpenShare();local liveBeforePreview=popup.shareChooser
+local staleDestination=liveBeforePreview.channels.SAY:GetScript('OnClick')
+U:Preview();staleDestination(liveBeforePreview.channels.SAY);check(#chatCalls==0,'Stale destination callback acted in Preview')
+popup.share:Fire('OnClick');local previewForm=popup.shareChooser;local previewPage=previewForm.page
 check(previewForm.copy:GetText():find('fictional sample',1,true),'Preview copy report lost provenance')
 check(not R:BuildShareText(previewPage),'Unmarked sample accepted as recorded recap')
-button('SAY'):Fire('OnClick');check(#chatCalls==0,'Selecting channel submitted chat')
-local beforeChatTimers=#timers;open:Fire('OnClick')
-check(#chatCalls==1 and chatCalls[1].channel=='SAY'and chatCalls[1].text:find('RCP Preview — fictional sample',1,true)and #timers==beforeChatTimers,'Preview SAY did not use explicit one-line click')
-check(button('SEND NEXT LINE')and button('CANCEL')and not previewForm.channels.WHISPER:IsEnabled(),'Posting state/control locks absent')
-open:Fire('OnClick');check(#chatCalls==2 and chatCalls[2].text==previewForm.messages[2],'Manual SAY did not preserve second line')
-button('CANCEL'):Fire('OnClick');check(previewForm:IsShown()and previewForm.jobStatus=='stopped'and previewForm.status.text:find('Stopped 2 / ',1,true),'Cancellation hid partial progress')
-open:Fire('OnClick');check(#chatCalls==2,'Stopped report restarted')
+local beforeChatTimers=#timers;choose(previewForm,'SAY')
+check(#chatCalls==1 and chatCalls[1].channel=='SAY'and chatCalls[1].text:find('RCP Preview — fictional sample',1,true)and #timers==beforeChatTimers,'Destination click did not synchronously submit first SAY line')
+check(previewForm.nextLine:IsShown()and previewForm.close.label.text=='CANCEL'and not previewForm.channels.WHISPER:IsEnabled(),'Posting state/control locks absent')
+check(not eventFrame.registered.PLAYER_TARGET_CHANGED,'Submission retained live target subscription')
+local lockedTarget=previewForm.target;setTarget('QueuedTarget','Player-1-AB00CD');check(previewForm.target==lockedTarget,'Posting chooser re-read target')
+setTarget(nil)
+local firstNext=previewForm.nextLine:GetScript('OnClick')
+previewForm.nextLine:Fire('OnClick');check(#chatCalls==2 and chatCalls[2].text==previewForm.messages[2],'Manual SAY did not preserve second line')
+previewForm.close:Fire('OnClick');check(previewForm:IsShown()and previewForm.jobStatus=='stopped'and previewForm.status.text:find('2 / ',1,true)and previewForm.status.text:find('submitted',1,true),'Cancellation hid partial submission progress')
+previewForm.nextLine:Fire('OnClick');choose(previewForm,'SAY');check(#chatCalls==2,'Stopped report restarted')
+previewForm.close:Fire('OnClick');popup.share:Fire('OnClick');choose(previewForm,'SAY');check(#chatCalls==2 and previewForm.jobStatus=='stopped','Close/reopen duplicated partially submitted snapshot')
 local modalReminder=db.personalTools.consumableReminder;popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder==modalReminder,'Reminder toggled through the report modal')
 button('CLOSE'):Fire('OnClick');popup.reminder:Fire('OnClick');check(db.personalTools.consumableReminder,'Preview did not enable actual reminder')
 for k,v in pairs(prefs)do if k~='consumableReminder'then check(db.personalTools[k]==v,'Preview toggle changed child preferences')end end
@@ -446,13 +494,39 @@ db.deathRecap.autoOpen=true;RA:FireCallback('DEATH_RECAP_CHANGED','death');check
 popup:Hide();check(not popup.selected,'Native hide did not clear private selected context');RA:FireCallback('DEATH_RECAP_CHANGED','native');check(not popup:IsShown(),'Late data reopened closed popup')
 U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','life');check(not popup:IsShown()and page==beforePage,'Life event discarded history or kept popup')
 db.deathRecap.autoOpen=false;U:ShowLast();RA:FireCallback('DEATH_RECAP_CHANGED','death');check(not popup:IsShown(),'AutoopenOFF retained popup')
-U:ShowLast();U:OpenShare();local liveForm=open.parent;liveForm.recipient:SetText('');open:Fire('OnClick');check(#chatCalls==sampleCalls,'Blank recipient accepted')
-liveForm.recipient:SetText('Friend-Realm');liveForm.recipient:Fire('OnTextChanged',true);check(open:IsEnabled(),'Valid whisper recipient did not enable send');open:Fire('OnClick')
-check(#chatCalls==sampleCalls+1 and chatCalls[#chatCalls].target=='Friend-Realm'and liveForm.jobStatus=='posting','Explicit whisper target wrong')
-local queued=timers[#timers];popup.actionShield:Fire('OnClick');queued.callback()
-check(#chatCalls==sampleCalls+1 and queued.cancelled and not liveForm:IsShown(),'Backdrop close retained queued work')
-C_ChatInfo.InChatMessagingLockdown=function()return true end
-U:OpenShare();open:Fire('OnClick');check(#chatCalls==sampleCalls+1,'Chat lockdown bypassed')
+U:ShowLast();popup.share:Fire('OnClick');local liveForm=popup.shareChooser
+choose(liveForm,'WHISPER');check(#chatCalls==sampleCalls,'No-target Whisper accepted')
+setTarget('Friend','Player-1-ABC123');local whisper=liveForm.channels.WHISPER
+check(whisper:IsEnabled()and whisper.detail.text=='Friend-Realm','Current target did not enable Whisper')
+whisper:Fire('OnMouseDown');setTarget('Other','Player-1-DEF456');whisper:Fire('OnMouseUp');whisper:Fire('OnClick')
+check(#chatCalls==sampleCalls and liveForm.status.text:find('Target changed',1,true),'Target change during press submitted to refreshed recipient')
+-- Native state can change before its notification arrives; click revalidation
+-- must reject that too, then require a new deliberate click.
+whisper:Fire('OnMouseDown');targetName='Third';targetGUID='Player-1-123ABC';whisper:Fire('OnClick')
+check(#chatCalls==sampleCalls and whisper.detail.text=='Third-Realm','Unnotified target switch bypassed click revalidation')
+choose(liveForm,'WHISPER')
+check(#chatCalls==sampleCalls+1 and chatCalls[#chatCalls].target=='Third-Realm'and liveForm.jobStatus=='posting','Second click Whisper target wrong')
+choose(liveForm,'WHISPER');check(#chatCalls==sampleCalls+1,'Double destination activation duplicated first line')
+local queued=timers[#timers];setTarget('NewTarget','Player-1-654ABC');queued.callback()
+check(#chatCalls==sampleCalls+2 and chatCalls[#chatCalls].target=='Third-Realm','Target change rerouted active queue')
+local nextQueued=timers[#timers];popup.actionShield:Fire('OnClick');nextQueued.callback()
+check(#chatCalls==sampleCalls+2 and nextQueued.cancelled and not liveForm:IsShown()and liveForm.jobStatus=='stopped','Backdrop close retained queued work or lost stop state')
+popup.share:Fire('OnClick');choose(liveForm,'WHISPER');check(#chatCalls==sampleCalls+2,'Reopen resent partial live report')
+-- A fresh report blocks lockdown, preserves copy and does not auto-resume.
+U:Preview();chatRestricted=true;popup.share:Fire('OnClick');choose(liveForm,'SAY')
+check(#chatCalls==sampleCalls+2 and not liveForm.channels.SAY:IsEnabled(),'Chat lockdown bypassed')
+chatRestricted=false;check(#chatCalls==sampleCalls+2,'Eligibility change auto-submitted')
+liveForm.close:Fire('OnClick');popup.share:Fire('OnClick')
+-- Explicit instance routing is exposed only with the matching capability.
+instanceGroup=true;homeGroup=false;homeRaid=false;liveForm.close:Fire('OnClick');popup.share:Fire('OnClick')
+check(liveForm.channels.INSTANCE_CHAT:IsShown()and liveForm.channels.INSTANCE_CHAT:IsEnabled()and not liveForm.channels.PARTY:IsEnabled(),'Instance group silently became Party or lost explicit action')
+choose(liveForm,'INSTANCE_CHAT');check(chatCalls[#chatCalls].channel=='INSTANCE_CHAT','Explicit instance destination redirected')
+local instanceQueued=timers[#timers];U:Hide();instanceQueued.callback();check(instanceQueued.cancelled and not liveForm:IsShown(),'Main close did not cancel queued report')
+-- A ready action from an older open cannot submit a newly opened report.
+U:Preview();popup.share:Fire('OnClick');local oldReady=liveForm.channels.SAY:GetScript('OnClick');liveForm.close:Fire('OnClick');popup.share:Fire('OnClick')
+local beforeStale=#chatCalls;oldReady(liveForm.channels.SAY);check(#chatCalls==beforeStale,'Old chooser generation submitted after reopen')
+choose(liveForm,'SAY');firstNext();check(#chatCalls==beforeStale+1,'Old SAY continuation acted on new report')
+U:Hide()
 check(sent==0 and talentReads==0 and inspectCalls==0,'UI sent/inspected raid')
 cleanErrors();nativePrint('PASS: '..checks..' actual Death Log selection/group/shelf/preview/Journal/lifecycle assertions (offline; native acceptance pending)')
 ]=]

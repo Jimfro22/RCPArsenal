@@ -236,7 +236,13 @@ local function Settings()
     InstallHooks(); Entry:Refresh()
 end
 for _, event in ipairs({"PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_LEAVING_WORLD", "PLAYER_ENTERING_WORLD", "PLAYER_LOGOUT"}) do
-    subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event, Clear)
+    subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event, function()
+        if event == "PLAYER_LEAVING_WORLD" or event == "PLAYER_LOGOUT" then
+            local debug = RA.DeathRecapDebug
+            if debug and type(debug.StopCooldownCapture) == "function" then pcall(debug.StopCooldownCapture, debug, "world-transition") end
+        end
+        Clear()
+    end)
 end
 for _, event in ipairs({"DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED"}) do
     subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event, function() Entry:Refresh() end)

@@ -184,7 +184,11 @@ local setPoint=b.SetPoint;b.SetPoint=function()error('anchor denied')end;E:Refre
 ShowHost(host);dead=secret;E:Refresh();Hidden('Unknown dead state advertised entry')
 dead=true;ghost=secret;E:Refresh();Hidden('Unknown ghost state advertised entry')
 ghost=false;ShowHost(host);local activeClick=b.scripts.OnClick;local beforeLogout=opens
+local diagnosticStops=0;RA.DeathRecapDebug={StopCooldownCapture=function(_,reason)diagnosticStops=diagnosticStops+1;check(reason=='world-transition','Entry sent wrong diagnostic stop reason')end}
 event('PLAYER_LOGOUT');Hidden('Logout retained entry');activeClick();check(opens==beforeLogout,'Old click survived context teardown')
+check(diagnosticStops==1,'Existing logout observer did not stop diagnostic')
+Death(10);ShowHost(host);RA.DeathRecapDebug.StopCooldownCapture=function()diagnosticStops=diagnosticStops+1;error('Diagnostic failure')end
+event('PLAYER_LEAVING_WORLD');Hidden('Diagnostic error prevented entry cleanup');check(diagnosticStops==2,'Existing world-exit observer did not stop diagnostic')
 check(nativeWrites==0,'Companion changed native frames')
 check(ownedSchedules==0,'Entry created a timer or ticker')
 for _,obj in ipairs(objects)do if obj==b or obj.parent==b then check(not obj.scripts.OnUpdate,'Owned per-frame script installed')end end

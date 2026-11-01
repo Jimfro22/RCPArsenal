@@ -44,6 +44,9 @@ function RA.Theme.SetPoint()end
 function RA.Theme:ApplyRounded()end
 function R:OpenBlizzardRecap()calls.open=calls.open+1;return true,'Requested Blizzard recap ID 17'end
 function R:BuildDebugText(reread)calls.build=calls.build+1;if reread then calls.reread=calls.reread+1 end;return 'raw index 1\nnumber=100.00000000000001'end
+function RA.DeathRecapDebug:StartCooldownCapture()calls.start=(calls.start or 0)+1;return true,'Armed capture'end
+function RA.DeathRecapDebug:StopCooldownCapture(reason)calls.stop=(calls.stop or 0)+1;check(reason=='explicit-stop','Wrong stop reason')end
+function RA.DeathRecapDebug:BuildCooldownCaptureText()calls.show=(calls.show or 0)+1;return 'bounded cooldown capture'end
 assert(loadfile('RCPArsenal/DeathRecapDebugUI.lua'))('RCPArsenal',RA)
 assert(loadfile('RCPArsenal/Commands.lua'))('RCPArsenal',RA)
 check(created==0,'Loading debug UI created frames')
@@ -66,7 +69,12 @@ dialog.select:Fire('OnClick');dialog.close:Fire('OnClick');check(not dialog.show
 local slash=SlashCmdList.RCPARSENAL
 slash('recapdebug');check(calls.build==1 and calls.reread==0 and dialog.payload=='raw index 1\nnumber=100.00000000000001','Plain slash reread or routed incorrectly')
 slash('recapdebug reread');check(calls.build==2 and calls.reread==1,'Explicit reread route failed')
-slash('recapdebug 17');check(calls.build==2 and messages[#messages]=='Usage: /rcp recapdebug [reread]','Unexpected debug arg executed')
+local priorPayload=dialog.payload
+slash('recapdebug cooldowns start');check(calls.start==1 and dialog.payload==priorPayload and messages[#messages]=='Armed capture','Start opened a copy or failed to arm')
+slash('recapdebug cooldowns');slash('recapdebug cooldowns show');check(calls.show==2 and calls.start==1 and dialog.payload=='bounded cooldown capture','Show rearmed or failed to open immutable copy')
+slash('recapdebug cooldowns stop');check(calls.stop==1 and calls.show==3,'Stop did not finalize and show')
+slash('recapdebug capability');check(calls.start==1 and calls.build==2,'Removed capability command still queried')
+slash('recapdebug 17');check(calls.build==2 and messages[#messages]=='Usage: /rcp recapdebug [reread] or cooldowns [start||stop||show]','Unexpected debug arg executed')
 slash('recapblizzard 17');check(calls.open==0,'Slash supplied ID allowed')
 slash('recapblizzard');check(calls.open==1 and messages[#messages]=='Requested Blizzard recap ID 17','Native request route failed')
 R.BuildDebugText=function()return nil,'No captured page'end
