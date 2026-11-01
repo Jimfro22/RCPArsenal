@@ -113,7 +113,7 @@ end
 -- A report is a snapshot of retained facts, not an aggregation of rendered
 -- groups. Interleaved groups and equal-time hits keep every original row.
 function R:BuildShareReport(page,preview)
-    if type(page)~="table"or(preview~=true and page~=self:GetPage())then return nil,"No recorded personal recap"end
+    if type(page)~="table"or(preview~=true and not self:IsRetainedPage(page))then return nil,"No recorded personal recap"end
     preview=preview==true
     local report={preview=preview,lines={},entries={},sections={}}
     local tokens={lines={},links={}};reportTokens[report]=tokens
@@ -385,7 +385,7 @@ RA:RegisterCallback("DEATH_RECAP_CHANGED",function(kind)
     if kind=="death"or kind=="life"or(kind=="settings"and not R:GetState().enabled)then R:CancelShare("Recap context changed")end
 end)
 function R:GetJournalMapping(page,row)
-    if type(page)~="table"or type(row)~="table"or page~=self:GetPage()or not page.encounter or not row.spellID then return nil end
+    if type(page)~="table"or type(row)~="table"or not self:IsRetainedPage(page)or not page.encounter or not row.spellID then return nil end
     for _,map in ipairs((RA.DeathRecapCatalog or {}).journal or {})do
         if map.verified==true and map.encounterID==page.encounter.encounterID and map.difficulty==page.encounter.difficulty
             and map.spellID==row.spellID then return map end

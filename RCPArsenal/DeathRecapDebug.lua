@@ -62,9 +62,10 @@ local NATIVE={"nativeIndex","event","timestamp","nativeOffset","rawSpellID","spe
 local SOURCE={"sourceName"}
 local STATUS={"hp","source","absorbed","overkill"}
 local CLOCK={"localClock","localSessionStartedAt","localDeathNoticeAt","nativeReadLocalBefore","nativeReadLocalAfter","nativeFirstTimestamp","nativeMinimumTimestamp","nativeMaximumTimestamp","nativeFatalTimestamp","nativeRowCount","nativeTimestampStatus"}
-local CHECK={"spellID","baseSpellID","role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus","cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","valid","eventSequence","invalidationGeneration","invalidatedAt","invalidatedBy"}
+local CHECK={"spellID","baseSpellID","role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus","cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","valid","eventSequence","invalidationGeneration","invalidatedAt","invalidatedBy","ownCooldownQuery","ownCooldownAt","ownCooldownSource","ownCooldownActive","ownCooldownZero","ownCooldownActiveStatus","ownCooldownZeroStatus","ownCooldownState"}
 local EVENT={"event","observedAt","eventSequence"}
-local SAMPLE={"observedAt","source","coverageEndedAt","coverageEndReason"}
+local SAMPLE={"observedAt","source","coverageEndedAt","coverageEndReason","playerGUID","playerName","playerRealm","class","specID","frozenAtCombatEntry"}
+local ITEM={"kind","itemID","observedAt","carriedAt","physicalCount","remainingUses","countAt","usesAt","cooldown","cooldownAt","source","countStatus","usesStatus","pendingAt"}
 local USE={"spellID","role","defensiveTalentSpellID","observedCount","firstSuccessfulUseAt","lastSuccessfulUseAt","source"}
 local CAST={"capturedIndex","spellID","name","role","defensiveTalentSpellID","source","observedAt","localDeathRelativeAge"}
 local COVERAGE={"startedAt","combatEntryObserved","reason","endedAt","rejectedReceipts","lateReceipts"}
@@ -117,7 +118,9 @@ local function Casts(input,deathAt)
     return out
 end
 local function Sample(input)
-    local sample=Table(input);local out={metadata=Fields(input,SAMPLE),spells={}}
+    local sample=Table(input);local out={metadata=Fields(input,SAMPLE),spells={},supplies={}}
+    local supplies=sample and Table(sample.supplies)
+    if supplies then for i=1,math.min(#supplies,32)do out.supplies[i]=Fields(supplies[i],ITEM)end end
     local spells=sample and Table(sample.spells)
     if spells then for i=1,math.min(#spells,D.LIMITS.spells)do
         local source=Table(spells[i]);local row=Fields(spells[i],CHECK)
@@ -133,8 +136,9 @@ local function Sample(input)
     return out
 end
 local function Accepted()
-    local page=Table(R:GetPage());local native=page and Table(page.native)
+    local page=Table(R:GetSelectedPage());local native=page and Table(page.native)
     local id=native and ID(native.recapID)
+    if page and page.restored then return nil,nil,nil,"Saved death has no current-login native recap identity"end
     if not id then return nil,nil,nil,"No accepted personal native recap ID recorded this session"end
     return page,native,id
 end
@@ -148,10 +152,10 @@ function R:OpenBlizzardRecap()
     return true,"Requested Blizzard recap ID "..string.format("%.0f",id)
 end
 function D:GetFrozenSnapshot()
-    local page=Table(R:GetPage())
+    local page=Table(R:GetSelectedPage())
     if not page then return nil,"No personal death recorded this session"end
     local catalog=Table(RA.DeathRecapCatalog)
-    local snapshot={header=Fields(page,HEADER),native=Packet(page.native),lastAlive=Sample(page.lastAlive),deathNotice=Sample(page.deathObservation),
+    local snapshot={header=Fields(page,HEADER),native=Packet(page.native),lastAlive=Sample(page.lastAlive),deathNotice=Sample(page.deathObservation),precombat=Sample(page.precombatBaseline),
         coverage=Fields(page.useCoverage,COVERAGE),directEvents={},uses={},casts=Casts(page.casts,page.diedAt),
         loaded=Fields({addonVersion=RA.VERSION,addonBuild=RA.BUILD,catalogBuild=catalog and catalog.build,catalogRevision=catalog and catalog.revision},LOADED)}
     local contexts=Table(page.directSpellEvents)
@@ -166,6 +170,9 @@ function D:GetFrozenSnapshot()
             snapshot.uses[#snapshot.uses+1]=row
         end
     end end
+    for _,use in ipairs(R:GetRecordedConsumableUses(page))do
+        snapshot.uses[#snapshot.uses+1]=Fields(use,USE)
+    end
     return snapshot,nil,page
 end
 local function Writer()
@@ -177,6 +184,64 @@ local function Writer()
         lines[#lines+1]=line;bytes=bytes+#line+1
     end
     return Add,function()return table.concat(lines,"\n")end
+end
+-- Plain evidence readout for testing the recorder independently of the graph.
+-- Uses, availability checks and death identity remain distinct. No live spell,
+-- bag, charge or clock query is made while viewing this report.
+function R:BuildCoreFactsText()
+    local page=Table(self:GetSelectedPage())
+    if not page then return nil,"No recorded personal death"end
+    local audit=self:GetAvailabilityAudit();if not audit then return nil,"No recorded cooldown checks"end
+    local Add,Finish=Writer()
+    local died=Scalar(page.diedAt)
+    local function Text(value,fallback)
+        local value=Scalar(value)
+        return type(value)=='string'and value or fallback
+    end
+    local function Age(value)
+        local time=Scalar(value)
+        if type(died)=='number'and type(time)=='number'and died>=time then return string.format('%.1fs before death',died-time)end
+        return 'time not recorded'
+    end
+    local function Use(row)
+        local count=row and Scalar(row.observedCount)
+        if type(count)~='number'or count<1 then return 'No use recorded'end
+        return 'Used '..string.format('%.0f',count)..(count==1 and' time' or' times')..'; last '..Age(row.lastSuccessfulUseAt)
+    end
+    local function State(row,ended)
+        if not row then return 'No check recorded'end
+        local state=self:ClassifyRecordedCheck(row,ended)
+        local text=state==true and'Available'or state==false and'Unavailable'or'Not confirmed'
+        if type(row.currentCharges)=='number'and type(row.maxCharges)=='number'then
+            text=text..string.format(' (%d/%d charges)',row.currentCharges,row.maxCharges)
+        elseif row.chargeCountStatus=='restricted'then text=text..' (charge count restricted by Blizzard)'end
+        return text
+    end
+    Add('RCP Death Log - recorded facts')
+    Add(Text(page.playerName,'Player')..' - death #'..string.format('%.0f',page.id))
+    Add('Uses and availability are separate facts. These checks cannot prove a defensive would have prevented death.')
+    Add('')
+    Add('DEFENSIVES')
+    for _,spell in ipairs(audit.spells)do if spell.role~='utility'then
+        Add(Text(spell.name,'Defensive')..': '..Use(spell.use))
+        local alive=spell.lastAlive
+        Add('  Before death: '..State(alive,alive and alive.coverageEndedAt)..'; '..Age(alive and self:GetRecordedCheckTime(alive)))
+        Add('  At death notice: '..State(spell.deathNotice))
+    end end
+    Add('')
+    Add('CONSUMABLES')
+    local names=(RA.DeathRecapCatalog or{}).itemUseNames or{}
+    for _,use in ipairs(audit.consumableUses or{})do Add(Text(names[use.spellID],'Consumable')..': '..Use(use))end
+    if #(audit.consumableUses or{})==0 then Add('No consumable use recorded')end
+    for _,family in ipairs(self:GetSupplyFamilies(page))do
+        Add(family.name..': '..(family.familyState==true and'Available'or family.familyState==false and'Unavailable'or'Not confirmed')..'; '..Age(family.observedAt))
+    end
+    Add('')
+    local native=Table(page.native);local rows=native and Table(native.rows)
+    Add('DAMAGE: '..(rows and #rows..' retained records' or'No native recap attached'))
+    Add('Coverage: '..(page.useCoverage and page.useCoverage.combatEntryObserved==true and'combat entry observed'or'incomplete combat entry'))
+    if page.restored then Add('Saved death; this report does not query your current character.')end
+    return Finish()
 end
 local function WritePacket(Add,label,packet)
     Add(label.." "..FieldText(packet.metadata,{"recapID","recapMaxHealth","recapMaxHealthStatus","truncated"}))
@@ -201,6 +266,7 @@ local function WriteContext(Add,label,event)
 end
 local function WriteSample(Add,label,sample)
     Add(label.." "..FieldText(sample.metadata,SAMPLE))
+    for _,item in ipairs(sample.supplies)do Add("  item "..FieldText(item,ITEM,true))end
     for i,row in ipairs(sample.spells)do
         Add("  check="..i.." "..FieldText(row,CHECK,true))
         if row.hasDirect then Add("    directCooldown "..FieldText(row.directCooldown,CHECK,true))end
@@ -261,6 +327,8 @@ function R:BuildDebugText(reread)
         if comparison then WritePacket(Add,"EXPLICIT SAME-ID REREAD",comparison);WriteDiff(Add,snapshot.native,comparison)
         else local value,status=Scalar(readReason);Add("EXPLICIT SAME-ID REREAD unavailable="..Encode(value,status))end
     end
+    Add("PRECOMBAT BASELINE - historical only; never readiness at death")
+    WriteSample(Add,"PRECOMBAT CHECKS",snapshot.precombat)
     WriteSample(Add,"LAST ALIVE DEFENSIVE CHECKS",snapshot.lastAlive)
     WriteSample(Add,"DEATH NOTICE DEFENSIVE CHECKS",snapshot.deathNotice)
     for _,name in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES"})do

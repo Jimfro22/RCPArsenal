@@ -32,7 +32,8 @@ C_DeathRecap.GetRecapMaxHealth=function(id)check(id==17,'Max used default/foreig
 dead=true;time=12;event('PLAYER_DEAD');local page=R:GetPage();local captured=page.native
 check(captured and captured.recapID==17 and captured.rows[1].nativeIndex==1,'Fixture did not accept native record')
 check(captured.rows[1].nativeOffset<0 and captured.rows[1].amount<captured.rows[2].amount,'Fixture did not separate fatal/max/largest')
-check(#page.casts==3 and page.observedUses[871].observedCount==2 and page.observedUses[431416]==nil,'Actual receipt fixture did not separate ordered item/defensive uses')
+check(#page.casts==3 and page.observedUses[871].observedCount==2 and page.observedUses[431416].observedCount==1
+ and page.observedUses[431416].role=='consumable','Actual receipt fixture lost independent item/defensive use summaries')
 local coldBuildReads=buildReads
 check(R:BuildDebugText()and buildReads==coldBuildReads and lookupReads==0,'First frozen export queried uncached client or spell metadata')
 local q,n,h,m,b,t,ar=R:GetDiagnostics().spellQueries,nativeCalls,hasCalls,maxCalls,bagReads,#timers,R:GetDiagnostics().association.reads
@@ -50,7 +51,7 @@ check(frozen:find('Shield not identified; provider not recorded.',1,true),'Absor
 local first=assert(frozen:find('CAST capturedIndex=1 spellID=871 name="Shield Wall" role="defensive" defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.25 localDeathRelativeAge=1.75',1,true))
 local item=assert(frozen:find('CAST capturedIndex=2 spellID=431416 name=<not-recorded> role=<not-recorded> defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.75 localDeathRelativeAge=1.25',1,true))
 local repeated=assert(frozen:find('CAST capturedIndex=3 spellID=871 name="Shield Wall" role="defensive" defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.875 localDeathRelativeAge=1.125',1,true))
-check(first<item and item<repeated and not frozen:find('OBSERVED USE spellID=431416',1,true),'Raw receipt order/item without defensive aggregate lost')
+check(first<item and item<repeated and frozen:find('OBSERVED USE spellID=431416 role="consumable"',1,true),'Raw receipt order or independent consumable summary lost')
 check(frozen:find('retainedCount=3 exportedCount=3 exportTruncated=false',1,true)and frozen:find('display may group repeated receipts',1,true),'Raw receipt count/display grouping provenance missing')
 for i=1,20 do check(R:BuildDebugText()==frozen,'Frozen diagnostic changed without capture changes')end
 check(nativeCalls==n and hasCalls==h and maxCalls==m and bagReads==b and #timers==t and R:GetDiagnostics().spellQueries==q and R:GetDiagnostics().association.reads==ar,'Ordinary diagnostic collected or scheduled work')
