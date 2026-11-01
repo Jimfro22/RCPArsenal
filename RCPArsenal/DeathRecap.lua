@@ -6,7 +6,7 @@ local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, generation, serial = nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
 local encounterContext;local encounterSerial=0
-local RefreshTicker
+local RefreshTicker,cooldownObserver
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
 
@@ -75,6 +75,10 @@ local function Copy(value)
     local result={};for key,item in pairs(value)do result[key]=Copy(item)end;return result
 end
 local function Notify(kind)RA:FireCallback("DEATH_RECAP_CHANGED",kind)end
+local function Diagnostic(method,...)
+    local debug=RA.DeathRecapDebug
+    if debug and type(debug[method])=="function"then pcall(debug[method],debug,...)end
+end
 local function CancelFetch()
     generation=generation+1
     if fetchTimer then fetchTimer:Cancel();fetchTimer=nil end
@@ -311,6 +315,7 @@ local function NewSession(reason,combatEntryObserved)
     session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
         playerGUID=String(Call(UnitGUID,"player")),coverage=reason,overflow=overflow,unknownKnown=unknown,
         encounter=Copy(encounterContext),eventAt={}}
+    Diagnostic("ValidateCooldownIdentity")
 end
 RefreshTicker=function()
     local needed=false
@@ -394,6 +399,7 @@ FetchNative=function(page,token)
 end
 local function OnDeath()
     if not Enabled()or(session and session.dead)then return end
+    Diagnostic("StopCooldownCapture","own-death")
     StopRecording();CancelFetch()
     local time=Now();if not session or not time then Notify("unavailable");return end
     serial=serial+1
@@ -432,7 +438,7 @@ function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
     end
     if row.cooldown=="active"and row.chargeQuery=="not_applicable"then return false,"Cooldown active"..suffix end
     if row.cooldown=="gcd-observed"then return nil,"A global cooldown was observed; other cooldown state was not established"end
-    if row.cooldown=="active-context-unknown"then return nil,"An active cooldown was observed outside its update event; global and spell cooldowns could not be separated"end
+    if row.cooldown=="active-context-unknown"then return nil,"Cooldown active when checked; global and spell cooldowns could not be separated"end
     if row.chargeReason=="restricted"or row.chargeCountStatus=="restricted"then return nil,"Charge count was not provided by Blizzard"end
     if row.cooldownQuery=="restricted"or row.cooldownEnabledStatus=="restricted"or row.cooldownActiveStatus=="restricted"then return nil,"Cooldown state was not provided by Blizzard"end
     return nil,row.cooldown=="active"and"Cooldown active when checked; charge count was not recorded"or row.cooldownQuery and"State check unavailable"or"Not recorded"
@@ -469,6 +475,15 @@ function Recap:GetSupplyFamilies(page)
     return result
 end
 function Recap:GetPage()return last end
+-- Reuse only the supported learned Mirror identity; no discovery or queries.
+function Recap:GetCooldownDiagnosticIdentity()
+    if not Enabled()or not session or session.dead or not cooldownObserver or type(cooldownObserver.SetEnabled)~="function"then return nil end
+    for _,entry in ipairs(session.entries)do
+        if entry.known==true and(entry.spellID==55342 or entry.baseSpellID==55342)then
+            return{resolvedSpellID=entry.spellID,baseSpellID=55342,specID=session.specID}
+        end
+    end
+end
 -- Explicit diagnostic action only: one sanitized read of the accepted frozen
 -- ID. No association, lifecycle timer, or replacement of the captured packet.
 function Recap:ReadNativePacketForDebug()
@@ -537,6 +552,7 @@ function Recap:GetState()
         recording=ticker~=nil,coverage=session and session.coverage or "No alive observations"}
 end
 function Recap:Refresh()
+    Diagnostic("StopCooldownCapture",Enabled()and"observer-reset"or"disabled")
     Notify("reset")
     StopRecording();CancelFetch();session=nil
     local enabled=Enabled()
@@ -557,10 +573,14 @@ function Recap:EnableReminder()
     return RA.PersonalTools:SetOption("consumableReminder",true)
 end
 local function Passive(event,callback)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback)end
-local function Active(event,callback,unit)active[#active+1]=RA:RegisterOptionalEvent(event,callback,unit)end
+local function Active(event,callback,unit)
+    local subscription=RA:RegisterOptionalEvent(event,callback,unit);active[#active+1]=subscription
+    if event=="SPELL_UPDATE_COOLDOWN"then cooldownObserver=subscription end
+end
 Passive("PLAYER_DEAD",OnDeath)
-Passive("PLAYER_REGEN_DISABLED",function()BeginCombat("Observed combat entry; bounded 30-second history",true)end)
+Passive("PLAYER_REGEN_DISABLED",function()Diagnostic("CaptureCombatEntered");BeginCombat("Observed combat entry; bounded 30-second history",true)end)
 Passive("PLAYER_REGEN_ENABLED",function()
+    Diagnostic("CaptureCombatEnded")
     if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     if session then for _,row in ipairs(session.lastAlive and session.lastAlive.spells or{})do if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedBy="coverage-ended"end end end
     StopRecording()
@@ -580,6 +600,7 @@ Passive("DAMAGE_METER_COMBAT_SESSION_UPDATED",function(_,kind,id)
 end)
 for _,event in ipairs({"PLAYER_ALIVE","PLAYER_UNGHOST","PLAYER_ENTERING_WORLD"})do
     Passive(event,function()
+        Diagnostic("StopCooldownCapture",event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
         StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil end
         if Alive()then
             if Combat()then BeginCombat("Resurrected/entered during combat; incomplete coverage")
@@ -624,6 +645,7 @@ Active("UNIT_SPELLCAST_SUCCEEDED",function(_,unit,_,spellID)
     for _,entry in ipairs(session.entries)do if entry.spellID==spellID then tracked=true;trackedName=entry.name;break end end
     if (RA.DeathRecapCatalog or {}).itemUseSpells and RA.DeathRecapCatalog.itemUseSpells[spellID]then tracked=true;trackedItemUse=true end
     if not tracked then return end
+    Diagnostic("CaptureCooldownReceipt",spellID,time)
     if not trackedItemUse then
         local use=session.observedUses[spellID]
         if not use then use={spellID=spellID,observedCount=0,source="UNIT_SPELLCAST_SUCCEEDED",firstSuccessfulUseAt=time};session.observedUses[spellID]=use end
@@ -660,8 +682,8 @@ Active("SPELL_UPDATE_COOLDOWN",function(event,...)
     session.directSpellEvents[event]=context
     local spell,base=context.payload[1],context.payload[2]
     local ambiguous=spell.status~="public-nil"and(spell.status~="public-number"or(base.status~="public-number"and base.status~="public-nil"))
-    if ambiguous then Pending("spells",time,"ambiguous-cooldown-identity");ScheduleObservation();return end
-    local count=0
+    if ambiguous then Diagnostic("CaptureCooldownEvent",context);Pending("spells",time,"ambiguous-cooldown-identity");ScheduleObservation();return end
+    local count,diagnosticRow=0,nil
     for index,entry in ipairs(session.entries)do
         if spell.status=="public-nil"or spell.value==entry.spellID or spell.value==entry.baseSpellID
             or(base.value and(base.value==entry.spellID or base.value==entry.baseSpellID))then
@@ -669,12 +691,14 @@ Active("SPELL_UPDATE_COOLDOWN",function(event,...)
             local row=Copy(previous);local direct=SpellObservation(entry,time,"cooldown-event",true)
             direct.baseSpellID=entry.baseSpellID;direct.eventSequence=context.eventSequence;direct.context=Copy(context);direct.valid=true
             direct.invalidationGeneration=context.eventSequence
+            if entry.spellID==55342 or entry.baseSpellID==55342 then diagnosticRow=direct end
             for _,key in ipairs(cooldownFields)do row[key]=direct[key]end
             row.observedAt=time;row.source="cooldown-event";row.pendingAt=nil;row.pendingReason=nil
             row.chargesPendingAt=row.chargesPendingAt or time;row.directCooldown=direct;row.genericCooldown=nil
             session.lastAlive.spells[index]=row;count=count+1
         end
     end
+    Diagnostic("CaptureCooldownEvent",context,diagnosticRow)
     if count>0 then ScheduleObservation();RefreshTicker()end
 end)
 Active("SPELL_UPDATE_CHARGES",function(event)
@@ -689,4 +713,4 @@ RA:RegisterCallback("HEALING_SUPPLIES_ITEM_DATA_READY",function()
     if Enabled()and Alive()and Combat()and session then Pending("items",Now(),"item-data-ready");Observe("item-data-event",false)end
 end)
 RA:RegisterInitializer(function()Recap:Refresh()end)
-RA:RegisterCallback("PROFILE_RESET",function()Recap:Refresh()end)
+RA:RegisterCallback("PROFILE_RESET",function()Diagnostic("StopCooldownCapture","profile-reset");Recap:Refresh()end)

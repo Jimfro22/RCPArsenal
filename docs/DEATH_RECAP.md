@@ -1,4 +1,4 @@
-# Death Log — alpha.36 live capture and manual death entry
+# Death Log — alpha.37 sharing and recorded evidence
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -28,9 +28,10 @@ They do not move the focus line, health, shelf or border. Support and CD hovers
 are tooltip-only. Normal click retains verified Journal navigation.
 
 The focus line is not a timestamp: packed artwork can differ from its event
-positions. Actual graph samples never move. The ring/percentage appears only
+positions. Actual graph samples never move. The selected mark/percentage appears only
 when the representative's actual point aligns within one physical pixel of the
-focus line. Real HP uses visible 4-unit samples and neutral dashed joins between unambiguous
+focus line. Preview retains its ring; live selection uses a thin tick so nearby
+tied samples stay visible. Real HP uses compact 6×2-unit sample ticks and neutral dashed joins between unambiguous
 adjacent samples; gaps and equal-time ambiguity break the joins. Preview uses consistent 2-unit step
 strokes, complete event-colored plateaus and subdued fill; defensive durations
 use stronger 4-unit strokes and end caps. The smaller tombstone sits clear of
@@ -72,7 +73,12 @@ shield provider, a defensive the player used, or a complete heal stream.
 Public finite event HP and one positive finite recap maximum support raw selected
 health and discrete graph marks. Known zero stays zero. Missing selection clears
 the previous value; above-max raw HP stays readable without a clamped bar. The
-maximum is a fixed recap reference. Before/after-hit semantics are unspecified.
+maximum is a fixed recap reference. The live graph uses a labelled zero-based
+percentage range, rounded up to the next ten percentage points from all valid
+page samples, bounded from 10% to 100%. The range is fixed for that page, including
+selection changes; the top health bar always uses the true 0–100% maximum.
+The native-window hit count and span describe only the retained native rows.
+Before/after-hit semantics are unspecified.
 Dashed lines connect recorded samples as visual joins only; health between them
 is unknown. No fill, damage/absorb reconstruction, inferred heal or forced zero
 endpoint is added.
@@ -81,7 +87,9 @@ endpoint is added.
 heading is **Last recorded check**, with actual check ages relative to the death
 notice. It is not a snapshot at the selected native hit. Its hover identifies
 independent cooldown/charge/stock observations and pending/coverage gaps. Cast
-receipts appear in a separate Recorded uses strip with local death-notice ages;
+receipts appear in a separate Used before death row, grouped into compact chips
+with ability names, counts and latest local death-notice ages. Hover retains every
+individual receipt and bounded overflow exposes the remaining groups;
 no guessed native connector or
 effect duration is attached. The Example alone demonstrates one shared synthetic
 clock; its CD shelf is fixed to death while health/event selection changes. Full local histories, aura lifecycle and
@@ -151,10 +159,14 @@ explains Healthstone and healing-potion alerts and updates the on/off state
 immediately. The switch stays synchronized with external setting changes and
 preserves child preferences. The former exclamation and redundant dialog are
 removed. Encounter help remains next to the title/Preview row.
-Post to chat opens a centered 600×396 dialog with a read-only, scrollable snapshot
-of the exact outgoing plain-text messages. SELECT TEXT exposes the same immutable
-text for manual copying. Destination, recipient, message count and submission
-progress remain visible; no opening/hover/channel selection sends anything.
+Post to chat opens a compact destination chooser and freezes the complete report.
+A destination click starts submission directly. Whisper displays the current
+public player target, revalidates its identity at the click, and freezes it for
+all queued messages. A target change during the press cancels that activation.
+Missing, NPC or restricted targets cannot be used. Party, Raid and Instance group
+use their explicit group categories. Say is labelled as one line per click.
+View/copy report opens a read-only scrollable plain-text view, including when
+chat preparation fails. Opening, hovering and target refresh send nothing.
 
 Every retained original hit appears separately in chronological order, even when
 the chart groups it as ×3. Absorption stays on its originating hit and is counted
@@ -166,12 +178,13 @@ fatal event. No local/native time bridge, missing live heal, aura duration,
 readiness or cast from a summary count is invented. Reports describe retained
 capture, not complete encounter history.
 
-An explicit send click starts one ordinary-chat queue for PARTY, RAID or WHISPER,
+A destination click starts one ordinary-chat queue for PARTY, RAID, INSTANCE_CHAT or WHISPER,
 with one next timer at a time and one-second spacing. SAY requires a separate
 visible click per line. Every call rechecks public out-of-combat status, chat
 lockdown, social permission and destination membership. Payload and destination
-freeze at the click. Messages are at most 255 UTF-8 bytes, split at code-point
-boundaries; the full report is retained, with a finite 256-message ceiling that
+freeze at the click. Messages are at most 255 raw UTF-8 bytes including prefixes and complete native
+spell-link markup. Validated generated spell links are atomic; other text splits
+at code-point boundaries; the full report is retained, with a finite 256-message ceiling that
 fails visibly rather than truncating. These are application limits, not a server
 throttle guarantee. Progress says submitted, never delivered.
 
@@ -189,7 +202,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.35; inspect Arcane preview
+Native owner test: use the reviewed test candidate, restart WoW, verify alpha.37; inspect Arcane preview
 and stable group focus, tooltip-detail wheel and Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
@@ -272,3 +285,31 @@ Loading, unavailable and empty native pages hide the time rail, ticks and death
 axis labels until recorded events arrive. Recorded uses and the last-check shelf
 remain available independently. Preview keeps its fictional timeline and stepped
 health curve, described separately in its graph help.
+
+Alpha.37 diagnostics
+--------------------
+The frozen debug export includes the ordered retained own-cast receipts, including
+recorded potion uses, and public source/name provenance. Its loaded addon build
+is explicitly separate from capture-time metadata. Incoming spell identity is
+not shield-provider identity. Absorb tooltips retain each member, exact amounts
+and tenths of seconds relative to the final recorded hit; an unidentified shield
+says **Shield not identified**. Successful-use ages and independent cooldown or
+charge-check ages remain separate. Missing GCD evidence stays uncertain even
+inside a direct cooldown callback.
+
+`/rcp recapdebug cooldowns start` explicitly arms a 20-second diagnostic for the
+current learned Mirror Image entry. It uses existing direct cooldown callbacks
+only, with at most 32 duration-query attempts and one timeout that finalizes
+without sampling. `/rcp recapdebug cooldowns stop` ends capture and opens the
+copyable result; `/rcp recapdebug cooldowns` shows the latest result without
+restarting. No death is required. Use an ordinary GCD while Mirror Image is off
+its own cooldown, then cast Mirror Image normally; the report does not infer that
+the baseline was ready or that both states were captured.
+
+The report records immediate guarded scalar results/statuses from the GCD-ignored
+cooldown query, original event context, build and local query times. Only public
+userdata and independently guarded Boolean method results are accepted. Secret,
+missing, wrong-type and failed results stay explicit. Duration objects are
+never retained. The diagnostic does not change readiness, query from cast
+receipts, add a ticker or reconstruct historical cooldowns. It ends on its
+bound, explicit stop, death, combat end, world/profile/roster change or disable.
