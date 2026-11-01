@@ -12,6 +12,7 @@ local _, RA = ...
 -- Left-click ODD/EVEN: split across odd/even group pairs
 -- Right-click ODD/EVEN: split adjacent halves (G1+G2 / G3+G4 for 20)
 -- Hover MISSING: composition coverage for major raid buffs/debuffs
+-- Left-click MISSING: post the displayed missing provider coverage to raid chat
 
 local Theme = RA.Theme
 local TC = Theme and Theme.Colors or {}
@@ -57,6 +58,9 @@ local pendingUnknownCount = 0
 local toolboxWasVisible = false
 local missingRows = {}
 local missingData = { buffs = {}, debuffs = {}, total = 0 }
+local lastMissingPostAt
+local LayoutMissingPanel
+local missingRenderedProviders={buffs={},debuffs={}}
 
 local sortState = {
     active = false,
@@ -659,6 +663,52 @@ local function RefreshMissingData(force)
             SetSurface(missingBadge, CopyColor(TC.surfaceRaised, 0.995), CopyColor(color, 0.86), "missingBadge")
         end
     end
+    if missingPanel and missingPanel:IsShown()and LayoutMissingPanel then LayoutMissingPanel()end
+end
+
+local function MissingChatRead(fn)
+    if type(fn)~="function"or type(issecretvalue)~="function"then return nil end
+    local ok,value=pcall(fn);if not ok then return nil end
+    local checked,secret=pcall(issecretvalue,value)
+    if checked and secret==false then return value end
+end
+local function MissingProviderSnapshot()
+    local snapshot={buffs={},debuffs={}}
+    for _,section in ipairs({"buffs","debuffs"})do for _,item in ipairs(missingData[section])do snapshot[section][#snapshot[section]+1]=item.class end end
+    return snapshot
+end
+local providerClassNames={DRUID="Druid",MAGE="Mage",PRIEST="Priest",WARRIOR="Warrior",PALADIN="Paladin",SHAMAN="Shaman",EVOKER="Evoker",
+    DEMONHUNTER="Demon Hunter",MONK="Monk",WARLOCK="Warlock",ROGUE="Rogue",HUNTER="Hunter",DEATHKNIGHT="Death Knight"}
+local function PostMissingCoverage(button)
+    local profile=RA:GetDB();local db=profile and profile.leaderToolbox
+    if button~="LeftButton"or not db or db.enabled~=true or db.showMissing==false
+        or profile.demoMode==true or RA.LayoutPreviewActive or not missingButton or not missingButton:IsVisible()then return end
+    if MissingChatRead(InCombatLockdown)~=false then return false,"Missing coverage can be posted after combat."end
+    if MissingChatRead(IsInRaid)~=true then return false,"Missing coverage can be posted while in a raid."end
+    if MissingChatRead(C_ChatInfo and C_ChatInfo.InChatMessagingLockdown)~=false
+        or MissingChatRead(C_SocialRestrictions and C_SocialRestrictions.CanSendChat)~=true then return false,"Chat is restricted or its permission is unavailable."end
+    if not C_ChatInfo or type(C_ChatInfo.SendChatMessage)~="function"then return false,"Chat submission is unavailable."end
+    -- Read the rendered provider list only. A click must not rescan the roster,
+    -- inspect talents, query auras, or claim an active buff is missing.
+    local snapshot=missingPanel and missingPanel:IsShown()and missingRenderedProviders or MissingProviderSnapshot()
+    local sections={}
+    for _,section in ipairs({"buffs","debuffs"})do
+        local names,seen={},{}
+        for _,class in ipairs(snapshot[section])do
+            local name=providerClassNames[class];if not name then return false,"Coverage provider text is unavailable."end
+            if not seen[class]then names[#names+1]=name;seen[class]=true end
+        end
+        if #names>0 then sections[#sections+1]=(section=="buffs"and"Buffs: "or"Debuffs: ")..table.concat(names,", ")end
+    end
+    if #sections==0 then return false,"All tracked major buff and debuff providers are covered."end
+    local text="RCP missing raid providers — "..table.concat(sections,"; ").."."
+    if #text>255 then return false,"Coverage report exceeds the chat message size."end
+    local now=MissingChatRead(GetTime)
+    if type(now)~="number"or now~=now or math.abs(now)==math.huge then return false,"Chat timing is unavailable."end
+    if lastMissingPostAt and now-lastMissingPostAt<2 then return end
+    lastMissingPostAt=now
+    if not pcall(C_ChatInfo.SendChatMessage,text,"RAID")then return false,"Coverage submission failed; no retry queued."end
+    return true,"Missing provider coverage submitted to Raid."
 end
 
 local function GetMissingRow(index)
@@ -688,8 +738,9 @@ local function GetMissingRow(index)
     return row
 end
 
-local function LayoutMissingPanel()
+LayoutMissingPanel=function()
     if not missingPanel then return end
+    missingRenderedProviders=MissingProviderSnapshot()
     for i = 1, #missingRows do missingRows[i]:Hide() end
 
     local y = -42
@@ -2131,8 +2182,9 @@ CreateToolbox = function()
         end
     end)
 
-    missingButton:SetScript("OnClick", function()
-        if missingPanel:IsShown() then missingPanel:Hide() else OpenMissingPanel() end
+    missingButton:SetScript("OnClick", function(_,button)
+        local _,message=PostMissingCoverage(button)
+        if message then RA:Print(message)end
     end)
 
     sortOptionsPanel.undo:SetScript("OnClick", function()
@@ -2205,6 +2257,7 @@ CreateToolbox = function()
             GameTooltip:SetOwner(owner, "ANCHOR_TOP")
             GameTooltip:SetText("Missing Major Raid Buffs / Debuffs")
             GameTooltip:AddLine("Based on online players in tracked raid groups.", 0.82, 0.87, 0.94, true)
+            GameTooltip:AddLine("Left-click to post the missing provider classes to Raid chat.", 0.82, 0.87, 0.94, true)
             GameTooltip:Show()
         end)
     end)
@@ -2276,7 +2329,7 @@ end
 function Toolbox:SortByRole() TryStartMode("ROLE_SORT", true, sortButton) end
 function Toolbox:SplitOddEven() TryStartMode("SPLIT_ODD_EVEN", true, splitButton) end
 function Toolbox:SplitAdjacent() TryStartMode("SPLIT_ADJACENT", true, splitButton) end
-function Toolbox:RefreshMissing() RefreshMissingData(true); if missingPanel and missingPanel:IsShown() then LayoutMissingPanel() end end
+function Toolbox:RefreshMissing() RefreshMissingData(true)end
 function Toolbox:GetMissingCoverage()
     RefreshMissingData(true)
     return missingData.total, missingData.buffs, missingData.debuffs

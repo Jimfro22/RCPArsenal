@@ -1,4 +1,4 @@
-# Death Log — alpha.33 screenshot-correction test build
+# Death Log — alpha.34 complete reports and composition test build
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -6,34 +6,34 @@ opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
 Its amounts, selected-time states, health curve, heals, durations and healing
 debt are fictional. `/rcp recap` opens the one retained personal page this login.
 
-The compact 880px-wide display has one native time rail, grouped damage below it, support
-above it and a shallow HP graph. A collision tier adds100px; extra known shelf
-rows add38px each. It scales to the viewport. Hover a group span to select the
-nearest actual member; scroll to reach every member, including equal times.
-Ambiguous positive spans and equal-time ticks keep true brackets but use icon/amount
-scrolling, with no overlapping invisible mouse targets. The companion recap box gives grouped totals and a bounded per-hit breakdown;
-the existing health readout identifies the selected moment. Normal
-click opens a verified Journal entry; it never cycles events. There is no raw
-panel, toggle, instructional subheader or Details placeholder.
+The compact 880×428 base display has grouped damage below its native time rail,
+support above it and a shallow HP graph. A collision tier adds 100px; extra known
+shelf rows add 38px each. The visible encounter context, Health row and CDs use a
+shared alignment grid. Health has no timestamp suffix. Values align to the left
+of the 324px bar; healing debt aligns to its right. Seven CD icons share a row.
 
-Alpha.32 defaults to death and retains subsequent selection on leave. The selected
-HP uses a ring and percentage, the guide is dashed, and quiet graph marks preserve
-actual event positions. Count and recorded absorption badges have readable
-backing; the selected border remains distinct from the fatal-hit border. Native
-spell/item descriptions remain intact; compact colored recap details use a separate
-bordered companion box beneath the native tooltip. No event time or instruction
-footer is added to either surface.
-Placement uses a 12 physical-pixel screen inset and gap and prefers outside the recap,
-with bounded edge/effective-scale fallback
-that protects the hovered target and HP/shelf where space allows. Geometry checks
-read only public UI bounds, never tooltip text or health widget values. Cleanup
-leaves foreign or newer target tooltips alone. Preview
-uses one quiet provenance label. Its report action prepares explicitly fictional
-text in the native composer; the user reviews and submits. Reminder is a real
-synchronized master toggle, preserving child preferences.
-Synthetic healing debt uses clipped, explicitly layered native hatch lines while
-raw HP stays in its usual position. Native pixels, tooltip reflow and taint still
-require owner acceptance.
+Damage hover focuses the icon center. The top health value uses one stable group
+representative: fatal member if present, otherwise the member nearest the time
+midpoint, with earlier time/order breaking ties. The tooltip identifies that
+member and contains every original hit. Span motion and wheel change only the
+inspected tooltip constituent; dense lists scroll within a bounded companion.
+They do not move the focus line, health, shelf or border. Support and CD hovers
+are tooltip-only. Normal click retains verified Journal navigation.
+
+The focus line is not a timestamp: packed artwork can differ from its event
+positions. Actual graph samples never move. The ring/percentage appears only
+when the representative's actual point aligns within one physical pixel of the
+focus line. Real HP remains discrete. Preview uses consistent 2-unit step
+strokes, complete event-colored plateaus and subdued fill; defensive durations
+use stronger 4-unit strokes and end caps. The smaller tombstone sits clear of
+the actual known fatal HP point; unknown HP gets no invented graph endpoint.
+
+Native spell/item descriptions remain intact beside the bounded recap companion.
+Pooled rows clear old height before wrapping and measuring. One ordinary help
+card, screen-aware placement and ownership-safe cleanup remain. Reminder changes
+the actual master setting through explicit clicks and preserves child settings.
+Preview stays fictional, isolated from recording and frozen at its death shelf.
+Native font rasterization, tooltip behavior and taint remain client acceptance.
 
 Only confirmed same-spell/source-instance bursts merge semantically, with a
 provisional0.6s adjacent gap and1.5s total span. Other spells may interleave.
@@ -42,8 +42,8 @@ remain separate. Crowded unconfirmed/mixed events use neutral counted summaries,
 never a combined amount under one spell icon. Raw timestamps/order are retained;
 rounded timestamps, names and amounts are never deduplication keys. Native
 sourceName is display evidence, not a stable instance ID. No native sourceGUID
-contract has been established. Group spans/cursors keep true time coordinates
-when artwork is packed into two tiers.
+contract has been established. Group spans keep true time coordinates when artwork packs into two tiers; the
+visual group-focus locator follows the icon center without moving data points.
 
 Real data and selected-time limitations
 --------------------------------------
@@ -129,11 +129,38 @@ for review, never an automatic offset or native acceptance certificate.
 Actions and acceptance
 ----------------------
 Reminder `!` opens an explicit on/off action; the adjacent Reminder switch stays
-synchronized with the real Personal Tools setting and preserves child preferences. Post to
-chat prepares only the normal native composer with channel/recipient/restriction
-guards; the user submits. Private Preview can prepare a clearly labelled fictional report and change the
-actual reminder master through explicit clicks. Replaced/closed-page callbacks
-remain inert. Preview itself does not enable recording or change preferences.
+synchronized with the real Personal Tools setting and preserves child preferences.
+Post to chat opens a centered 600×396 dialog with a read-only, scrollable snapshot
+of the exact outgoing plain-text messages. SELECT TEXT exposes the same immutable
+text for manual copying. Destination, recipient, message count and submission
+progress remain visible; no opening/hover/channel selection sends anything.
+
+Every retained original hit appears separately in chronological order, even when
+the chart groups it as ×3. Absorption stays on its originating hit and is counted
+once. Preview interleaves its recorded fixture heals, defensive activations and
+explicit death with a single fictional fight clock. Real native rows remain in
+a clearly labelled latest-native-event-relative section; local cast/death
+observations have their own clock section. Native zero is not necessarily the
+fatal event. No local/native time bridge, missing live heal, aura duration,
+readiness or cast from a summary count is invented. Reports describe retained
+capture, not complete encounter history.
+
+An explicit send click starts one ordinary-chat queue for PARTY, RAID or WHISPER,
+with one next timer at a time and one-second spacing. SAY requires a separate
+visible click per line. Every call rechecks public out-of-combat status, chat
+lockdown, social permission and destination membership. Payload and destination
+freeze at the click. Messages are at most 255 UTF-8 bytes, split at code-point
+boundaries; the full report is retained, with a finite 256-message ceiling that
+fails visibly rather than truncating. These are application limits, not a server
+throttle guarantee. Progress says submitted, never delivered.
+
+Cancel stops unsent lines and retains partial progress. Close/X, Escape, backdrop,
+page replacement, feature disable/profile reset, combat/encounter start, world
+transition/logout, changed group context, restrictions or errors invalidate queued
+callbacks. There is no automatic resume, retry, redirect or duplicate resubmission.
+Submission expires after the bounded queue duration plus margin (at least 30s);
+manual SAY expires after ten minutes without an idle ticker. Nothing posts on
+Preview open or recording events. No native chat was sent during tooling tests.
 
 Four private Coiled Altar Example Journal relationships are verified in current
 client data. Click checks private page identity, out-of-combat status, instance1320,
@@ -141,8 +168,8 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: pull main, restart WoW, verify alpha.33; inspect Arcane preview
-and group scrub/wheel/Journal. With recording enabled before a clean pull, compare
+Native owner test: pull main, restart WoW, verify alpha.34; inspect Arcane preview
+and stable group focus, tooltip-detail wheel and Journal. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
 record `/rcp recapstatus` both times. Validate nil/secret/zero/out-of-scale values,
 charges/resets/pending changes, cache ages, context transitions, fit/scales/fonts,
@@ -180,26 +207,17 @@ Offline checks and a compatibility pilot do not establish the requested90% nativ
 use/availability accuracy. Native rendering, tooltip reflow, event ordering and
 performance remain owner/client acceptance gates.
 
-Alpha.33 native screenshot correction
--------------------------------------
-Normal private Preview is880×428. Its seven fixed CD slots share one row; actual
-wrapped shelves and support-label collisions retain their space. Conditional
-Fight spacing protects a killing-blow absorption without adding an empty row to
-every page. The graph and existing HP mapping move together; real samples remain
-discrete and no new heal or source inference is added.
+Alpha.34 visual proof and native acceptance
+-------------------------------------------
+Before delivery, review source-derived normal/death, single-hit, grouped-detail,
+CD-hover and full-report dialog renders at the owner's screenshot scale against
+the approved image. Bind the rendered source hash and assets to the candidate.
+These images catch composition and layering defects before the owner sees them;
+they do not emulate WoW's font rasterizer, tooltip backend or protected input.
 
-Pooled recap FontStrings reset old height and line limits before measuring at
-the final width. Word/non-space wrap and measured row height handle longer reused
-content. Native spell/item text stays separate; ordinary help uses one card.
-The share/reminder surfaces sit above content on an explicit modal plane with a
-mouse barrier, themed fields and no stale tooltip. Their actions still prepare
-chat for manual submission and change the actual reminder master only on click.
-Reports identify their Fatal hit; an inspected hit may be different.
-
-Native client verification: revisit short/long/grouped tooltips after a font
-refresh, inspect all wrapped lines and the native/companion gap at screen edges;
-open both dialogs and verify no art or hover from the underlying chart; inspect
-coral/green event accents, compact spacing, seven slots and the complete healing-
-absorb caption beside raw HP; prepare a labelled Preview report and toggle the
-actual reminder. The finite-height/inherited-level fixture catches the earlier
-input mistakes, but only current-client pixels confirm these corrections.
+Native checks still cover short/long/dense tooltip reflow after font refresh,
+edge/scale behavior, modal input isolation, actual chat restrictions and paced
+submission/cancellation on an authorized test destination. Exact merged real
+fight timestamps remain unavailable until independent native clock evidence
+establishes the relationship. The recorder, association, catalog, observed-use
+retention and all media remain unchanged in this pass.

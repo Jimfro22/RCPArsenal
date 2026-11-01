@@ -523,5 +523,57 @@ do
     rogue,total=missing();check(rogue and total==10,'Unrelated provider class incorrectly covered Rogue')
     roster={{class='ROGUE',group=1,online=true}};inRaid=false
     check(missing(),'Out-of-raid roster mock incorrectly satisfied coverage')
+
+    -- Left-click posts exactly the already displayed provider list. This is
+    -- composition coverage, with no aura scan or click-time roster refresh.
+    local posts,clock={},100
+    local secret=setmetatable({},{__tostring=function()error('Secret formatted')end})
+    issecretvalue=function(value)return rawequal(value,secret)end
+    GetTime=function()return clock end
+    local chatRestricted,chatAllowed=false,true
+    C_ChatInfo={InChatMessagingLockdown=function()return chatRestricted end,SendChatMessage=function(text,channel)
+        posts[#posts+1]={text=text,channel=channel}
+    end}
+    C_SocialRestrictions={CanSendChat=function()return chatAllowed end}
+    inRaid=true;roster={};db.demoMode=false;db.leaderToolbox.showMissing=true;RA.LayoutPreviewActive=false
+    RA.RaidLeaderToolbox:Refresh();RA.RaidLeaderToolbox:ShowMissingPanel()
+    local _,shownBuffs,shownDebuffs=RA.RaidLeaderToolbox:GetMissingCoverage();local names={}
+    for _,section in ipairs({shownBuffs,shownDebuffs})do for _,item in ipairs(section)do names[#names+1]=item.name end end
+    local expected='RCP missing raid providers — Buffs: Druid, Evoker, Paladin, Mage, Priest, Shaman, Warrior; Debuffs: Hunter, Demon Hunter, Monk, Rogue.'
+    check(#names==11 and #expected<=255,'Full catalog does not fit one bounded chat message')
+    missingButton.scripts.OnEnter(missingButton);check(#posts==0,'Hover posted provider coverage')
+    roster={{class='ROGUE',group=1,online=true}}
+    local beforeReads,beforeTimers=reads,#timers
+    local function post(button)missingButton.scripts.OnClick(missingButton,button or'LeftButton')end
+    post();check(#posts==1 and posts[1].text==expected and posts[1].channel=='RAID','Click rebuilt or changed rendered missing provider snapshot')
+    check(reads==beforeReads and #timers==beforeTimers and scanCalls==scansBefore and forbidden==0,'Coverage click scanned or queued work')
+    post();check(#posts==1,'Accidental double-click posted twice')
+    clock=clock+2;RA.RaidLeaderToolbox:RefreshMissing();beforeReads=reads;post()
+    check(#posts==2 and posts[2].text==expected:gsub(', Rogue%.','.')and reads==beforeReads,'Refreshed class coverage or click read boundary wrong')
+    -- Refresh() replaces the cache without the old explicit RefreshMissing
+    -- panel relayout. The open rendered list must now track that replacement.
+    roster={};RA.RaidLeaderToolbox:Refresh();local poisonShown=false
+    for _,o in ipairs(objects)do if o.item and o.item.key=='atrophic_poison'and o:IsVisible()then poisonShown=true end end
+    check(poisonShown,'Cache refresh left stale provider rows in the visible panel')
+    clock=clock+2;beforeReads=reads;post();check(#posts==3 and posts[3].text==expected and reads==beforeReads,'Cache/display/report snapshots diverged')
+    table.remove(posts,3)
+    clock=clock+2;post('RightButton');check(#posts==2,'Right-click posted coverage')
+    db.demoMode=true;post();check(#posts==2,'Demo posted coverage');db.demoMode=false
+    RA.LayoutPreviewActive=true;post();check(#posts==2,'Layout preview posted coverage');RA.LayoutPreviewActive=false
+    combat=true;post();check(#posts==2,'Combat posted coverage');combat=false
+    combat=secret;post();check(#posts==2,'Secret combat state posted coverage');combat=false
+    chatRestricted=true;post();check(#posts==2,'Chat lockdown posted coverage');chatRestricted=nil;post();check(#posts==2,'Unknown lockdown posted coverage');chatRestricted=secret;post();check(#posts==2,'Secret lockdown posted coverage');chatRestricted=false
+    chatAllowed=false;post();chatAllowed=nil;post();chatAllowed=secret;post();check(#posts==2,'Missing social permission posted coverage');chatAllowed=true
+    inRaid=false;post();check(#posts==2,'Out-of-raid click posted coverage');inRaid=true
+    local sender=C_ChatInfo.SendChatMessage;C_ChatInfo.SendChatMessage=function()error('Blocked send')end
+    beforeTimers=#timers;post();check(#posts==2 and #timers==beforeTimers,'Synchronous failure retried');C_ChatInfo.SendChatMessage=sender
+    clock=clock+2
+    roster={};for _,class in ipairs({'WARRIOR','PALADIN','PRIEST','MAGE','DRUID','MONK','DEMONHUNTER','WARLOCK','EVOKER','ROGUE','SHAMAN','HUNTER','DEATHKNIGHT'})do roster[#roster+1]={class=class,group=1,online=true}end
+    RA.RaidLeaderToolbox:RefreshMissing();post();check(#posts==2,'Empty provider list posted a false alert')
+    roster={};RA.RaidLeaderToolbox:RefreshMissing();named.RCPArsenalMissingBadge.scripts.OnClick();check(#posts==2,'Inspection badge posted coverage')
+    roster={};for _,class in ipairs({'DRUID','EVOKER','PALADIN','MAGE','PRIEST','SHAMAN','WARRIOR'})do roster[#roster+1]={class=class,group=1,online=true}end
+    clock=clock+2;RA.RaidLeaderToolbox:RefreshMissing();beforeReads=reads;post()
+    check(#posts==3 and posts[3].text=='RCP missing raid providers — Debuffs: Hunter, Demon Hunter, Monk, Rogue.'and reads==beforeReads,'Empty section not omitted or friendly class label lost')
+    check(scanCalls==scansBefore and forbidden==0,'Coverage sharing added inspection/aura work')
 end
 print('PASS: ' .. checks .. ' asset/font/actual-frame assertions (offline Lua harness; no WoW runtime claim)')

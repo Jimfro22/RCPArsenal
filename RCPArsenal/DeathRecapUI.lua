@@ -107,18 +107,19 @@ local function PositionTooltip()
     end
     if tooltipNative then GameTooltip:SetClampedToScreen(true)end;tooltipPlacing=false
 end
-local function RecapBox(lines,color,heading)
+local function RecapBox(lines,color,heading,focusIndex)
     if not tooltipRecap then
         tooltipRecap=CreateFrame("Frame",nil,UIParent);tooltipRecap:SetFrameStrata("TOOLTIP");Surface(tooltipRecap,C.canvasDeep);T:ApplyRounded(tooltipRecap,C.lineStrong,8,"border","BORDER")
-        tooltipRecap.lines={}
-        for i=1,16 do
-            local f=Font(tooltipRecap,i==1 and 13 or 12,i==1 and"BOLD"or"REGULAR")
-            f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0);tooltipRecap.lines[i]=f
-        end
+        tooltipRecap.scroll=CreateFrame("ScrollFrame",nil,tooltipRecap);tooltipRecap.scroll:SetAllPoints(tooltipRecap);tooltipRecap.scroll:SetClipsChildren(true)
+        tooltipRecap.body=CreateFrame("Frame",nil,tooltipRecap.scroll);tooltipRecap.scroll:SetScrollChild(tooltipRecap.body);tooltipRecap.lines={}
     end
     frame.tooltipRecap=tooltipRecap
     local first=heading and 1 or 2
-    local width,count=220,math.min(16,math.max(0,#lines-first+1))
+    local width,count=220,math.min(80,math.max(0,#lines-first+1))
+    for i=#tooltipRecap.lines+1,count do
+        local f=Font(tooltipRecap.body,i==1 and 13 or 12,i==1 and"BOLD"or"REGULAR")
+        f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0);tooltipRecap.lines[i]=f
+    end
     for i,f in ipairs(tooltipRecap.lines)do
         f:Hide()
         if i<=count then
@@ -133,15 +134,24 @@ local function RecapBox(lines,color,heading)
     for i=1,count do
         local f=tooltipRecap.lines[i];f:SetWidth(width-20);f:SetHeight(0)
         f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0);f:Show()
-        Point(f,"TOPLEFT",tooltipRecap,"TOPLEFT",10,-y)
+        f:ClearAllPoints();Point(f,"TOPLEFT",tooltipRecap.body,"TOPLEFT",10,-y);f.recapY=y
         -- Clear the previous pooled height before native wrap measurement.
         -- Otherwise a formerly short row can ellipsize instead of growing.
         local h=ReadMetric(f,"GetStringHeight")or(i==1 and 16 or 15)
         h=math.ceil(math.max(i==1 and 16 or 15,h))+2;f:SetHeight(h);y=y+h+3
     end
-    Size(tooltipRecap,width,math.max(24,y+5));tooltipRecap:Show()
+    local total=math.max(24,y+5)
+    local available=384;local sh,ss,rs=ReadMetric(UIParent,"GetHeight"),ReadMetric(UIParent,"GetEffectiveScale"),ReadMetric(tooltipRecap,"GetEffectiveScale")
+    if sh and sh>0 and ss and ss>0 and rs and rs>0 then
+        local native=tooltipNative and(ReadMetric(GameTooltip,"GetHeight")or 0)*(ReadMetric(GameTooltip,"GetEffectiveScale")or 1)/rs or 0
+        available=math.max(40,math.min(384,sh*ss/rs-native-48))
+    end
+    local height=math.min(total,available);Size(tooltipRecap,width,height);Size(tooltipRecap.body,width,total)
+    local focus=focusIndex and tooltipRecap.lines[focusIndex-first+1]
+    local scroll=focus and math.max(0,focus.recapY+focus:GetHeight()+8-height)or 0
+    tooltipRecap.scroll:SetVerticalScroll(math.min(total-height,scroll));tooltipRecap:Show()
 end
-local function Tooltip(button,lines,spellID,itemID,color)
+local function Tooltip(button,lines,spellID,itemID,color,focusIndex)
     if(share and share:IsShown())or(bell and bell:IsShown())then return end
     if not GameTooltip then return end
     local previousOwner,previousNative=tooltipOwner,tooltipNative
@@ -158,7 +168,7 @@ local function Tooltip(button,lines,spellID,itemID,color)
     elseif itemID and GameTooltip.SetItemByID then ok=Native(GameTooltip.SetItemByID,itemID)end
     if tooltipNative and not ok then GameTooltip:SetText(lines[1]or"Details")end
     -- Spell/item facts have a companion; ordinary help is one card.
-    RecapBox(lines,color,not tooltipNative);if tooltipNative then GameTooltip:Show()end;tooltipBuilding=false;PositionTooltip()
+    RecapBox(lines,color,not tooltipNative,focusIndex);if tooltipNative then GameTooltip:Show()end;tooltipBuilding=false;PositionTooltip()
     if not tooltipHooked and GameTooltip.HookScript then
         tooltipHooked=true;GameTooltip:HookScript("OnSizeChanged",PositionTooltip)
         GameTooltip:HookScript("OnHide",function()if tooltipNative and not tooltipBuilding and not tooltipPlacing then ClearTooltipTracking()end end)
@@ -193,6 +203,7 @@ local memberChoices,renderRevision={},0
 local closing=false
 local TIER_GAP=100
 local BASE_HEIGHT,GRAPH_TOP,GRAPH_BOTTOM,GRAPH_HEIGHT=428,332,392,60
+local HEALTH_WIDTH=324
 local damagePool,supportPool,shelfPool,graphPool={},{},{},{}
 local function Place(region,point,relative,relativePoint,x,y)
     region:ClearAllPoints();Point(region,point,relative,relativePoint,x,y)
@@ -303,8 +314,8 @@ end
 local function Guide(x,first,last)
     local n=0;HidePool(frame.guide.dashes)
     for _,range in ipairs(Segments(x,first,last,frame.textExclusions))do
-        for i=math.floor((range[1]-first)/8),math.ceil((range[2]-first)/8)do
-            local a,b=math.max(range[1],first+i*8),math.min(range[2],first+i*8+4)
+        for i=math.floor((range[1]-first)/9),math.ceil((range[2]-first)/9)do
+            local a,b=math.max(range[1],first+i*9),math.min(range[2],first+i*9+5)
             if b>a and n<96 then n=n+1;Rect(frame.guide.dashes,n,frame.guide,0,a-first,1,b-a,pink,.85)end
         end
     end
@@ -315,8 +326,8 @@ local function DamageBadges(b)
     Surface(b.countBadge,{.035,.027,.055,.96});b.countText=Font(b.countBadge,11,"BOLD");Place(b.countText,"CENTER",b.countBadge,"CENTER",0,0)
     b.selectedBorder=CreateFrame("Frame",nil,b);Size(b.selectedBorder,50,50);Place(b.selectedBorder,"CENTER",b,"CENTER",0,0)
     b.selectedBorder.edges={}
-    Rect(b.selectedBorder.edges,1,b.selectedBorder,0,0,50,1,pink);Rect(b.selectedBorder.edges,2,b.selectedBorder,0,49,50,1,pink)
-    Rect(b.selectedBorder.edges,3,b.selectedBorder,0,0,1,50,pink);Rect(b.selectedBorder.edges,4,b.selectedBorder,49,0,1,50,pink);b.selectedBorder:Hide()
+    Rect(b.selectedBorder.edges,1,b.selectedBorder,0,0,50,2,pink);Rect(b.selectedBorder.edges,2,b.selectedBorder,0,48,50,2,pink)
+    Rect(b.selectedBorder.edges,3,b.selectedBorder,0,0,2,50,pink);Rect(b.selectedBorder.edges,4,b.selectedBorder,48,0,2,50,pink);b.selectedBorder:Hide()
 end
 local function Hatch(width)
     local n=0
@@ -361,7 +372,7 @@ local function Ensure()
     frame=CreateFrame("Frame","RCPArsenalDeathRecap",UIParent);Size(frame,880,BASE_HEIGHT);Point(frame,"CENTER",UIParent,"CENTER",0,50)
     frame:SetFrameStrata("DIALOG");frame:SetClampedToScreen(true);frame:EnableMouse(true);Surface(frame,C.canvasDeep);T:ApplyRounded(frame,{.48,.34,.52,.65},8,"border","BORDER")
     frame.title=Label(frame,"Death Log",24,20,-18,142);RA:ApplyFont(frame.title,24,"BOLD",false)
-    frame.context=Label(frame,"",13,162,-26,462,C.textSoft)
+    frame.context=Label(frame,"",12,20,-50,466,C.textSoft);frame.context:SetHeight(14)
     frame.coverage=Label(frame,"Preview",10,174,-26,70,C.muted)
     frame.close=CreateFrame("Button",nil,frame);Size(frame.close,28,28);Point(frame.close,"TOPLEFT",frame,"TOPLEFT",832,-18)
     frame.close.label=Label(frame.close,"×",24,1,-1,26);frame.close:SetScript("OnClick",function()UI:Hide()end)
@@ -390,12 +401,13 @@ local function Ensure()
         if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
         Tooltip(self,lines)
     end);frame.info:SetScript("OnLeave",HideTooltip)
-    frame.health=Label(frame,"Health",12,20,-76,125,C.textSoft);frame.percent=Label(frame,"—",20,137,-71,56,pink);RA:ApplyFont(frame.percent,20,"BOLD",false)
-    frame.healthPanel=CreateFrame("Button",nil,frame);Size(frame.healthPanel,292,18);Point(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",194,-76)
+    frame.health=Label(frame,"Health",12,20,-75,58,C.textSoft);frame.health:SetHeight(18);frame.health:SetJustifyV("MIDDLE")
+    frame.percent=Label(frame,"—",20,88,-72,58,pink);frame.percent:SetHeight(24);frame.percent:SetJustifyV("MIDDLE");frame.percent:SetJustifyH("RIGHT");RA:ApplyFont(frame.percent,20,"BOLD",false)
+    frame.healthPanel=CreateFrame("Button",nil,frame);Size(frame.healthPanel,HEALTH_WIDTH,18);Point(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",162,-75)
     frame.healthTrack=frame.healthPanel:CreateTexture(nil,"BACKGROUND");frame.healthTrack:SetAllPoints(frame.healthPanel);frame.healthTrack:SetColorTexture(unpack(C.surfaceRaised))
-    frame.healthBar=CreateFrame("StatusBar",nil,frame.healthPanel);Size(frame.healthBar,292,14);Point(frame.healthBar,"TOPLEFT",frame.healthPanel,"TOPLEFT",0,-2)
+    frame.healthBar=CreateFrame("StatusBar",nil,frame.healthPanel);Size(frame.healthBar,HEALTH_WIDTH,14);Point(frame.healthBar,"TOPLEFT",frame.healthPanel,"TOPLEFT",0,-2)
     frame.healthBar:SetStatusBarTexture(T.Assets.White);frame.healthBar:SetStatusBarColor(unpack(pink))
-    frame.hp=Label(frame,"",11,194,-100,142,C.muted)
+    frame.hp=Label(frame,"",11,162,-100,142,C.muted)
     frame.absorb=CreateFrame("Frame",nil,frame.healthPanel);frame.absorb:SetFrameLevel(frame.healthBar:GetFrameLevel()+2);frame.absorb:SetClipsChildren(true);frame.absorb:Hide();frame.hatches={}
     frame.absorbFill=frame.absorb:CreateTexture(nil,"BACKGROUND");frame.absorbFill:SetAllPoints(frame.absorb);frame.absorbFill:SetColorTexture(amber[1],amber[2],amber[3],.12)
     if type(frame.absorb.CreateLine)=="function"then
@@ -404,9 +416,9 @@ local function Ensure()
         frame.absorbNative=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbNative:SetAllPoints(frame.absorb);frame.absorbNative:SetAtlas("RaidFrame-Absorb-Overlay");frame.absorbNative:SetVertexColor(unpack(amber))
     end
     frame.absorbEdge=frame.absorb:CreateTexture(nil,"OVERLAY");frame.absorbEdge:SetColorTexture(amber[1],amber[2],amber[3],1)
-    frame.absorbLabel=Label(frame,"",11,344,-100,154,amber);frame.absorbLabel:SetJustifyH("RIGHT");frame.absorbLabel:SetWordWrap(true);frame.absorbLabel:SetMaxLines(0)
-    frame.shelf=Label(frame,"Cooldowns",12,510,-76,152,C.textSoft)
-    frame.shelfAge=Label(frame,"",10,510,-97,72,C.muted)
+    frame.absorbLabel=Label(frame,"",11,332,-100,154,amber);frame.absorbLabel:SetJustifyH("RIGHT");frame.absorbLabel:SetWordWrap(true);frame.absorbLabel:SetMaxLines(0)
+    frame.shelf=Label(frame,"Cooldowns",12,550,-75,28,C.textSoft);frame.shelf:SetHeight(18);frame.shelf:SetJustifyV("MIDDLE")
+    frame.shelfAge=Label(frame,"",10,590,-106,266,C.muted)
     frame.rail=frame:CreateTexture(nil,"ARTWORK");frame.rail:SetColorTexture(.58,.53,.65,.70)
     frame.ticks={};frame.tickLabels={};frame.tickMarks={};for i=1,6 do frame.ticks[i]=Font(frame,11,nil,C.textSoft);frame.tickMarks[i]=frame:CreateTexture(nil,"ARTWORK");frame.tickMarks[i]:SetColorTexture(unpack(C.lineStrong))end
     frame.fight=Label(frame,"",11,690,-177,170,C.textSoft);frame.fight:SetJustifyH("RIGHT")
@@ -420,7 +432,7 @@ local function Ensure()
     frame.healthPoint.discs={}
     for i,size in ipairs({12,8,4})do local t=frame.healthPoint:CreateTexture(nil,"OVERLAY",nil,i);Size(t,size,size);Point(t,"CENTER",frame.healthPoint,"CENTER",0,0);RA:RegisterVisualTexture(t,disc,T.Assets.White);t:SetVertexColor(unpack(i==2 and C.canvasDeep or pink));frame.healthPoint.discs[i]=t end
     frame.pointPercent=Font(frame.healthPoint,12,"BOLD",pink);frame.healthPoint:Hide()
-    frame.tombstone=frame:CreateTexture(nil,"ARTWORK");Size(frame.tombstone,22,26);frame.tombstone:SetAtlas("deathrecap-icon-tombstone");frame.tombstone:Hide()
+    frame.tombstone=frame:CreateTexture(nil,"OVERLAY");Size(frame.tombstone,18,20);frame.tombstone:SetAtlas("deathrecap-icon-tombstone");frame.tombstone:Hide()
     frame.empty=Label(frame,"No hit details recorded",12,48,-270,784,C.muted)
     if type(UISpecialFrames)=="table"then table.insert(UISpecialFrames,"RCPArsenalDeathRecap")end
     frame:SetScript("OnHide",function()if not closing then UI:Hide()end end)
@@ -475,11 +487,12 @@ local function Shelf(page,example,time)
         local function Rank(row)return row.kind=="stone"and 10 or row.kind=="potion"and 11 or row.category=="major"and 0 or 1 end
         local ar,br=Rank(a),Rank(b);if ar==br then return(a.spellID or a.itemID or 0)<(b.spellID or b.itemID or 0)end;return ar<br
     end)
-    local slots=CooldownSlots(rows)
+    local slots=CooldownSlots(rows);local lastLine=slots[#slots]and slots[#slots].line or 0
+    Place(frame.shelfAge,"TOPLEFT",frame,"TOPLEFT",590,-106-lastLine*38)
     for i,row in ipairs(rows)do
         local b=shelfPool[i]or Icon(frame,32);shelfPool[i]=b
         local line,x=slots[i].line,slots[i].x
-        Place(b,"TOPLEFT",frame,"TOPLEFT",x,-66-line*38);Artwork(b,row);Text(b.badge,"");b:Show()
+        Place(b,"TOPLEFT",frame,"TOPLEFT",x,-68-line*38);Artwork(b,row);Text(b.badge,"");b:Show()
         local state,detail=State(row,example);local shade=state==false and .4 or 1
         if state==nil then b.icon:SetVertexColor(.55,.65,.85);b.icon:SetAlpha(.8)else b.icon:SetVertexColor(shade,shade,shade);b.icon:SetAlpha(1)end
         b.icon:SetDesaturated(state==false)
@@ -501,7 +514,7 @@ local function Shelf(page,example,time)
         end)
     end
 end
-local function Health(page,row,example)
+local function Health(page,row,example,item)
     frame.healthBar:Hide();frame.healthPoint:Hide();frame.absorb:Hide();frame.absorbLabel:Hide();Text(frame.hp,"");Text(frame.percent,"—")
     local max=example and page.maxHealth or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
     local allowed=example or page.native and Number(page.native.recapID,true)
@@ -511,18 +524,20 @@ local function Health(page,row,example)
         Text(frame.hp,Raw(hp)..(max and" / "..Raw(max)or""))
         if max and hp<=max then
             frame.healthBar:SetMinMaxValues(0,max);frame.healthBar:SetValue(hp);frame.healthBar:Show();Text(frame.percent,string.format("%.0f%%",hp/max*100))
-            Place(frame.healthPoint,"CENTER",frame,"TOPLEFT",X(row.nativeOffset),-GRAPH_TOP-extraHeight-(1-hp/max)*GRAPH_HEIGHT);frame.healthPoint:Show()
+            Place(frame.healthPoint,"CENTER",frame,"TOPLEFT",X(row.nativeOffset),-GRAPH_TOP-extraHeight-(1-hp/max)*GRAPH_HEIGHT)
+            local scale=ReadMetric(frame,"GetEffectiveScale")or 1
+            frame.healthPoint:SetShown(item~=nil and math.abs(item.iconX-X(row.nativeOffset))*scale<=1)
             local pointX=X(row.nativeOffset);Text(frame.pointPercent,string.format("%.0f%%",hp/max*100))
-            local left=pointX+10+frame.pointPercent:GetStringWidth()>860
+            local left=row.nativeIndex==1 or pointX+10+frame.pointPercent:GetStringWidth()>860
             Place(frame.pointPercent,left and"RIGHT"or"LEFT",frame.healthPoint,"CENTER",left and-10 or 10,10)
         end
     end
     local debt=example and row.nativeOffset>=-2.7 and row.nativeOffset< -1.5 and 80000 or nil
     frame.healthPanel.healAbsorb=debt
     if debt and max and hp and hp<=max then
-        local width=math.min(292,debt/max*292);local start=math.max(0,(hp-debt)/max*292)
-        Size(frame.absorb,math.min(width,292-start),14);Place(frame.absorb,"TOPLEFT",frame.healthPanel,"TOPLEFT",start,-2);frame.absorb:Show()
-        Hatch(math.min(width,292-start));Text(frame.absorbLabel,Amount(debt).." heal absorb remaining");frame.absorbLabel:Show()
+        local width=math.min(HEALTH_WIDTH,debt/max*HEALTH_WIDTH);local start=math.max(0,(hp-debt)/max*HEALTH_WIDTH)
+        Size(frame.absorb,math.min(width,HEALTH_WIDTH-start),14);Place(frame.absorb,"TOPLEFT",frame.healthPanel,"TOPLEFT",start,-2);frame.absorb:Show()
+        Hatch(math.min(width,HEALTH_WIDTH-start));Text(frame.absorbLabel,Amount(debt).." heal absorb remaining");frame.absorbLabel:Show()
     end
     frame.healthPanel:SetScript("OnEnter",function(self)
         local lines={"Health",hp~=nil and(Raw(hp)..(max and" / "..Raw(max)or"").." health")or"Health not recorded for this event"}
@@ -532,25 +547,39 @@ local function Health(page,row,example)
         Tooltip(self,lines)
     end);frame.healthPanel:SetScript("OnLeave",HideTooltip)
 end
+local function Representative(item)
+    local best,distance
+    for _,row in ipairs(item.rows)do
+        if row.nativeIndex==1 then return row end
+        local d=math.abs(row.nativeOffset-(item.first+item.last)/2)
+        if not distance or d<distance-1e-9 then best,distance=row,d end
+    end
+    return best
+end
 local function Select(page,row,item,force)
     if page~=current or not row then return end
     if not force and((share and share:IsShown())or(bell and bell:IsShown()))then return end
+    if item then row=Representative(item)end
     if not force and selected==row and frame.selectedItem==item then return end
-    selected=row;frame.selected=row;frame.selectedItem=item;Text(frame.health,"Health · "..At(row.nativeOffset));Health(page,row,IsExample());Shelf(page,IsExample(),row.nativeOffset)
-    Place(frame.guide,"TOPLEFT",frame,"TOPLEFT",X(row.nativeOffset),-130-(contentShift or 0));Size(frame.guide,1,GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));Guide(X(row.nativeOffset),130+(contentShift or 0),GRAPH_BOTTOM+extraHeight);frame.guide:Show()
+    selected=row;frame.selected=row;frame.selectedItem=item;Text(frame.health,"Health");Health(page,row,IsExample(),item);Shelf(page,IsExample(),row.nativeOffset)
+    local focusX=item and item.iconX or X(row.nativeOffset)
+    Place(frame.guide,"TOPLEFT",frame,"TOPLEFT",focusX,-130-(contentShift or 0));Size(frame.guide,1,GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));Guide(focusX,130+(contentShift or 0),GRAPH_BOTTOM+extraHeight);frame.guide:Show()
     for _,b in ipairs(damagePool)do if b.selectedBorder then b.selectedBorder:SetShown(b:IsShown()and b.group==item)end end
     if item then Place(frame.interval,"TOPLEFT",frame,"TOPLEFT",X(item.first),-130-(contentShift or 0));Size(frame.interval,math.max(1,X(item.last)-X(item.first)),GRAPH_BOTTOM-130+extraHeight-(contentShift or 0));frame.interval:Show()else frame.interval:Hide()end
 end
 local function SelectedTooltip(b,page,target)
     local item=b.group;local row=item.rows[b.member or 1];local lines={item.mixed and"Mixed events"or row.name or"Recorded event"}
+    local focusIndex
     local amount=row.amount~=nil and Amount(row.amount)or"Amount unavailable"
     if #item.rows==1 then lines[#lines+1]=amount..(row.amount~=nil and(row.kind=="damage"and" damage"or" recorded")or"")
     else
         local total=item.amountComplete and Amount(item.amount)or(item.amount>0 and"≥"..Amount(item.amount)or"Amount unavailable")
         local noun="hits";for _,member in ipairs(item.rows)do if member.kind~="damage"then noun="events";break end end
         lines[#lines+1]=total..(noun=="hits"and" damage"or" recorded").." · "..#item.rows.." "..noun
-        for i=math.max(1,b.member-2),math.min(#item.rows,b.member+3)do
-            local member=item.rows[i];lines[#lines+1]=(i==b.member and"› "or"")..(noun=="hits"and"Hit "or"Event ")..i..": "..(item.mixed and(member.name or"Event").." · "or"")..(member.amount~=nil and Amount(member.amount)or"Amount unavailable")
+        local representative=Representative(item)
+        for i,member in ipairs(item.rows)do
+            lines[#lines+1]=(i==b.member and"› "or"")..(noun=="hits"and"Hit "or"Event ")..i..": "..(item.mixed and(member.name or"Event").." · "or"")..(member.amount~=nil and Amount(member.amount)or"Amount unavailable")..(member==representative and" · Health shown"or"")
+            if i==b.member then focusIndex=#lines end
         end
     end
     if row.sourceName and row.hideCaster~=true and row.hideCasterStatus~="restricted"then lines[#lines+1]={text="Source: "..row.sourceName,color=C.textSoft}end
@@ -560,7 +589,7 @@ local function SelectedTooltip(b,page,target)
         local value=Number(row[field[1]]);if value and value>0 then mitigation[#mitigation+1]=field[2].." "..Amount(value)end
     end
     if #mitigation>0 then lines[#lines+1]=table.concat(mitigation," · ")end
-    Tooltip(target or b,lines,not item.mixed and row.spellID or nil,nil,pink)
+    Tooltip(target or b,lines,not item.mixed and row.spellID or nil,nil,pink,focusIndex)
 end
 local function Nearest(item,time,currentRow)
     local best,distance
@@ -583,20 +612,25 @@ local function DrawGraph(page,example)
     frame.graphLabel:SetShown(#points>0);frame.graphBase:SetShown(#points>0)
     if #points==0 then return end
     local n,previous=0
-    local scale=ReadMetric(frame,"GetEffectiveScale")or 1
-    local stroke,accent=3/math.max(.1,scale),16/math.max(.1,scale)
+    local scale=math.max(.1,ReadMetric(frame,"GetEffectiveScale")or 1)
+    local function Snap(value)return math.floor(value*scale+.5)/scale end
+    local stroke=math.max(1,math.floor(2*scale+.5))/scale
+    local function Stroke(x,y,w,h,color,alpha,layer)
+        n=n+1;local x2,y2=Snap(x+w),Snap(y+h);x,y=Snap(x),Snap(y)
+        Rect(graphPool,n,frame,x,y,math.max(1/scale,x2-x),math.max(1/scale,y2-y),color,alpha,layer)
+    end
     for _,point in ipairs(points)do
         local x,y=X(point.offset),GRAPH_TOP+extraHeight+(1-point.hp/max)*GRAPH_HEIGHT
+        local color=previous and(point.hp>previous.hp and C.success or point.hp<previous.hp and pink or previous.color)or lavender
         if example and previous then
-            local color=point.hp>previous.hp and C.success or point.hp<previous.hp and pink or C.textSoft
-            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y-stroke/2,math.max(1,x-previous.x),stroke,C.textSoft)
-            if previous.color~=C.textSoft and x>previous.x then
-                n=n+1;Rect(graphPool,n,frame,previous.x,previous.y-stroke/2,math.min(accent,x-previous.x),stroke,previous.color)
+            if x>previous.x then
+                Stroke(previous.x,previous.y-stroke/2,x-previous.x,stroke,previous.color)
+                Stroke(previous.x,previous.y,x-previous.x,GRAPH_BOTTOM+extraHeight-previous.y,C.textSoft,.035,"BACKGROUND")
             end
-            n=n+1;Rect(graphPool,n,frame,x-stroke/2,math.min(previous.y,y),stroke,math.max(stroke,math.abs(previous.y-y)),color)
-            n=n+1;Rect(graphPool,n,frame,previous.x,previous.y,math.max(1,x-previous.x),GRAPH_BOTTOM+extraHeight-previous.y,C.textSoft,.04,"BACKGROUND")
+            if y~=previous.y then Stroke(x-stroke/2,math.min(previous.y,y)-stroke/2,stroke,math.abs(previous.y-y)+stroke,color)end
         end
-        n=n+1;Rect(graphPool,n,frame,x-1,y-1,2,2,pink,.35);previous={x=x,y=y,hp=point.hp,color=previous and(point.hp>previous.hp and C.success or point.hp<previous.hp and pink or C.textSoft)or C.textSoft}
+        if not example then Stroke(x-1,y-1,2,2,pink,.7)end
+        previous={x=x,y=y,hp=point.hp,color=color}
     end
 end
 local function PrepareSupportMarkers(page,example)
@@ -644,7 +678,8 @@ function UI:Render()
     frame.coverage:SetShown(example);frame.info:Show()
     Text(frame.context,(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or""))
     frame.context.textValue=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
-    RefreshReminderSwitch();frame.context:Hide();frame.share:SetEnabled(true);frame.share:SetAlpha(1);frame.bell:SetEnabled(true);frame.bell:SetAlpha(1)
+    RefreshReminderSwitch();frame.context:Show();Place(frame.info,"TOPLEFT",frame,"TOPLEFT",math.min(486,24+(ReadMetric(frame.context,"GetUnboundedStringWidth")or frame.context:GetStringWidth())),-48)
+    frame.share:SetEnabled(true);frame.share:SetAlpha(1);frame.bell:SetEnabled(true);frame.bell:SetAlpha(1)
     local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
     local tierEnd={-100,-100};local spanEnd={-math.huge,-math.huge};local secondTier=false
     for _,item in ipairs(model.items)do
@@ -655,7 +690,7 @@ function UI:Render()
         if tier==2 then secondTier=true end
         item.tier=tier;item.iconX=math.max(x,tierEnd[tier]+46);tierEnd[tier]=item.iconX+46
     end
-    -- Artwork can pack; true-time spans, connectors and cursors never move.
+    -- Artwork can pack; spans retain actual time while focus follows its icon.
     for tier=1,2 do local right=832
         for i=#model.items,1,-1 do local item=model.items[i];if item.tier==tier then item.iconX=math.min(item.iconX,right);right=item.iconX-92 end end
     end
@@ -681,7 +716,6 @@ function UI:Render()
         local keys={};for _,row in ipairs(item.rows)do keys[#keys+1]=row.nativeIndex end;local groupKey=table.concat(keys,":")
         b.member=Nearest(item,(item.first+item.last)/2,selected)
         for i,row in ipairs(item.rows)do if row.nativeIndex==memberChoices[groupKey]then b.member=i end end
-        for i,row in ipairs(item.rows)do if row==selected then b.member=i end end
         local y=rail+52+(item.tier-1)*TIER_GAP;Place(b,"TOP",frame,"TOPLEFT",item.iconX,-y);b:Show()
         DamageBadges(b);Text(b.badge,"")
         if item.mixed then b.icon:Hide()else b.icon:Show();Artwork(b,item.rows[b.member])end
@@ -718,7 +752,14 @@ function UI:Render()
         end)
         b.span:SetScript("OnLeave",function(self)self:SetScript("OnUpdate",nil);HideTooltip(self)end)
         b:SetScript("OnClick",function()if current~=page or example~=IsExample()or revision~=renderRevision or item.mixed then return end;local _,reason=Journal(item.rows[b.member],page);RA:Print(reason)end)
-        if item.fatal then Place(frame.tombstone,"CENTER",frame,"TOPLEFT",X(item.first),-GRAPH_BOTTOM-extraHeight);frame.tombstone:Show()end
+        if item.fatal then
+            local fatal=Representative(item);local hp=example and Number(fatal.exampleHP)or Number(fatal.recordedHP)
+            local max=example and page.maxHealth or page.native and Number(page.native.recapMaxHealth,true)
+            if hp and max and hp<=max then
+                local y=GRAPH_TOP+extraHeight+(1-hp/max)*GRAPH_HEIGHT
+                Place(frame.tombstone,"BOTTOM",frame,"TOPLEFT",X(fatal.nativeOffset)+14,-y+6);frame.tombstone:Show()
+            end
+        end
     end
     -- Colliding scrub targets cannot unambiguously choose a group. Preserve
     -- their true brackets and use disjoint icon/amount + wheel access instead.
@@ -776,13 +817,16 @@ function UI:Render()
         Place(b,"TOPLEFT",frame,"TOPLEFT",x-15,-138-shelfExtra);Artwork(b,row);Text(b.badge,example and""or"i");b:Show()
         b.lines=b.lines or{};HidePool(b.lines)
         if example and row.finish then
-            Rect(b.lines,1,frame,x,150+shelfExtra,X(row.finish)-x,2,lavender);Rect(b.lines,2,frame,X(row.finish),146+shelfExtra,2,8,lavender)
-            Rect(b.lines,4,frame,x,146+shelfExtra,2,8,lavender)
+            local scale=math.max(.1,ReadMetric(frame,"GetEffectiveScale")or 1)
+            local function Snap(value)return math.floor(value*scale+.5)/scale end
+            local start,finish=Snap(x+17),Snap(X(row.finish));local middle=153+shelfExtra
+            local stroke=math.max(1,math.floor(4*scale+.5))/scale;local cap=math.max(1,math.floor(3*scale+.5))/scale
+            if finish>start then Rect(b.lines,1,frame,start,Snap(middle-stroke/2),finish-start,stroke,lavender)end
+            Rect(b.lines,2,frame,Snap(finish-cap/2),Snap(middle-6),cap,Snap(12),lavender)
             b.activationStems=b.activationStems or{};Stem(b.activationStems,x,171+shelfExtra,rail-2,lavender,.6,frame.textExclusions)
         end
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision then return end
-            if example and IsExample()then Select(page,row,nil)end
             local lines={row.name or"Recorded cast",example and"Recorded defensive activation"or"Recorded cast; effect duration is not recorded."}
             if not example then lines[#lines+1]="This cast cannot be aligned to the hit timeline."end
             if not example and #support>supportCount then lines[#lines+1]="Showing the latest "..supportCount.." of "..#support.." recorded casts."end
@@ -794,7 +838,6 @@ function UI:Render()
         Stem(b.stems,b.timeX,y+13,rail-2,b.color,.6,frame.textExclusions)
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision or example~=IsExample()then return end
-            Select(page,row,nil)
             if entry.kind=="healing"then Tooltip(self,{row.name,"+"..Amount(entry.amount).." healing","Healer: "..row.healer},row.spellID,nil,C.success)
             else Tooltip(self,{"Protective absorption",Amount(entry.amount).." absorbed","Shield source not recorded"},row.spellID,nil,absorbBlue)end
         end);b:SetScript("OnLeave",HideTooltip)
@@ -849,33 +892,140 @@ function UI:OpenBell()
     Text(bell.action.label,bell.desired and"ENABLE"or"DISABLE")
     bell:SetFrameLevel(frame:GetFrameLevel()+20);bell:Show();ShowActionShield()
 end
+local function ScrollShare(value,fromSlider)
+    value=Metric(value);if not value then return end
+    value=math.max(0,math.min(share.scrollMaximum or 0,value));share.scrollPosition=value
+    share.reportScroll:SetVerticalScroll(value)
+    if not fromSlider then share.scrollbar:SetValue(value)end
+end
+local function ShareDestination()
+    return share.channel=="WHISPER"and(share.recipient:GetText()~=""and share.recipient:GetText()or"Whisper")or share.channel:sub(1,1)..share.channel:sub(2):lower()
+end
+local function RefreshSharePrimary()
+    local enabled=share.send:IsEnabled()
+    share.send:SetAlpha(enabled and 1 or .45)
+    T:SetRoundedColor(share.send,enabled and C.activeSoft or C.surfaceRaised,"base")
+    T:ApplyRounded(share.send,enabled and C.magenta or C.lineStrong,6,"sendBorder","BORDER")
+end
+local function ReviewShareStatus()
+    if share.jobStatus then return end
+    local ready=share.channel~="WHISPER"or R:ValidWhisperTarget(share.recipient:GetText())
+    share.send:SetEnabled(ready);RefreshSharePrimary()
+    Text(share.status,ready and("To "..ShareDestination().." · "..#(share.messages or{}).." messages"..(share.channel=="SAY"and" · one line per click"or""))or"Enter a valid whisper recipient to send.")
+    Text(share.send.label,share.channel=="WHISPER"and"SEND WHISPER"or"SEND TO "..share.channel)
+end
+local function ShareProgress(state)
+    share.jobStatus=state.status;share.submitted=state.submitted
+    local posting=state.status=="posting"
+    for _,b in pairs(share.channels)do b:SetEnabled(false)end;share.recipient:SetEnabled(false)
+    share.send:SetEnabled(posting and state.manual)
+    RefreshSharePrimary()
+    Text(share.send.label,posting and(state.manual and"SEND NEXT LINE"or"POSTING")or state.status=="complete"and"SUBMITTED"or"STOPPED")
+    Text(share.close.label,posting and"CANCEL"or"CLOSE")
+    local prefix=state.status=="complete"and"Submitted "or posting and"Posting "or"Stopped "
+    local destination=state.channel=="WHISPER"and state.target or state.channel:sub(1,1)..state.channel:sub(2):lower()
+    Text(share.status,prefix..state.submitted.." / "..state.total.." to "..destination..(state.reason and" · "..state.reason or""))
+    share.progress:SetWidth(568*state.submitted/math.max(1,state.total));share.progress:Show()
+end
+local function LayoutShare()
+    local whisper=share.channel=="WHISPER"
+    share.recipient:SetShown(whisper);share.targetLabel:SetShown(whisper)
+    local top=whisper and 144 or 104;local height=316-top
+    Place(share.reportScroll,"TOPLEFT",share,"TOPLEFT",16,-top);Size(share.reportScroll,568,height)
+    Place(share.scrollbar,"TOPRIGHT",share.reportScroll,"TOPRIGHT",-3,-4);Size(share.scrollbar,10,height-8)
+    share.scrollMaximum=math.max(0,share.body:GetHeight()-height)
+    share.scrollbar:SetMinMaxValues(0,share.scrollMaximum);share.scrollbar:SetShown(share.scrollMaximum>0)
+    ScrollShare(share.scrollPosition or 0)
+    for channel,b in pairs(share.channels)do
+        local selected=channel==share.channel
+        b.selected:SetShown(selected);T:SetRoundedColor(b,selected and C.activeSoft or C.surfaceRaised,"base")
+    end
+    ReviewShareStatus()
+end
+local function ShowShareReport(report)
+    share.report=report;share.reportRows=share.reportRows or{}
+    share.messages=R:BuildShareMessages(report);if not share.messages then return false end
+    share.payloadText=table.concat(share.messages,"\n")
+    local y=8
+    for i,line in ipairs(share.messages)do
+        local f=share.reportRows[i]
+        if not f then f=Font(share.body,12,"REGULAR");f.bullet=Font(share.body,12,"REGULAR");share.reportRows[i]=f end
+        local bullet=line:sub(1,2)=="- "
+        f:SetWidth(bullet and 512 or 524);f:SetHeight(0);f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0)
+        Text(f,bullet and line:sub(3)or line);Place(f,"TOPLEFT",share.body,"TOPLEFT",bullet and 22 or 10,-y);f:Show()
+        Text(f.bullet,"-");Place(f.bullet,"TOPLEFT",share.body,"TOPLEFT",10,-y);f.bullet:SetShown(bullet)
+        local h=math.max(18,math.ceil(ReadMetric(f,"GetStringHeight")or 18)+2);f:SetHeight(h);y=y+h+2
+    end
+    for i=#share.messages+1,#share.reportRows do share.reportRows[i]:Hide();share.reportRows[i].bullet:Hide()end
+    share.body:SetHeight(y+8);share.copy:SetHeight(y+8);share.copy:SetText(share.payloadText);share.copy:ClearFocus();share.copy:Hide()
+    share.scrollPosition=0;LayoutShare()
+    return true
+end
 function UI:OpenShare()
     StopMotion();HideTooltip()
     if not ActionPage(current,IsExample())then return end
+    R:CancelShare("Report replaced")
     if bell then bell:Hide()end
     if not share then
-        share=CreateFrame("Frame",nil,frame);share:SetFrameStrata("DIALOG");share:SetFrameLevel(frame:GetFrameLevel()+20);share:EnableMouse(true);Size(share,440,250);Point(share,"TOPRIGHT",frame,"TOPRIGHT",-16,-48);Surface(share,C.surface)
-        share:SetScript("OnHide",HideActionShieldIfUnused)
-        share.copy=CreateFrame("EditBox",nil,share);Size(share.copy,408,60);Point(share.copy,"TOPLEFT",share,"TOPLEFT",16,-16);share.copy:SetAutoFocus(false);share.copy:SetMultiLine(true);share.copy:SetTextInsets(10,10,8,8);share.copy:SetJustifyV("TOP");Surface(share.copy,C.input);T:ApplyRounded(share.copy,C.lineStrong,6,"border","BORDER")
-        RA:ApplyFont(share.copy,11,"REGULAR",false);share.copy:EnableMouse(true);share.copy:SetScript("OnEscapePressed",function(self)self:ClearFocus()end)
-        share.recipient=CreateFrame("EditBox",nil,share);Size(share.recipient,408,28);Point(share.recipient,"TOPLEFT",share,"TOPLEFT",16,-142);share.recipient:SetAutoFocus(false);share.recipient:SetMaxLetters(80);share.recipient:SetTextInsets(10,10,4,4);Surface(share.recipient,C.input);T:ApplyRounded(share.recipient,C.lineStrong,6,"border","BORDER")
-        RA:ApplyFont(share.recipient,11,"REGULAR",false);share.recipient:EnableMouse(true);share.recipient:SetScript("OnEscapePressed",function(self)self:ClearFocus()end)
-        share.targetLabel=Label(share,"Whisper recipient",10,16,-124,408,C.muted)
-        share.status=Label(share,"Review in chat, then send when ready.",10,16,-182,408,C.textSoft)
+        share=CreateFrame("Frame",nil,frame);share:SetFrameStrata("DIALOG");share:SetFrameLevel(frame:GetFrameLevel()+20);share:EnableMouse(true);Size(share,600,396);Point(share,"CENTER",frame,"CENTER",0,0);Surface(share,{C.surface[1],C.surface[2],C.surface[3],1})
+        share:SetScript("OnHide",function()R:CancelShare("Report closed");share.copy:ClearFocus();share.recipient:ClearFocus();HideActionShieldIfUnused()end)
+        share.title=Label(share,"Post Death Log",14,16,-16,450)
+        share.context=Label(share,"Read-only",11,16,-40,568,C.textSoft)
+        local cross=Button(share,"X",28,function()share:Hide()end);Point(cross,"TOPRIGHT",share,"TOPRIGHT",-16,-12)
+        share.reportScroll=CreateFrame("ScrollFrame",nil,share);share.reportScroll:SetClipsChildren(true);Surface(share.reportScroll,C.surfaceRaised)
+        share.body=CreateFrame("Frame",nil,share.reportScroll);Size(share.body,544,172);share.reportScroll:SetScrollChild(share.body)
+        share.reportScroll:EnableMouseWheel(true);share.reportScroll:SetScript("OnMouseWheel",function(_,delta)delta=Metric(delta);if delta then ScrollShare((share.scrollPosition or 0)-delta*36)end end)
+        share.scrollbar=CreateFrame("Slider",nil,share);share.scrollbar:SetOrientation("VERTICAL");share.scrollbar:SetValueStep(1);share.scrollbar:SetObeyStepOnDrag(true)
+        share.scrollbar:SetThumbTexture(T.Assets.White);share.scrollbar:GetThumbTexture():SetVertexColor(unpack(C.textSoft));share.scrollbar:GetThumbTexture():SetSize(8,24)
+        share.scrollbar:SetScript("OnValueChanged",function(_,value)ScrollShare(value,true)end)
+        share.copy=CreateFrame("EditBox",nil,share.body);Size(share.copy,544,172);Point(share.copy,"TOPLEFT",share.body,"TOPLEFT",0,0);share.copy:SetAutoFocus(false);share.copy:SetMultiLine(true);share.copy:SetMaxLetters(65535);share.copy:SetTextInsets(10,10,8,8);share.copy:SetJustifyV("TOP");Surface(share.copy,C.surfaceRaised)
+        RA:ApplyFont(share.copy,12,"REGULAR",false);share.copy:EnableMouse(true);share.copy:SetScript("OnEscapePressed",function()share:Hide()end)
+        share.copy:SetScript("OnTextChanged",function(self)
+            if share.payloadText and self:GetText()~=share.payloadText then self:SetText(share.payloadText);self:HighlightText()end
+        end)
+        share.copy:SetScript("OnCursorChanged",function(_,_,y,_,height)
+            y=Metric(y);height=Metric(height);if not y then return end
+            local top,visible=math.max(0,-y),share.reportScroll:GetHeight();local offset=share.scrollPosition or 0
+            if top<offset then ScrollShare(top)elseif top+(height or 18)>offset+visible then ScrollShare(top+(height or 18)-visible)end
+        end)
+        share.recipient=CreateFrame("EditBox",nil,share);Size(share.recipient,536,28);Point(share.recipient,"TOPLEFT",share,"TOPLEFT",48,-100);share.recipient:SetAutoFocus(false);share.recipient:SetMaxLetters(80);share.recipient:SetTextInsets(10,10,4,4);Surface(share.recipient,C.input);T:ApplyRounded(share.recipient,C.lineStrong,6,"border","BORDER")
+        RA:ApplyFont(share.recipient,11,"REGULAR",false);share.recipient:EnableMouse(true);share.recipient:SetScript("OnEscapePressed",function()share:Hide()end)
+        share.recipient:SetScript("OnTextChanged",ReviewShareStatus)
+        share.targetLabel=Label(share,"To",11,16,-108,28,C.muted)
+        share.status=Label(share,"Review the complete report.",11,16,-328,568,C.textSoft)
+        share.progress=share:CreateTexture(nil,"ARTWORK");share.progress:SetColorTexture(unpack(C.activeSoft));Size(share.progress,0,2);Point(share.progress,"TOPLEFT",share,"TOPLEFT",16,-346)
         local channels={"WHISPER","SAY","PARTY","RAID"}
+        share.channels={}
         for index,channel in ipairs(channels)do
-            local b=Button(share,channel,96,function()share.channel=channel;share.recipient:SetShown(channel=="WHISPER");share.targetLabel:SetShown(channel=="WHISPER")end)
-            Point(b,"TOPLEFT",share,"TOPLEFT",16+(index-1)*104,-88)
+            local b=Button(share,channel,136,function()if share.jobStatus then return end;share.channel=channel;LayoutShare()end)
+            Size(b,136,28);Point(b,"TOPLEFT",share,"TOPLEFT",16+(index-1)*144,-64)
+            b.selected=Label(b,"*",12,8,-7,12,C.text);share.channels[channel]=b
+            b:SetScript("OnLeave",function(self)T:SetRoundedColor(self,share.channel==channel and C.activeSoft or C.surfaceRaised,"base")end)
+            b:SetScript("OnMouseUp",b:GetScript("OnLeave"))
         end
-        local open=Button(share,"OPEN CHAT",140,function()
-            if not share:IsShown()or not ActionPage(share.page,share.preview)then return end
-            local _,reason=R:PrepareShare(share.channel,share.recipient:GetText(),share.page,share.preview);Text(share.status,reason)
-        end);Point(open,"BOTTOMLEFT",share,"BOTTOMLEFT",16,16)
-        local close=Button(share,"CLOSE",96,function()share:Hide()end);Point(close,"BOTTOMRIGHT",share,"BOTTOMRIGHT",-16,16)
+        share.send=Button(share,"SEND WHISPER",176,function()
+            if not share:IsShown()or not share.send:IsEnabled()or not ActionPage(share.page,share.preview)then return end
+            if share.jobStatus=="posting"then R:SendNextShare(share.report);return elseif share.jobStatus then return end
+            local report=share.report
+            local ok,reason=R:StartShare(share.channel,share.recipient:GetText(),report,function()
+                return share:IsShown()and share.report==report and ActionPage(share.page,share.preview)
+            end,ShareProgress)
+            if not ok then Text(share.status,reason)end
+        end);Size(share.send,176,28);Point(share.send,"TOPLEFT",share,"TOPLEFT",16,-352)
+        share.send:SetScript("OnEnter",RefreshSharePrimary);share.send:SetScript("OnLeave",RefreshSharePrimary);share.send:SetScript("OnMouseDown",RefreshSharePrimary);share.send:SetScript("OnMouseUp",RefreshSharePrimary)
+        local selectText=Button(share,"SELECT TEXT",144,function()
+            if not share.report then return end
+            share.copy:Show();share.copy:SetFocus();share.copy:HighlightText();Text(share.status,"Ctrl+C to copy. The report is read-only.")
+        end);Size(selectText,144,28);Point(selectText,"TOPLEFT",share,"TOPLEFT",204,-352)
+        share.close=Button(share,"CLOSE",96,function()if share.jobStatus=="posting"then R:CancelShare("Cancelled")else share:Hide()end end);Size(share.close,96,28);Point(share.close,"TOPRIGHT",share,"TOPRIGHT",-16,-352)
     end
     share.page,share.preview=current,IsExample()
-    share.copy:SetText(R:BuildShareText(current,share.preview));share.channel="WHISPER";share.recipient:Show();share.targetLabel:Show()
-    Text(share.status,share.preview and"Preview report. Review in chat, then send when ready."or"Review in chat, then send when ready.");share:SetFrameLevel(frame:GetFrameLevel()+20);share:Show();ShowActionShield()
+    share.jobStatus=nil;share.submitted=0;share.progress:Hide();share.send:SetEnabled(true);share.recipient:SetEnabled(true)
+    for _,b in pairs(share.channels)do b:SetEnabled(true)end;Text(share.close.label,"CLOSE")
+    share.channel="WHISPER";local report=R:BuildShareReport(current,share.preview);if not report then return end
+    if not ShowShareReport(report)then return end
+    Text(share.context,"Read-only · "..(share.preview and"Preview"or"Captured recap").." · "..#report.entries.." events")
+    share:SetFrameLevel(frame:GetFrameLevel()+20);share:Show();ShowActionShield()
 end
 function UI:CreateSettings(parent,kit)
     local group=CreateFrame("Frame",nil,parent);Size(group,918,112)
