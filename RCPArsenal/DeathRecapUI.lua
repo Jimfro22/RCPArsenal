@@ -945,7 +945,8 @@ function UI:Render()
         local b=damagePool[index]or Icon(frame,46);damagePool[index]=b;b.group=item
         local keys={};for _,row in ipairs(item.rows)do keys[#keys+1]=row.nativeIndex end;local groupKey=table.concat(keys,":")
         b.member=1
-        for i,row in ipairs(item.rows)do if row==Representative(item)then b.member=i end end
+        local initialMember=item.fatalRow or Representative(item)
+        for i,row in ipairs(item.rows)do if row==initialMember then b.member=i end end
         for i,row in ipairs(item.rows)do if row.nativeIndex==memberChoices[groupKey]then b.member=i end end
         local y=rail+50+(item.tier-1)*TIER_GAP;Place(b,"TOP",frame,"TOPLEFT",item.iconX,-y);b:Show()
         DamageBadges(b);Text(b.badge,"")

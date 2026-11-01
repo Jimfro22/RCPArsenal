@@ -261,14 +261,23 @@ do
  U:ShowLast();local cluster=hits()[1]
  check(#hits()==1 and #cluster.group.rows==3 and cluster.group.representative==clusterRows[1]and cluster.group.fatalRow==clusterRows[3],'Half-second mixed cluster lost largest artwork or exact fatal member')
  check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and popup.percent.text=='1%','Fatal selection substituted largest-hit HP or invented zero health')
- local art=cluster.icon.texture;tooltipLines={};tooltipSpell=nil;hover(1);local detail=table.concat(tooltipLines,' ')
- check(cluster.icon.texture==art and tooltipSpell==733 and detail:find('3 hits',1,true)and detail:find('Contains killing blow',1,true),'Mixed fatal hover changed artwork or lost native selected-spell detail')
+ local art=cluster.icon.texture;tooltipLines={};tooltipSpell=nil;cluster:Fire('OnEnter');local detail=table.concat(tooltipLines,' ')
+ check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and cluster.group.rows[cluster.member]==clusterRows[3]and cluster.icon.texture==art and tooltipSpell==733,'First actual cluster hover replaced fatal receipt with largest-hit HP/spell')
+ check(detail:find('3 hits',1,true)and detail:find('Contains killing blow',1,true),'Mixed fatal hover lost cluster or killing-blow detail')
  for _,fact in ipairs({'-0.4s · Earlier largest · 50,001 · Visible caster','-0.2s · Middle hit · 15,002','0.0s · Exact fatal · 10,003 · Killing blow · Health shown'})do
   check(detail:find(fact,1,true),'Cluster detail lost exact original receipt: '..fact)
  end
  check(not detail:find('Hidden caster',1,true)and not detail:find('Restricted caster',1,true),'Mixed cluster exposed a hidden or restricted source')
  cluster:Fire('OnMouseWheel',-1)
  check(popup.selected==clusterRows[1]and popup.hp.text=='60000 / 100000'and tooltipSpell==731 and cluster.icon.texture==art,'Cluster wheel failed to wrap to original HP/native spell while preserving artwork')
+ RA:FireCallback('ACCENT_THEME_CHANGED');cluster=hits()[1];tooltipSpell=nil;cluster:Fire('OnEnter')
+ check(popup.selected==clusterRows[1]and cluster.group.rows[cluster.member]==clusterRows[1]and popup.hp.text=='60000 / 100000'and tooltipSpell==731 and cluster.icon.texture==art,'Redraw discarded the inspected cluster member or changed fixed artwork')
+ U:ShowLast();cluster=hits()[1];tooltipSpell=nil;cluster.amountTarget:Fire('OnEnter')
+ check(popup.selected==clusterRows[3]and cluster.group.rows[cluster.member]==clusterRows[3]and popup.hp.text=='1234 / 100000'and tooltipSpell==733 and cluster.icon.texture==art,'Reopen or first amount hover failed to reset to the exact fatal receipt')
+ cluster.amountTarget:Fire('OnMouseWheel',-1)
+ check(popup.selected==clusterRows[1]and popup.hp.text=='60000 / 100000'and tooltipSpell==731 and cluster.icon.texture==art,'Amount wheel failed to inspect actual member HP/native spell with fixed artwork')
+ U:ShowLast();cluster=hits()[1];tooltipSpell=nil;cluster:Fire('OnEnter')
+ check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and tooltipSpell==733 and cluster.icon.texture==art,'Reopening retained an earlier inspected member on first icon hover')
 end
 -- The viewport is presentation-only. Important earlier hits extend it in whole
 -- seconds, while outside-window receipts remain in the copy report unchanged.
