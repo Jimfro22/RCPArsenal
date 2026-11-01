@@ -65,7 +65,7 @@ local CLOCK={"localClock","localSessionStartedAt","localDeathNoticeAt","nativeRe
 local CHECK={"spellID","baseSpellID","role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus","cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","valid","eventSequence","invalidationGeneration","invalidatedAt","invalidatedBy","ownCooldownQuery","ownCooldownAt","ownCooldownSource","ownCooldownActive","ownCooldownZero","ownCooldownActiveStatus","ownCooldownZeroStatus","ownCooldownState"}
 local EVENT={"event","observedAt","eventSequence"}
 local SAMPLE={"observedAt","source","coverageEndedAt","coverageEndReason","playerGUID","playerName","playerRealm","class","specID","frozenAtCombatEntry"}
-local ITEM={"kind","itemID","observedAt","carriedAt","physicalCount","remainingUses","countAt","usesAt","cooldown","cooldownAt","source","countStatus","usesStatus","pendingAt"}
+local ITEM={"kind","itemID","observedAt","carried","carriedAt","familyAbsenceVerified","partial","inventorySource","physicalCount","remainingUses","countAt","usesAt","cooldown","cooldownAt","cooldownQuery","enableCooldownTimer","source","countStatus","usesStatus","pendingAt","pendingReason"}
 local USE={"spellID","role","defensiveTalentSpellID","observedCount","firstSuccessfulUseAt","lastSuccessfulUseAt","source"}
 local CAST={"capturedIndex","spellID","name","role","defensiveTalentSpellID","source","observedAt","localDeathRelativeAge"}
 local COVERAGE={"startedAt","combatEntryObserved","reason","endedAt","rejectedReceipts","lateReceipts"}
@@ -120,7 +120,7 @@ end
 local function Sample(input)
     local sample=Table(input);local out={metadata=Fields(input,SAMPLE),spells={},supplies={}}
     local supplies=sample and Table(sample.supplies)
-    if supplies then for i=1,math.min(#supplies,32)do out.supplies[i]=Fields(supplies[i],ITEM)end end
+    if supplies then for i=1,math.min(#supplies,34)do out.supplies[i]=Fields(supplies[i],ITEM)end end
     local spells=sample and Table(sample.spells)
     if spells then for i=1,math.min(#spells,D.LIMITS.spells)do
         local source=Table(spells[i]);local row=Fields(spells[i],CHECK)
@@ -234,7 +234,15 @@ function R:BuildCoreFactsText()
     for _,use in ipairs(audit.consumableUses or{})do Add(Text(names[use.spellID],'Consumable')..': '..Use(use))end
     if #(audit.consumableUses or{})==0 then Add('No consumable use recorded')end
     for _,family in ipairs(self:GetSupplyFamilies(page))do
-        Add(family.name..': '..(family.familyState==true and'Available'or family.familyState==false and'Unavailable'or'Not confirmed')..'; '..Age(family.observedAt))
+        local reasons={available='Available',cooldown='On cooldown',empty='No remaining uses',absent='None in bags'}
+        Add(family.name..': '..(reasons[family.familyReason]or'Not confirmed')..'; '..Age(family.observedAt))
+        for _,member in ipairs(family.members)do local row=member.row
+            if row.physicalCount and row.physicalCount>0 then
+                local itemNames=(RA.DeathRecapCatalog or{}).itemNames or{}
+                local reason=member.state==true and'Available'or member.state==false and(row.cooldown=='active'and'On cooldown'or row.remainingUses==0 and'No remaining uses'or'Unavailable')or'Not confirmed'
+                Add('  '..Text(itemNames[row.itemID],family.name)..': '..string.format('%.0f',row.physicalCount)..' in bags; '..reason)
+            end
+        end
     end
     Add('')
     local native=Table(page.native);local rows=native and Table(native.rows)

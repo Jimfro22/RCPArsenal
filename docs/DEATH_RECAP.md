@@ -1,4 +1,32 @@
-# Death Log and Death Summary — alpha.41
+# Death Log and Death Summary — alpha.42
+
+## Fresh consumable checks
+
+The owner's alpha.41 recap3077 recorded 299 Silvermoon Health Potions and an
+active item cooldown at the death notice. An earlier pending update50ms after
+its last living check made the shelf discard that evidence. Item families now
+use the separately captured, immediate death-notice item checks when their source
+and local time match this death. The old living sample and pending marker remain
+unchanged for diagnostics. Spell/charge evidence does not inherit this item rule.
+
+At death, two curated Healthstone item IDs are counted directly, including
+remaining uses, independently of the shared bags cache or raid class composition.
+This adds at most four count and two item-cooldown queries once per death, with
+no bag enumeration, timer, roster scan or new background polling. Confirmed empty
+or absent stones use the existing fully desaturated icon and red X on both the
+Summary and expanded shelf. A carried stone can remain usable with no warlock in
+the group; restricted counts never become a false absence.
+
+`/rcp recapfacts` distinguishes None in bags, No remaining uses, and On cooldown.
+It lists known carried item names and stack counts. Debug now includes inventory
+source, carried/absence/completeness flags and pending reasons. The bounded supply
+limit34 retains both direct stone candidates plus all32 cached potion candidates.
+
+The owner's alpha.41 screenshots show native restricted-count text rendering
+accepted for Ice Cold and Barrier (both display1). This verifies that presentation
+path on the tested client. Lua/text export still cannot read those opaque counts;
+this does not establish a general availability percentage or validate older saved
+restricted counts after reload.
 
 ## Core recording verification
 

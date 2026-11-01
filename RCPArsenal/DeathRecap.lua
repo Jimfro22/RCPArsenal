@@ -1,7 +1,7 @@
 local _, RA = ...
 local Recap = {}
 RA.DeathRecap = Recap
-Recap.LIMITS = { spells=32, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5 }
+Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
@@ -290,7 +290,15 @@ local function SupplyObservations(time,reason,death)
     local result={}
     for _,kind in ipairs({"stone","potion"})do
         local candidates={}
-        for _,candidate in ipairs(snapshot and snapshot.candidates or{})do if candidate.kind==kind then candidates[#candidates+1]=candidate end end
+        local stoneIDs=Table((RA.DeathRecapCatalog or{}).healthstoneItemIDs)
+        local direct=death and kind=="stone"and stoneIDs and #stoneIDs>0 and #stoneIDs<=2
+        if direct then
+            for _,value in ipairs(stoneIDs)do local id=ID(value);if id then candidates[#candidates+1]={id=id,kind=kind}end end
+            direct=#candidates==#stoneIDs
+        else
+            for _,candidate in ipairs(snapshot and snapshot.candidates or{})do if candidate.kind==kind then candidates[#candidates+1]=candidate end end
+        end
+        local first=#result+1;local complete,absent=direct,direct
         if #candidates==0 then candidates[1]={kind=kind}end
         for _,candidate in ipairs(candidates)do
             local row={kind=kind,category=kind,source=reason,observedAt=time,cooldown="unknown",itemID=candidate.id,icon=candidate.icon}
@@ -298,21 +306,31 @@ local function SupplyObservations(time,reason,death)
                 row.carried=candidate.id and true or snapshot[kind];row.carriedAt=snapshot.observedAt
                 row.cacheGeneration=snapshot.cacheGeneration;row.partial=snapshot.partial or snapshot.candidatesTruncated
                 row.familyAbsenceVerified=not candidate.id and snapshot[kind]==false and not snapshot.candidatesTruncated
-                if row.itemID then
-                    row.physicalCount,row.countStatus=Stock(row.itemID,false);row.countAt=time
-                    row.remainingUses,row.usesStatus=Stock(row.itemID,true);row.usesAt=time
-                    if C_Item and type(C_Item.GetItemCooldown)=="function"then
-                        stats.itemQueries=stats.itemQueries+1
-                        local ok,start,duration,enabled=pcall(C_Item.GetItemCooldown,row.itemID)
-                        row.cooldownQuery=ok and"public"or"API-error"
-                        row.cooldownStartStatus,row.cooldownDurationStatus=FieldStatus(start,"number"),FieldStatus(duration,"number")
-                        start,duration,enabled=Number(start),Number(duration),Bool(enabled);row.enableCooldownTimer=enabled
-                        if ok and enabled==true and start and duration then row.cooldown=(duration==0 or start+duration<=time)and"inactive"or"active"end
-                    else row.cooldownQuery="unsupported"end
-                end
+            end
+            if row.itemID then
+                row.physicalCount,row.countStatus=Stock(row.itemID,false);row.countAt=time
+                row.remainingUses,row.usesStatus=Stock(row.itemID,true);row.usesAt=time
+                if C_Item and type(C_Item.GetItemCooldown)=="function"then
+                    stats.itemQueries=stats.itemQueries+1
+                    local ok,start,duration,enabled=pcall(C_Item.GetItemCooldown,row.itemID)
+                    row.cooldownQuery=ok and"public"or"API-error"
+                    row.cooldownStartStatus,row.cooldownDurationStatus=FieldStatus(start,"number"),FieldStatus(duration,"number")
+                    start,duration,enabled=Number(start),Number(duration),Bool(enabled);row.enableCooldownTimer=enabled
+                    if ok and enabled==true and start and duration then row.cooldown=(duration==0 or start+duration<=time)and"inactive"or"active"end
+                else row.cooldownQuery="unsupported"end
+            end
+            if direct then
+                row.inventorySource="native-item-count";row.carriedAt=time
+                row.carried=row.physicalCount~=nil and row.physicalCount>0 or nil
+                if row.physicalCount==0 then row.carried=false end
+                if row.physicalCount==nil or row.remainingUses==nil or row.physicalCount==0 and row.remainingUses>0 then complete=false end
+                if row.physicalCount~=0 or row.remainingUses~=0 then absent=false end
             end
             result[#result+1]=row
         end
+        if direct then for i=first,#result do
+            result[i].partial=not complete;result[i].familyAbsenceVerified=complete and absent or nil
+        end end
     end
     return result
 end
@@ -586,26 +604,38 @@ function Recap:GetRecordedCheckTime(row)
     if not row.kind and row.cooldown~="held"and not row.pendingAt and not row.chargesPendingAt and row.currentCharges~=nil then return row.chargesAt or row.observedAt end
     return row.cooldownAt or row.observedAt
 end
+function Recap:GetItemCheckSample(page)
+    local death=Table(page.deathObservation);local died=Number(page.diedAt)
+    local observed=death and Number(death.observedAt)
+    if died and observed and observed>=died and observed-died<=1 and death.source=="death-notification"and Table(death.supplies)then return death end
+    return Table(page.lastAlive)
+end
 function Recap:GetSupplyFamilies(page)
-    local result={};local sample=page.lastAlive
+    local result={};local sample=self:GetItemCheckSample(page)
     for _,kind in ipairs({"stone","potion"})do
-        local family={kind=kind,category=kind,family=true,name=kind=="stone"and"Healthstone"or"Healing potion",members={}}
+        local family={kind=kind,category=kind,family=true,name=kind=="stone"and"Healthstone"or"Healing potion",members={},sampleSource=sample and sample.source}
         local positive,unknown,negative,incomplete,verifiedAbsent
+        local onCooldown,empty=false,false
         for _,row in ipairs(sample and sample.supplies or{})do if row.kind==kind then
             local state,detail=self:ClassifyRecordedCheck(row,sample.coverageEndedAt)
             family.members[#family.members+1]={row=row,state=state,detail=detail}
             if state==true then positive=positive or row elseif state==nil then unknown=unknown or row else negative=negative or row end
             if row.partial then incomplete=true end
             if row.familyAbsenceVerified and state==false then verifiedAbsent=true end
+            if state==false and row.cooldown=="active"and(row.physicalCount and row.physicalCount>0 or row.remainingUses and row.remainingUses>0)then onCooldown=true end
+            if state==false and row.physicalCount and row.physicalCount>0 and row.remainingUses==0 then empty=true end
             local checked=self:GetRecordedCheckTime(row)
             if checked then family.observedAt=math.min(family.observedAt or checked,checked);family.latestObservedAt=math.max(family.latestObservedAt or checked,checked)end
         end end
         local representative=positive or unknown or negative
         family.icon=representative and representative.icon
         family.representativeItemID=representative and representative.itemID
-        if positive then family.familyState=true;family.familyDetail="At least one recorded item was off cooldown when checked"
+        if positive then family.familyState=true;family.familyReason="available";family.familyDetail="At least one recorded item was off cooldown when checked"
         elseif unknown or #family.members==0 or incomplete and not verifiedAbsent then family.familyDetail="Item family state was not fully recorded"
-        else family.familyState=false;family.familyDetail="Recorded candidates were empty, absent, or on cooldown when checked"end
+        else
+            family.familyState=false;family.familyReason=onCooldown and"cooldown"or empty and"empty"or"absent"
+            family.familyDetail=onCooldown and"Carried items were on cooldown when checked"or empty and"No remaining uses when checked"or"No item in bags when checked"
+        end
         result[#result+1]=family
     end
     return result
@@ -630,11 +660,11 @@ function Recap:GetCooldownRows(page,example)
             rows[#rows+1]=row
         end
     end
-    local supplies={}
-    for index=1,math.min(#(sample and sample.supplies or{}),32)do
-        local row=Table(sample.supplies[index]);if row then supplies[#supplies+1]=Copy(row)end
+    local supplies={};local itemSample=self:GetItemCheckSample(page)
+    for index=1,math.min(#(itemSample and itemSample.supplies or{}),self.LIMITS.items)do
+        local row=Table(itemSample.supplies[index]);if row then supplies[#supplies+1]=Copy(row)end
     end
-    for _,family in ipairs(self:GetSupplyFamilies({lastAlive={supplies=supplies,coverageEndedAt=sample and sample.coverageEndedAt}}))do
+    for _,family in ipairs(self:GetSupplyFamilies({lastAlive={supplies=supplies,coverageEndedAt=itemSample and itemSample.coverageEndedAt,source=itemSample and itemSample.source}}))do
         family.recordedState,family.detail=family.familyState,family.familyDetail
         for _,member in ipairs(family.members)do if member.row.itemID==family.representativeItemID then
             family.representativeRow=Copy(member.row);family.checkedAt=self:GetRecordedCheckTime(member.row);break
