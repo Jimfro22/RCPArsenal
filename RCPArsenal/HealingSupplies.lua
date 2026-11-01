@@ -146,6 +146,9 @@ if RA.RegisterOptionalEvent then
     end
     subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent("ITEM_DATA_LOAD_RESULT",function(_,id,success)
         id = Integer(id,1,2147483647)
-        if id and not Secret(success) and success == true and cache and cache.pending[id] then Supplies:InvalidateCache() end
+        if id and not Secret(success) and success == true and cache and cache.pending[id] then
+            Supplies:InvalidateCache()
+            if RA.FireCallback then RA:FireCallback("HEALING_SUPPLIES_ITEM_DATA_READY",id)end
+        end
     end)
 end

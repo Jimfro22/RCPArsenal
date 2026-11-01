@@ -13,6 +13,8 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
     print("  |cff3aa7ff/rcp recappreview|r - private tester; report and reminder controls work")
     print("  |cff3aa7ff/rcp recapstatus|r or |cff3aa7ff/rcp recapaudit|r - safe local capture diagnostics")
+    print("  |cff3aa7ff/rcp recapdebug [reread]|r - copy frozen diagnostics; reread explicitly compares the same accepted ID")
+    print("  |cff3aa7ff/rcp recapblizzard|r - request Blizzard recap for the accepted frozen ID")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
     print("  |cff3aa7ff/rcp recover|r - reset HUD position without enabling it")
     print("  |cff3aa7ff/rcp scan|r - scan only missing/new tracked players")
@@ -92,6 +94,14 @@ local function HandleSlash(raw)
     if command=="recap"then
         if not RA.DeathRecapUI:ShowLast()then RA:OpenConfig("MYTOOLS")end
     elseif command=="recappreview"then RA.DeathRecapUI:Preview()
+    elseif command=="recapblizzard"then
+        if rest~=""then RA:Print("Usage: /rcp recapblizzard (accepted frozen ID only)");return end
+        local _,reason=RA.DeathRecap:OpenBlizzardRecap();RA:Print(reason)
+    elseif command=="recapdebug"then
+        if rest~=""and rest~="reread"then RA:Print("Usage: /rcp recapdebug [reread]");return end
+        local text,reason=RA.DeathRecap:BuildDebugText(rest=="reread")
+        if not text then RA:Print(reason);return end
+        local shown,why=RA.DeathRecapUI:ShowDebugText(text);if not shown then RA:Print(why)end
     elseif command=="recapaudit"then
         local audit,reason=RA.DeathRecap:GetAvailabilityAudit()
         if not audit then RA:Print(reason);return end

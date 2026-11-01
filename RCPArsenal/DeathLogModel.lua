@@ -28,6 +28,38 @@ local function SameSource(a,b)
     return a.sourceConfirmed==true and b.sourceConfirmed==true and type(a.sourceKey)=="string"
         and a.sourceKey~=""and a.sourceKey==b.sourceKey
 end
+-- Visual absorption clusters retain every contributing hit. They do not identify
+-- a shield/provider or fabricate a single timestamp for an interval.
+function Model:GroupAbsorbs(input,position,measure)
+    local groups={}
+    for i=1,math.min(#input,self.LIMITS.rows)do local row=input[i]
+        if row.kind=="damage"and type(row.absorbed)=="number"and row.absorbed>0 then
+            groups[#groups+1]={rows={row},amount=row.absorbed,first=Time(row),last=Time(row),kind="absorbed",row=row}
+        end
+    end
+    table.sort(groups,function(a,b)return Sort(a.row,b.row)end)
+    for pass=1,self.LIMITS.rows do
+        local ends={};local fits=true
+        for _,group in ipairs(groups)do
+            group.width=math.max(28,measure(group.amount,#group.rows)+8)
+            group.x=math.max(48+group.width/2,math.min(832-group.width/2,(position(group.first)+position(group.last))/2))
+            local lane=1
+            while ends[lane]and group.x-group.width/2<ends[lane]+2 do lane=lane+1 end
+            group.lane=lane;ends[lane]=group.x+group.width/2
+            if lane>2 then fits=false end
+        end
+        if fits then return groups end
+        local best,gap
+        for i=1,#groups-1 do local value=groups[i+1].first-groups[i].last
+            if not gap or value<gap then best,gap=i,value end
+        end
+        if not best then return groups end
+        local a,b=groups[best],groups[best+1]
+        for _,row in ipairs(b.rows)do a.rows[#a.rows+1]=row end
+        a.amount=a.amount+b.amount;a.last=b.last;table.remove(groups,best+1)
+    end
+    return groups
+end
 function Model:Group(input,transitions,options)
     options=options or{}
     local rows={};local examined=math.min(#input,256);local fatal,largest

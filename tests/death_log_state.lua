@@ -46,7 +46,8 @@ time=220.1;event('UNIT_SPELLCAST_SUCCEEDED','player','cast',871);dead=true;time=
 check(latest.pendingAt==220.1 and latest.pendingReason=='cast-received' and latest.cooldown=='inactive','Cast receipt invented cooldown instead of pending fact')
 R:SetOption('enabled',false);dead=false;time=230;R:SetOption('enabled',true);event('SPELL_UPDATE_COOLDOWN')
 time=230.02;cooldown={isEnabled=true,isActive=true};event('SPELL_UPDATE_COOLDOWN');dead=true;time=230.03;event('PLAYER_DEAD');local pendingPage=R:GetPage()
-check(pendingPage.lastAlive.spells[1].pendingAt==230.02 and pendingPage.lastAlive.spells[1].cooldown=='inactive','Cancelled trailing update erased pending change gap')
+local direct=pendingPage.lastAlive.spells[1]
+check(direct.pendingAt==nil and direct.chargesPendingAt==230 and direct.cooldown=='active-context-unknown'and direct.directCooldown.observedAt==230.02 and R:ClassifyRecordedCheck(direct)==nil,'Second synchronous event lost flags or pending charges became available')
 R:SetOption('enabled',false);dead=false;time=240;R:SetOption('enabled',true);combat=false;time=241;event('PLAYER_REGEN_ENABLED');dead=true;time=242;event('PLAYER_DEAD')
 check(R:GetPage().lastAlive.coverageEndedAt==241,'Combat coverage gap hidden')
 -- Cache generation changes without altering reminder independence or bag scope.

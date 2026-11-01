@@ -193,7 +193,9 @@ local function Artwork(button,row)
     if row.spellID and RA.RegisterSpellIcon then RA:RegisterSpellIcon(button.icon,row.spellID)
     else
         local texture=row.icon or(row.kind=="stone"and"Interface\\Icons\\INV_Stone_04"or row.kind=="potion"and"Interface\\Icons\\INV_Potion_51"or 134400)
-        if RA.SetVisualTexture then RA:SetVisualTexture(button.icon,texture)else button.icon:SetTexture(texture)end
+        -- Replace any prior spell registration on this recycled icon. A plain
+        -- SetTexture leaves the asset broker free to restore its old artwork.
+        RA:RegisterVisualTexture(button.icon,texture,T.Assets.White)
     end
 end
 local M=RA.DeathLogModel
@@ -204,7 +206,7 @@ local closing=false
 local TIER_GAP=100
 local BASE_HEIGHT,GRAPH_TOP,GRAPH_BOTTOM,GRAPH_HEIGHT=428,332,392,60
 local HEALTH_WIDTH=324
-local damagePool,supportPool,shelfPool,graphPool={},{},{},{}
+local damagePool,supportPool,shelfPool,graphPool,graphLines={},{},{},{},{}
 local function Place(region,point,relative,relativePoint,x,y)
     region:ClearAllPoints();Point(region,point,relative,relativePoint,x,y)
 end
@@ -355,7 +357,9 @@ function UI:Hide()
         end
         for _,pool in ipairs({supportPool,shelfPool,frame.supportMarkers or{}})do for _,b in ipairs(pool)do b:SetScript("OnEnter",nil)end end
     end;sample,current,examplePage=false,nil,nil;selected,model,domain=nil,nil,nil;memberChoices={};renderRevision=renderRevision+1;closing=false
+    RA:FireCallback("DEATH_RECAP_VISIBILITY",false)
 end
+function UI:IsShown()return frame and frame:IsShown()or false end
 local function RefreshReminderSwitch()
     if not frame or not frame.reminder then return end
     local b=frame.reminder;local enabled=RA.PersonalTools:GetState().consumableReminder==true
@@ -396,6 +400,9 @@ local function Ensure()
         local lines={"Encounter",frame.contextText or"Personal recap"}
         if IsExample()then lines[#lines+1]="Fictional sample"end
         if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
+        if current and not IsExample()and not current.native then
+            lines[#lines+1]=current.nativeStatus or"Hit details unavailable"
+        end
         Tooltip(self,lines)
     end);frame.info:SetScript("OnLeave",HideTooltip)
     frame.percent=Label(frame,"—",20,20,-72,58,pink);frame.percent:SetHeight(24);frame.percent:SetJustifyV("MIDDLE");frame.percent:SetJustifyH("RIGHT");RA:ApplyFont(frame.percent,20,"BOLD",false)
@@ -446,7 +453,7 @@ local function Roster(page,example,time)
     end
     local rows={};local sample=page.lastAlive
     for _,row in ipairs(sample and sample.spells or page.knownEntries or{})do rows[#rows+1]=row end
-    for _,row in ipairs(sample and sample.supplies or{})do rows[#rows+1]=row end
+    for _,row in ipairs(R:GetSupplyFamilies(page))do rows[#rows+1]=row end
     return rows
 end
 local function State(row,example)
@@ -473,7 +480,7 @@ local function Shelf(page,example,time)
     local rows=Roster(page,example,time);local signature={}
     if not example then
         local youngest,oldest
-        for _,row in ipairs(rows)do if row.observedAt and page.diedAt>=row.observedAt then local age=page.diedAt-row.observedAt;youngest=math.min(youngest or age,age);oldest=math.max(oldest or age,age)end end
+        for _,row in ipairs(rows)do local checked=R:GetRecordedCheckTime(row);if checked and page.diedAt>=checked then local age=page.diedAt-checked;youngest=math.min(youngest or age,page.diedAt-(row.latestObservedAt or checked));oldest=math.max(oldest or age,age)end end
         Text(frame.shelfAge,youngest and(youngest==oldest and string.format("%.1fs pre-death",youngest)or string.format("%.1f–%.1fs pre-death",youngest,oldest))or"Not recorded")
     end
     for _,row in ipairs(rows)do local state=State(row,example);signature[#signature+1]=tostring(row.spellID or row.itemID or row.kind)..":"..tostring(state)end
@@ -493,20 +500,39 @@ local function Shelf(page,example,time)
         if state==nil then b.icon:SetVertexColor(.55,.65,.85);b.icon:SetAlpha(.8)else b.icon:SetVertexColor(shade,shade,shade);b.icon:SetAlpha(1)end
         b.icon:SetDesaturated(state==false)
         b.info=b.info or Font(b,11,"BOLD",C.textSoft);Place(b.info,"BOTTOMRIGHT",b,"BOTTOMRIGHT",2,-2);Text(b.info,state==nil and(row.pendingAt and"…"or"?")or"")
-        b:SetScript("OnEnter",function(self)
+        b.detailMember=0;b:EnableMouseWheel(row.members and #row.members>1 or false)
+        local function ShowShelf(self)
             if current~=page or example~=IsExample()then return end
             local lines={row.name or(row.kind=="stone"and"Healthstone"or row.kind=="potion"and"Healing potion"or"Defensive"),detail}
+            local focusIndex
             if not example then
-                if row.observedAt then lines[#lines+1]=string.format("Checked %.1fs before death",page.diedAt-row.observedAt)end
+                local checked=R:GetRecordedCheckTime(row)
+                if checked then lines[#lines+1]=string.format("Checked %.1fs before death",page.diedAt-checked)end
                 if not row.kind then
                     local use=page.observedUses and page.observedUses[row.spellID]
                     if use then lines[#lines+1]="Observed uses: "..use.observedCount end
                 end
-                if row.currentCharges~=nil then lines[#lines+1]="Charges: "..row.currentCharges end
+                if row.currentCharges~=nil and not row.chargesPendingAt and not row.pendingAt then lines[#lines+1]="Charges: "..row.currentCharges end
                 if row.physicalCount~=nil then lines[#lines+1]="Carried: "..row.physicalCount end
                 if row.remainingUses~=nil then lines[#lines+1]="Uses left: "..row.remainingUses end
+                if row.members and #row.members>1 then lines[#lines+1]="Mouse wheel: inspect recorded items"end
+                for index,member in ipairs(row.members or{})do
+                    local item=member.row
+                    local text=(item.itemID and"Item "..item.itemID or"Bag check")..": "..member.detail
+                    if item.physicalCount~=nil then text=text.." · Carried: "..item.physicalCount end
+                    if item.remainingUses~=nil then text=text.." · Uses left: "..item.remainingUses end
+                    if item.observedAt then text=text..string.format(" · Checked %.1fs before death",page.diedAt-item.observedAt)end
+                    if item.carriedAt then text=text..string.format(" · Bag check %.1fs before death",page.diedAt-item.carriedAt)end
+                    lines[#lines+1]=text;if self.detailMember==index then focusIndex=#lines end
+                end
             end
-            Tooltip(self,lines,row.spellID,row.itemID)
+            local itemID=row.itemID or(row.members and #row.members==1 and row.representativeItemID)
+            Tooltip(self,lines,row.spellID,itemID,nil,focusIndex)
+        end
+        b:SetScript("OnEnter",ShowShelf)
+        b:SetScript("OnMouseWheel",function(self,delta)
+            if not row.members or #row.members<2 then return end
+            self.detailMember=math.max(0,math.min(#row.members,self.detailMember+(delta<0 and 1 or -1)));ShowShelf(self)
         end)
     end
 end
@@ -602,12 +628,17 @@ local function CursorTime()
     local logical=x/scale-frame:GetLeft();return domain.first+(logical-48)/784*(domain.last-domain.first),logical
 end
 local function DrawGraph(page,example)
-    HidePool(graphPool);local points={};local max=example and page.maxHealth or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
+    HidePool(graphPool);HidePool(graphLines);local points={};local max=example and page.maxHealth or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
     if example then points=page.healthPoints
-    elseif max then for _,row in ipairs(model.rows)do local hp=Number(row.recordedHP);if hp~=nil and hp<=max then points[#points+1]={offset=row.nativeOffset,hp=hp}end end end
-    frame.graphLabel:SetShown(#points>0);frame.graphBase:SetShown(#points>0)
-    if #points==0 then return end
-    local n,previous=0
+    elseif max then for _,row in ipairs(model.rows)do local hp=Number(row.recordedHP);points[#points+1]={offset=row.nativeOffset,hp=hp and hp<=max and hp or nil}end end
+    local valid=0;for _,point in ipairs(points)do if point.hp~=nil then valid=valid+1 end end
+    frame.graphLabel:SetShown(valid>0);frame.graphBase:SetShown(valid>0)
+    frame.graphHelp=frame.graphHelp or CreateFrame("Button",nil,frame)
+    Size(frame.graphHelp,28,18);Place(frame.graphHelp,"TOPLEFT",frame,"TOPLEFT",18,-(GRAPH_TOP-19)-extraHeight);frame.graphHelp:SetShown(valid>0)
+    frame.graphHelp:SetScript("OnEnter",function(self)Tooltip(self,{"Recorded health","Dots are recorded health. Dashed lines join samples; health between them is unknown."})end)
+    frame.graphHelp:SetScript("OnLeave",HideTooltip)
+    if valid==0 then return end
+    local n,lineCount,previous=0,0
     local scale=math.max(.1,ReadMetric(frame,"GetEffectiveScale")or 1)
     local function Snap(value)return math.floor(value*scale+.5)/scale end
     local stroke=math.max(1,math.floor(2*scale+.5))/scale
@@ -615,7 +646,8 @@ local function DrawGraph(page,example)
         n=n+1;local x2,y2=Snap(x+w),Snap(y+h);x,y=Snap(x),Snap(y)
         Rect(graphPool,n,frame,x,y,math.max(1/scale,x2-x),math.max(1/scale,y2-y),color,alpha,layer)
     end
-    for _,point in ipairs(points)do
+    for index,point in ipairs(points)do
+        if point.hp==nil then previous=nil else
         local x,y=X(point.offset),GRAPH_TOP+extraHeight+(1-point.hp/max)*GRAPH_HEIGHT
         local color=previous and(point.hp>previous.hp and C.success or point.hp<previous.hp and pink or previous.color)or lavender
         if example and previous then
@@ -625,28 +657,50 @@ local function DrawGraph(page,example)
             end
             if y~=previous.y then Stroke(x-stroke/2,math.min(previous.y,y)-stroke/2,stroke,math.abs(previous.y-y)+stroke,color)end
         end
-        if not example then Stroke(x-1,y-1,2,2,pink,.7)end
-        previous={x=x,y=y,hp=point.hp,color=color}
+        if not example then
+            -- Equal-time samples have no known internal order. Missing samples
+            -- break joins; all coordinates remain on the fixed 0–100% scale.
+            local tied=(points[index-1]and points[index-1].offset==point.offset)or(points[index+1]and points[index+1].offset==point.offset)
+            if previous and not previous.tied and not tied and x>previous.x and type(frame.CreateLine)=="function"then
+                local dx,dy=x-previous.x,y-previous.y;local length=math.sqrt(dx*dx+dy*dy)
+                for d=0,length,7/scale do
+                    local finish=math.min(length,d+4/scale)
+                    lineCount=lineCount+1;local line=graphLines[lineCount]or frame:CreateLine(nil,"ARTWORK");graphLines[lineCount]=line
+                    line:SetStartPoint("TOPLEFT",frame,previous.x+dx*d/length,-(previous.y+dy*d/length))
+                    line:SetEndPoint("TOPLEFT",frame,previous.x+dx*finish/length,-(previous.y+dy*finish/length))
+                    line:SetThickness(1/scale);line:SetColorTexture(C.textSoft[1],C.textSoft[2],C.textSoft[3],.5);line:Show()
+                end
+            end
+            local outline=1/scale;Stroke(x-2-outline,y-2-outline,4+2*outline,4+2*outline,C.canvasDeep,1,"OVERLAY")
+            Stroke(x-2,y-2,4,4,pink,.95,"OVERLAY")
+            previous={x=x,y=y,hp=point.hp,color=color,tied=tied}
+        else previous={x=x,y=y,hp=point.hp,color=color}end
+        end
     end
 end
 local function PrepareSupportMarkers(page,example)
-    frame.supportMarkers=frame.supportMarkers or{};HidePool(frame.supportMarkers);for _,b in ipairs(frame.supportMarkers)do HidePool(b.stems or{})end;frame.healTargets={}
+    frame.supportMarkers=frame.supportMarkers or{};HidePool(frame.supportMarkers);for _,b in ipairs(frame.supportMarkers)do HidePool(b.stems or{});HidePool(b.brackets or{})end;frame.healTargets={}
     local rows={}
     if example then for _,row in ipairs(page.heals)do rows[#rows+1]={row=row,kind="healing",amount=row.amount}end end
-    for _,row in ipairs(model.rows)do local amount=Number(row.absorbed);if row.kind=="damage"and amount and amount>0 then rows[#rows+1]={row=row,kind="absorbed",amount=amount}end end
+    frame.absorbMeasure=frame.absorbMeasure or Font(frame,13,"BOLD");frame.absorbMeasure:Hide()
+    local function AbsorbLabel(amount,count)return "+"..Amount(amount)..(count>1 and" ×"..count or"")end
+    local clusters=M:GroupAbsorbs(model.rows,X,function(amount,count)
+        Text(frame.absorbMeasure,AbsorbLabel(amount,count));return ReadMetric(frame.absorbMeasure,"GetUnboundedStringWidth")or frame.absorbMeasure:GetStringWidth()
+    end)
+    for _,group in ipairs(clusters)do rows[#rows+1]=group end
     table.sort(rows,function(a,b)if a.row.nativeOffset==b.row.nativeOffset then return a.row.nativeIndex<b.row.nativeIndex end;return a.row.nativeOffset<b.row.nativeOffset end)
     local laneEnds={};local maxLane=1
     for i,entry in ipairs(rows)do
         local b=frame.supportMarkers[i]or CreateFrame("Button",nil,frame);frame.supportMarkers[i]=b
         b.label=b.label or Font(b,13,"BOLD");b.label:SetJustifyH("CENTER");Place(b.label,"CENTER",b,"CENTER",0,0)
         b.color=entry.kind=="healing"and C.success or absorbBlue;b.label:SetTextColor(unpack(b.color))
-        Text(b.label,"+"..Amount(entry.amount))
+        Text(b.label,AbsorbLabel(entry.amount,entry.rows and #entry.rows or 1))
         b.visualWidth=ReadMetric(b.label,"GetUnboundedStringWidth")or b.label:GetStringWidth()
         b.markerWidth=math.max(28,b.visualWidth+8);b.label:SetWidth(b.visualWidth)
-        local x=X(entry.row.nativeOffset);local lane=1
-        while laneEnds[lane]and x-b.visualWidth/2<laneEnds[lane]+6 do lane=lane+1 end
-        laneEnds[lane]=x+b.visualWidth/2;maxLane=math.max(maxLane,lane)
-        b.entry,b.lane,b.timeX=entry,lane,x;Size(b,b.markerWidth,20);b.stems=b.stems or{}
+        local x=entry.x or X(entry.row.nativeOffset);local lane=entry.lane or 1
+        while not entry.lane and laneEnds[lane]and x-b.markerWidth/2<laneEnds[lane]+2 do lane=lane+1 end
+        laneEnds[lane]=x+b.markerWidth/2;maxLane=math.max(maxLane,lane)
+        b.entry,b.lane,b.timeX=entry,lane,x;Size(b,b.markerWidth,20);b.stems=b.stems or{};b.brackets=b.brackets or{}
         if entry.kind=="healing"then frame.healTargets[#frame.healTargets+1]=b end
     end
     frame.supportMarkerCount=#rows
@@ -659,9 +713,11 @@ function UI:Render()
     for _,b in ipairs(damagePool)do if b.span then b.span:Hide()end;if b.amountTarget then b.amountTarget:Hide()end;if b.brackets then HidePool(b.brackets)end;if b.stems then HidePool(b.stems)end end
     for _,b in ipairs(supportPool)do if b.lines then HidePool(b.lines)end;if b.activationStems then HidePool(b.activationStems)end end
     local rows=page.native and page.native.rows or{}
-    model=M:Group(rows,example and page.transitions or{});domain={first=-5,last=0}
+    model=M:Group(rows,example and page.transitions or{},not example and{items=16}or nil);domain={first=example and -5 or 0,last=0}
     for _,row in ipairs(model.rows)do domain.first=math.min(domain.first,row.nativeOffset);domain.last=math.max(domain.last,row.nativeOffset)end
+    if not example then domain.first=math.min(-1,domain.first-.05)end
     if domain.last-domain.first<.1 then domain.first=domain.last-.1 end
+    frame.timeDomain=domain
     local supportExtra=PrepareSupportMarkers(page,example);frame.supportExtra=supportExtra
     local elapsed=page.encounter and page.encounter.startedAt and page.diedAt-page.encounter.startedAt
     Text(frame.fight,elapsed and string.format("Fight %d:%02d",math.floor(elapsed/60),math.floor(elapsed%60))or"")
@@ -676,12 +732,17 @@ function UI:Render()
     RefreshReminderSwitch();Place(frame.info,"TOPLEFT",frame,"TOPLEFT",example and 218 or 174,-23)
     frame.share:SetEnabled(true);frame.share:SetAlpha(1)
     local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
-    local tierEnd={-100,-100};local spanEnd={-math.huge,-math.huge};local secondTier=false
+    local tierEnd={-100,-100};local tierCount={0,0};local spanEnd={-math.huge,-math.huge};local secondTier=false
     for _,item in ipairs(model.items)do
         local x=(X(item.first)+X(item.last))/2;local tier
         if item.count>1 and item.last>item.first then
             tier=item.first>spanEnd[1]and 1 or 2;spanEnd[tier]=item.last
         else tier=x-46>tierEnd[1]and 1 or 2 end
+        if not example then
+            if tierCount[1]>=8 then tier=2 elseif tierCount[2]>=8 then tier=1
+            elseif x-46<=tierEnd[1]and x-46<=tierEnd[2]then tier=tierEnd[1]<=tierEnd[2]and 1 or 2 end
+        end
+        tierCount[tier]=tierCount[tier]+1
         if tier==2 then secondTier=true end
         item.tier=tier;item.iconX=math.max(x,tierEnd[tier]+46);tierEnd[tier]=item.iconX+46
     end
@@ -694,7 +755,7 @@ function UI:Render()
     if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(BASE_HEIGHT+extraHeight)))end
     local rail=202+shelfExtra+supportExtra+fightExtra;Place(frame.rail,"TOPLEFT",frame,"TOPLEFT",48,-rail);Size(frame.rail,784,1)
     for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;local x=X(time)
-        Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=string.format("%s%.0fs",time<0 and"−"or"",math.abs(time));Text(frame.ticks[i],frame.tickLabels[i])
+        Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=time==0 and"0s"or string.format(not example and domain.last-domain.first<5 and"%s%.1fs"or"%s%.0fs",time<0 and"−"or"",math.abs(time));Text(frame.ticks[i],frame.tickLabels[i])
         Place(frame.tickMarks[i],"TOPLEFT",frame,"TOPLEFT",x,-rail+4);Size(frame.tickMarks[i],1,8)
     end
     Place(frame.fight,"TOPRIGHT",frame,"TOPRIGHT",-20,-rail+25)
@@ -706,6 +767,7 @@ function UI:Render()
     Place(frame.fight,"BOTTOMRIGHT",frame,"TOPLEFT",frame.deathX or 832,-rail+8)
     Place(frame.graphLabel,"TOPLEFT",frame,"TOPLEFT",20,-(GRAPH_TOP-17)-extraHeight);Place(frame.graphBase,"TOPLEFT",frame,"TOPLEFT",48,-GRAPH_BOTTOM-extraHeight);Size(frame.graphBase,784,1)
     frame.guide:Hide();frame.interval:Hide();frame.tombstone:Hide();frame.empty:SetShown(#rows==0)
+    Text(frame.empty,not example and not page.native and(page.nativeAttempts and page.nativeAttempts<R.LIMITS.attempts and"Hit details are loading"or"Hit details unavailable")or"No hit details recorded")
     for index,item in ipairs(model.items)do
         local b=damagePool[index]or Icon(frame,46);damagePool[index]=b;b.group=item
         local keys={};for _,row in ipairs(item.rows)do keys[#keys+1]=row.nativeIndex end;local groupKey=table.concat(keys,":")
@@ -715,7 +777,8 @@ function UI:Render()
         DamageBadges(b);Text(b.badge,"")
         if item.mixed then b.icon:Hide()else b.icon:Show();Artwork(b,item.rows[b.member])end
         Text(b.countText,"×"..#item.rows);Size(b.countBadge,math.max(24,b.countText:GetStringWidth()+8),16);b.countBadge:SetShown(#item.rows>1)
-        b.mixedLabel=b.mixedLabel or Font(b,11,"BOLD",pink);Place(b.mixedLabel,"CENTER",b,"CENTER",0,0);Text(b.mixedLabel,item.mixed and"Mixed"or"")
+        local mixedName="Hits";for _,row in ipairs(item.rows)do if row.kind~="damage"then mixedName="Events"end end
+        b.mixedLabel=b.mixedLabel or Font(b,11,"BOLD",pink);Place(b.mixedLabel,"CENTER",b,"CENTER",0,0);Text(b.mixedLabel,item.mixed and mixedName or"")
         b.amount=b.amount or Font(b,15,"BOLD",pink);Place(b.amount,"BOTTOM",b,"TOP",0,14)
         Text(b.amount,item.amountComplete and Amount(item.amount)or(item.amount>0 and"≥"..Amount(item.amount)or"—"))
         b.brackets=b.brackets or{}
@@ -807,6 +870,8 @@ function UI:Render()
     for i=1,#model.items do local b=damagePool[i];b.stems=b.stems or{};Stem(b.stems,(X(b.group.first)+X(b.group.last))/2,rail,b.spanY,pink,.55,frame.textExclusions)end
     local support=example and page.supports or page.casts or{}
     local supportCount=math.min(#support,8)
+    frame.usesLabel=frame.usesLabel or Label(frame,"Recorded uses",10,33,-121,400,C.muted)
+    Place(frame.usesLabel,"TOPLEFT",frame,"TOPLEFT",33,-121-shelfExtra);frame.usesLabel:SetShown(not example and supportCount>0)
     for i=1,supportCount do local row=support[example and i or #support-supportCount+i];local b=supportPool[i]or Icon(frame,30);supportPool[i]=b
         local x=example and X(math.max(domain.first,row.offset))or 48+(i-1)*36
         Place(b,"TOPLEFT",frame,"TOPLEFT",x-15,-138-shelfExtra);Artwork(b,row);Text(b.badge,example and""or"i");b:Show()
@@ -822,24 +887,46 @@ function UI:Render()
         end
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision then return end
-            local lines={row.name or"Recorded cast",example and"Recorded defensive activation"or"Recorded cast; effect duration is not recorded."}
-            if not example then lines[#lines+1]="This cast cannot be aligned to the hit timeline."end
+            local lines={row.name or"Recorded cast",example and"Recorded defensive activation"or"Use recorded."}
+            if not example then
+                lines[#lines+1]="Timing on this timeline unavailable."
+                if row.observedAt then lines[#lines+1]=string.format("Received %.1fs before the local death notification.",page.diedAt-row.observedAt)end
+                lines[#lines+1]="Effect duration and shield contribution were not recorded."
+            end
             if not example and #support>supportCount then lines[#lines+1]="Showing the latest "..supportCount.." of "..#support.." recorded casts."end
             Tooltip(self,lines,row.spellID)
         end)
     end
     for i=1,frame.supportMarkerCount do local b=frame.supportMarkers[i];local entry=b.entry;local row=entry.row
         local y=181+shelfExtra+(b.lane-1)*20;Place(b,"CENTER",frame,"TOPLEFT",b.timeX,-y);b:Show()
-        Stem(b.stems,b.timeX,y+13,rail-2,b.color,.6,frame.textExclusions)
-        b:SetScript("OnEnter",function(self)
+        if entry.rows and #entry.rows>1 then
+            local first,last=X(entry.first),X(entry.last)
+            Rect(b.brackets,1,frame,first,rail-5,math.max(1,last-first),1,b.color,.7)
+            Rect(b.brackets,2,frame,first,rail-8,1,6,b.color,.7);Rect(b.brackets,3,frame,last,rail-8,1,6,b.color,.7)
+            Stem(b.stems,(first+last)/2,y+13,rail-5,b.color,.6,frame.textExclusions)
+        else Stem(b.stems,X(row.nativeOffset),y+13,rail-2,b.color,.6,frame.textExclusions)end
+        b.detailMember=0;b:EnableMouseWheel(entry.rows and #entry.rows>1 or false)
+        local function ShowSupport(self)
             if current~=page or revision~=renderRevision or example~=IsExample()then return end
             if entry.kind=="healing"then Tooltip(self,{row.name,"+"..Amount(entry.amount).." healing","Healer: "..row.healer},row.spellID,nil,C.success)
             else
                 local amount=Raw(entry.amount);local whole,rest=amount:match("^(%d+)(.*)$")
                 if whole then amount=whole:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")..rest end
-                Tooltip(self,{"Shield absorb",amount.." damage absorbed by a shield."},nil,nil,absorbBlue)
+                local members=entry.rows or{row};local lines={"Shield absorption · "..#members..(#members==1 and" hit"or" hits"),"Total absorbed: "..amount,"Shield source not recorded."}
+                local focusIndex
+                if #members>1 then lines[#lines+1]="Mouse wheel: inspect absorbed hits"end
+                for index,member in ipairs(members)do
+                    lines[#lines+1]=string.format("%.3fs · %s · %s",member.nativeOffset,Raw(member.absorbed),member.name or"Recorded hit")
+                    if self.detailMember==index then focusIndex=#lines end
+                end
+                Tooltip(self,lines,nil,nil,absorbBlue,focusIndex)
             end
-        end);b:SetScript("OnLeave",HideTooltip)
+        end
+        b:SetScript("OnEnter",ShowSupport);b:SetScript("OnLeave",HideTooltip)
+        b:SetScript("OnMouseWheel",function(self,delta)
+            if not entry.rows or #entry.rows<2 then return end
+            self.detailMember=math.max(0,math.min(#entry.rows,self.detailMember+(delta<0 and 1 or -1)));ShowSupport(self)
+        end)
     end
     DrawGraph(page,example)
     local choice=selected
@@ -849,10 +936,10 @@ function UI:Render()
 end
 function UI:ShowLast()
     local page=R:GetPage();if not page then RA:Print("No log recorded this session");return false end
-    self:Hide();Ensure();current,sample=page,false;self:Render();frame:Show();return true
+    self:Hide();Ensure();current,sample=page,false;self:Render();frame:Show();RA:FireCallback("DEATH_RECAP_VISIBILITY",true,page);return true
 end
 function UI:Preview()
-    self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();return true
+    self:Hide();Ensure();examplePage=SamplePage();current,sample=examplePage,true;self:Render();frame:Show();RA:FireCallback("DEATH_RECAP_VISIBILITY",true);return true
 end
 local function HideActionShieldIfUnused()
     if actionShield and not(share and share:IsShown())then actionShield:Hide()end
