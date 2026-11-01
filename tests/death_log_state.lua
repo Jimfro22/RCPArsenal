@@ -47,7 +47,7 @@ check(latest.pendingAt==220.1 and latest.pendingReason=='cast-received' and late
 R:SetOption('enabled',false);dead=false;time=230;R:SetOption('enabled',true);event('SPELL_UPDATE_COOLDOWN')
 time=230.02;cooldown={isEnabled=true,isActive=true};event('SPELL_UPDATE_COOLDOWN');dead=true;time=230.03;event('PLAYER_DEAD');local pendingPage=R:GetPage()
 local direct=pendingPage.lastAlive.spells[1]
-check(direct.pendingAt==nil and direct.chargesPendingAt==230 and direct.cooldown=='active-context-unknown'and direct.directCooldown.observedAt==230.02 and R:ClassifyRecordedCheck(direct)==nil,'Second synchronous event lost flags or pending charges became available')
+check(direct.pendingAt==nil and direct.chargesPendingAt==nil and direct.chargesAt==230.02 and direct.chargeQuery=='not_applicable' and direct.cooldown=='active-context-unknown'and direct.directCooldown.observedAt==230.02 and R:ClassifyRecordedCheck(direct)==nil,'Second synchronous event lost flags or pending charges became available')
 R:SetOption('enabled',false);dead=false;time=240;R:SetOption('enabled',true);combat=false;time=241;event('PLAYER_REGEN_ENABLED');dead=true;time=242;event('PLAYER_DEAD')
 check(R:GetPage().lastAlive.coverageEndedAt==241,'Combat coverage gap hidden')
 -- Cache generation changes without altering reminder independence or bag scope.

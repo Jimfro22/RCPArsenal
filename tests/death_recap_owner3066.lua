@@ -103,7 +103,8 @@ local selected=popup.selected
 local inspected=0
 for _,button in ipairs(objects)do if button.parent==popup and button.icon and button.width==32 and button:IsVisible()then
  tooltipSpell=nil;tooltipLines={};button:Fire('OnEnter')
- if tooltipSpell==235450 or tooltipSpell==55342 then
+ check(tooltipSpell~=55342 and tooltipSpell~=110959,'Legacy owner utility gained current defensive qualification')
+ if tooltipSpell==235450 then
   inspected=inspected+1
   local copy=table.concat(tooltipLines,' ')
   check(copy:find('1.9s',1,true),'Owner shelf lost the independent recorded check age')
@@ -119,7 +120,7 @@ for _,button in ipairs(objects)do if button.parent==popup and button.icon and bu
   end
  end
 end end
-check(inspected==2 and popup.selected==selected and popup.shelfAge.text==''and not popup.shelfAge:IsShown(),'Owner shelf hover omitted evidence, changed HP or restored visible age')
+check(inspected==1 and popup.selected==selected and popup.shelfAge.text==''and not popup.shelfAge:IsShown(),'Owner shelf hover omitted evidence, changed HP or restored visible age')
 
 -- This optional receipt list is deliberately DERIVED, never claimed as the
 -- owner's raw per-use export. Count 2 permits exactly its first/last endpoints.

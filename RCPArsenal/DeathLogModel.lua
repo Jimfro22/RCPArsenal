@@ -97,11 +97,26 @@ local function Retain(input,limits)
     end)
     return rows,examined
 end
+local function Public(value)
+    if type(issecretvalue)~="function"then return nil end
+    local ok,secret=pcall(issecretvalue,value)
+    if ok and secret==false then return value,true end
+end
+local function Table(value)
+    value=Public(value)
+    if type(value)=="table"and getmetatable(value)==nil then return value end
+end
+local function Number(value)
+    value=Public(value)
+    if type(value)=="number"and value==value and value>-math.huge and value<math.huge then return value end
+end
 -- Viewport selection is a new presentation list, never a crop of the recorded
 -- page or share report. Importance only changes presentation: an earlier hit
 -- must reach 20% of the public reference max or half the largest known nonfatal
 -- hit in the last 8 seconds. Unknown/fatal/out-of-window hits cannot set it.
-function Model:Viewport(input,maxHealth)
+-- Valid approximate uses can extend this window using their aligned offsets,
+-- including the frozen fatal-to-maximum adjustment, never their local ages.
+function Model:Viewport(input,maxHealth,alignment)
     local retained,examined=Retain(input,self.LIMITS)
     local maximum=type(maxHealth)=="number"and maxHealth==maxHealth and maxHealth>0 and maxHealth<math.huge and maxHealth or nil
     local function Candidate(row)
@@ -112,6 +127,14 @@ function Model:Viewport(input,maxHealth)
     local age=0
     for _,row in ipairs(retained)do
         if Candidate(row)and(maximum and row.amount>=maximum*.2 or largest and row.amount>=largest*.5)then age=math.max(age,-Time(row))end
+    end
+    alignment=Table(alignment)
+    if alignment and Public(alignment.anchorValid)==true and Public(alignment.approximate)==true then
+        local aligned=Table(alignment.aligned)
+        for i=1,aligned and math.min(#aligned,self.LIMITS.rows)or 0 do
+            local entry=Table(aligned[i]);local offset=entry and Number(entry.offset)
+            if offset and Public(entry.approximate)==true and offset>=-8 and offset<=0 then age=math.max(age,-offset)end
+        end
     end
     local span=math.max(5,math.min(8,math.ceil(age)))
     local rows={}
@@ -146,19 +169,6 @@ function Model:Group(input,transitions,options)
 end
 -- This is an approximate death-notice-to-fatal-event alignment, not evidence
 -- that the clocks share an origin or that a use caused any recorded effect.
-local function Public(value)
-    if type(issecretvalue)~="function"then return nil end
-    local ok,secret=pcall(issecretvalue,value)
-    if ok and secret==false then return value,true end
-end
-local function Table(value)
-    value=Public(value)
-    if type(value)=="table"and getmetatable(value)==nil then return value end
-end
-local function Number(value)
-    value=Public(value)
-    if type(value)=="number"and value==value and value>-math.huge and value<math.huge then return value end
-end
 local function PositiveID(value)
     value=Number(value)
     return value and value>0 and value==math.floor(value)and value or nil

@@ -182,10 +182,11 @@ check(stateReads==0,'Frozen availability queried live state')
 for _,saved in ipairs(savedAPIs)do saved.object[saved.key]=saved.value end
 ShowHost(host);Hidden('Popup alone advertised a retained death')
 Death(1);local b=named.RCPArsenalDeathRecapEntry
-check(b and b:IsShown()and b.width>=216 and b.width<=288 and b.height==76 and b.parent==UIParent,'Native-first death did not create the compact independent card')
+check(b and b:IsShown()and b.width==160 and b.height==32 and b.parent==UIParent,'Native-first death did not create the compact independent zero-icon card')
 check(b.points[1][1]=='BOTTOM'and b.points[1][2]==host and b.points[1][3]=='TOP'and b.points[1][4]==0 and b.points[1][5]==8,'Card did not center above its native host with an eight-unit gap')
-check(b.logo.lastDesired==RA.Theme.Assets.HeaderLogo and b.logo.filter=='LINEAR'and b.logo.width==24 and b.logo.height==24,'Existing logo broker/filter or compact size lost')
-check(b.label.text=='Death Log'and b.label.fontSize==13 and b.summary and b.summary.fontSize==11 and type(b.summary.text)=='string'and b.chevron and b.pulse.looping=='REPEAT','Compact card title, caption, chevron or pulse missing')
+check(b.logo.lastDesired==RA.Theme.Assets.HeaderLogo and b.logo.filter=='LINEAR'and b.logo.width==18 and b.logo.height==18,'Existing logo broker/filter or compact size lost')
+check(b.label.text=='Death Log'and b.label.fontSize==13 and b.summary==nil and b.chevron and b.pulse.looping=='REPEAT','Compact card title, chevron or pulse missing, or removed caption remains')
+check(b.logo.points[1][4]==10 and b.logo.points[1][5]==-7 and b.label.points[1][4]==36 and b.label.points[1][5]==-7 and b.label.height==18,'Zero-icon card header was not centered in its shorter height')
 check(#b.pulse.animations==2 and b.pulse.animations[1].fromAlpha==.10 and b.pulse.animations[1].toAlpha==.22 and b.pulse.animations[1].duration==1.4 and b.pulse.animations[2].duration==1.4,'Pulse escaped 2.8s .10/.22 breath')
 local starts=pulseStarts
 RA:FireCallback('DEATH_RECAP_CHANGED','native');RA:FireCallback('DEATH_RECAP_CHANGED','death')
@@ -204,7 +205,7 @@ host.which='DEATH';ShowHost(host);check(b:IsShown(),'Same death did not return a
 page.pending=false;RA:FireCallback('DEATH_RECAP_CHANGED','native');b:Fire('OnEnter')
 check(GameTooltip.text:find('unavailable',1,true),'Unavailable tooltip falsely claimed ready/loading');b:Fire('OnLeave')
 page.native={};RA:FireCallback('DEATH_RECAP_CHANGED','native');b:Fire('OnEnter')
-check(GameTooltip.text=='Open your captured log.','Ready tooltip changed entry promise');b:Fire('OnLeave')
+check(GameTooltip.text=='Open your captured log. Availability was not recorded.','Ready native details changed the open-log promise or invented availability provenance');b:Fire('OnLeave')
 stale=b.scripts.OnClick;page={id=99,captureGeneration=99};stale();check(opens==1,'Page replacement opened last page through stale click')
 RA:FireCallback('DEATH_RECAP_CHANGED','native');Hidden('Native update latched an unwitnessed page')
 Death(2);check(b:IsShown()and b.pulse.playing,'Replacement death did not reset attention')
@@ -276,21 +277,41 @@ local function Icons()
  local icons={};for _,icon in ipairs(b.icons)do if icon:IsVisible()then icons[#icons+1]=icon end end
  return icons
 end
+local function CheckCardLayout(expected,preview)
+ local visible=Icons();local strips={};local rowCount=0
+ check(#visible==expected and b.width>=160 and b.width<=280 and b.width%4==0 and b.summary==nil,'Compact card bounds/icon count or caption removal changed')
+ local headerY=expected==0 and -7 or -6
+ check(b.logo.width==18 and b.logo.height==18 and b.logo.points[1][4]==10 and b.logo.points[1][5]==headerY,'Compact logo geometry changed')
+ check(b.label.text==(preview and'Death Log · Preview'or'Death Log')and b.label.fontSize==13 and b.label.height==18 and b.label.points[1][4]==36 and b.label.points[1][5]==headerY,'Compact header lost title geometry or explicit Preview label')
+ check(b.label.width>=b.label:GetStringWidth(),'Compact header clipped its visible title')
+ check(b.chevron.width==8 and b.chevron.points[1][4]==-8 and b.chevron.points[1][5]==headerY,'Open cue lost right inset or header alignment')
+ for _,icon in ipairs(visible)do
+  local x,y=icon.points[1][4],icon.points[1][5]
+  check(icon.width==22 and icon.height==22 and x>=8 and x+22<=b.width-8 and -y+22<=b.height-6,'Compact icon or strip padding changed')
+  check(y<=-28 and(-y-28)%26==0,'Compact strip has a blank caption band or invalid row step')
+  if not strips[y]then strips[y]={first=x,last=x+22};rowCount=rowCount+1 else strips[y].first=math.min(strips[y].first,x);strips[y].last=math.max(strips[y].last,x+22)end
+ end
+ for _,strip in pairs(strips)do check(math.abs(strip.first-(b.width-strip.last))<.001,'Wrapped icon row is not independently centered')end
+ check(b.height==(expected==0 and 32 or 56+(rowCount-1)*26),'Compact card height retained a caption band or lost extra-row spacing')
+end
 local helperCalls=0;local availableHelper=E.GetAvailableRows
 E.GetAvailableRows=function(self,value)helperCalls=helperCalls+1;return availableHelper(self,value)end
 local freshSample={spells={Ready(30,'major',99),Ready(40,'major',97),Ready(10,'minor',98)},supplies={positiveStone,positivePotion}}
 Death(11,freshSample);ShowHost(host)
 local icons=Icons()
-check(#icons==5 and b.summary.text=='Available when checked'and helperCalls==1,'Death card did not cache its positive living-check snapshot once')
-check(b.height==76,'Normal available state changed the compact card height')
+check(#icons==5 and helperCalls==1,'Death card did not cache its positive living-check snapshot once')
+check(b.width==160 and b.height==56,'Common five-icon state did not fit the compact 160 by 56 card')
+CheckCardLayout(5)
 for i,icon in ipairs(icons)do
- check(icon.width==22 and icon.height==22 and icon.points[1][5]==-46,'Normal icon row lost its compact size or vertical position')
+ check(icon.width==22 and icon.height==22 and icon.points[1][5]==-28,'Normal icon row lost its compact size or vertical position')
  if i>1 then
   local gap=icon.points[1][4]-icons[i-1].points[1][4]-icons[i-1].width
   check(math.abs(gap-(i==4 and 10 or 4))<.001,'Normal icon row lost the small defensive gap or item-family separation')
  end
 end
 check(b.chevron:IsShown()and not b.previewClose:IsShown(),'Live card exposed preview close or lost open cue')
+b:Fire('OnEnter');local cardHelp=table.concat(GameTooltip.lines,' ')
+check(cardHelp:find('Shown icons were available when checked.',1,true)and cardHelp:find('Other checks may be missing or uncertain.',1,true),'Caption removal lost historical availability or uncertainty from card hover');b:Fire('OnLeave')
 for i,icon in ipairs(icons)do
  check(icon.kind=='Button'and icon.parent==b and icon.width==icon.height and not icon.cooldown and not icon.hotkey and next(icon.attrs)==nil,'Evidence icon acquired an action/cooldown/hotkey control')
  check(icon.row and icon.row.checkedAt and(icon.row.spellID or icon.row.itemID),'Available icon lost its frozen identity/check time')
@@ -298,7 +319,8 @@ for i,icon in ipairs(icons)do
  Hidden('Icon-opened log retained entry');Close();icons=Icons()
 end
 icons=Icons();icons[1]:Fire('OnEnter')
-check(GameTooltip:GetOwner()==icons[1]and GameTooltip.text=='Defensive 30'and table.concat(GameTooltip.lines,' '):find('1.0s before death',1,true),'Available spell hover lost captured name or historical check age')
+local iconHelp=table.concat(GameTooltip.lines,' ')
+check(GameTooltip:GetOwner()==icons[1]and GameTooltip.text=='Defensive 30'and iconHelp:find('Available when checked',1,true)and iconHelp:find('1.0s before death notice',1,true)and iconHelp:find('Click to open Death Log',1,true),'Available spell hover lost historical availability, captured name/check age or open action')
 check(not b.pulse.playing,'Icon hover retained attention animation')
 local iconClick=icons[1].scripts.OnClick;local beforeIcons=opens
 HideHost(host);Hidden('Host hide retained icon card');check(not GameTooltip:IsShown(),'Host hide left child-owned availability tooltip')
@@ -330,21 +352,33 @@ for _,icon in ipairs(icons)do
  check(icon.row and not icon.overflow and icon.width==22 and icon.height==22,'Wrapped evidence became a count-only overflow or changed icon size')
  count=count+1
  if icon.row and icon.row.kind=='stone'then stone=icon elseif icon.row and icon.row.kind=='potion'then potion=icon end
- local point=icon.points[1];check(point[4]>=0 and point[4]+icon.width<=b.width and -point[5]+icon.height<=b.height,'Available icon overflows card bounds')
+ local point=icon.points[1];check(point[4]>=8 and point[4]+icon.width<=b.width-8 and -point[5]+icon.height<=b.height-6,'Available icon lost its side/bottom padding or overflows card bounds')
  lines[point[5]]=true
  local before=opens;icon:Fire('OnClick');check(opens==before+1 and opened,'Wrapped evidence icon did not open its frozen page');Close()
 end
 local lineCount=0;for _ in pairs(lines)do lineCount=lineCount+1 end
-check(#icons==34 and count==34 and stone and potion and lineCount>1 and b.height==76+(lineCount-1)*26,'Wrapped card omitted available icons, lost supply families or grew outside its row-height rule')
+check(#icons==34 and count==34 and stone and potion and lineCount>1 and b.height==56+(lineCount-1)*26,'Wrapped card omitted available icons, lost supply families or grew outside its row-height rule')
+CheckCardLayout(34)
+check(stone.points[1][5]==potion.points[1][5],'Wrapped item pair split across rows')
 local ten={spells={},supplies={positiveStone,positivePotion}}
 for i=1,8 do ten.spells[i]=Ready(800+i)end
 Death(151,ten);ShowHost(host);icons=Icons()
-check(#icons==10 and b.width>=216 and b.width<=288 and b.height==76,'Ten available icons did not fit the normal compact card')
-for _,icon in ipairs(icons)do check(icon.points[1][5]==-46,'Normal ten-icon state wrapped unnecessarily')end
-Death(16,{spells={Ready(1)},supplies={}});ShowHost(host);check(#Icons()==1 and not Icons()[1].overflow and b.height==76,'Sparse death retained wrapped rows/extra icons or expanded height')
+check(#icons==10 and b.width==280 and b.height==56,'Ten available icons did not fit the 280 by 56 single-row card')
+CheckCardLayout(10)
+for _,icon in ipairs(icons)do check(icon.points[1][5]==-28,'Normal ten-icon state wrapped unnecessarily')end
+local boundary={spells={},supplies={positiveStone,positivePotion}}
+for i=1,9 do boundary.spells[i]=Ready(900+i)end
+Death(152,boundary);ShowHost(host);icons=Icons();CheckCardLayout(11)
+check(b.width==280 and b.height==82 and icons[9].points[1][5]==-28 and icons[10].row.kind=='stone'and icons[11].row.kind=='potion'and icons[10].points[1][5]==-54 and icons[11].points[1][5]==-54,'Near-full spell row split the item pair or left an extra caption band')
+Death(16,{spells={Ready(1)},supplies={}});ShowHost(host);check(#Icons()==1 and not Icons()[1].overflow and b.width==160 and b.height==56,'Sparse death retained wrapped rows/extra icons or failed to compact')
+CheckCardLayout(1)
 Death(17,{spells={{spellID=1,known=true,cooldown='unknown'}},supplies={}});ShowHost(host)
-check(#Icons()==0 and b.height==76 and b.summary.text=='No availability confirmed','Unknown-only check was presented as unavailable, changed height or retained old icons')
-Death(18);ShowHost(host);check(#Icons()==0 and b.height==76 and b.summary.text=='Availability was not recorded','Missing living sample was confused with a negative/unknown recorded check or changed card height')
+check(#Icons()==0 and b.width==160 and b.height==32,'Unknown-only check retained old icons or a reserved caption band')
+CheckCardLayout(0);b:Fire('OnEnter');local emptyHelp=table.concat(GameTooltip.lines,' ')
+check(emptyHelp:find('No availability confirmed.',1,true)and not emptyHelp:find('Availability was not recorded.',1,true)and emptyHelp:find('Other checks may be missing or uncertain.',1,true),'Unknown-only hover lost recorded-check provenance or uncertainty');b:Fire('OnLeave')
+Death(18);ShowHost(host);check(#Icons()==0 and b.width==160 and b.height==32,'Missing living sample retained old icons or a reserved caption band')
+CheckCardLayout(0);b:Fire('OnEnter');emptyHelp=table.concat(GameTooltip.lines,' ')
+check(emptyHelp:find('Availability was not recorded.',1,true)and not emptyHelp:find('No availability confirmed.',1,true)and emptyHelp:find('Other checks may be missing or uncertain.',1,true),'Missing living sample was confused with a negative/unknown recorded check');b:Fire('OnLeave')
 local untimed=Ready(1);untimed.cooldownAt=nil;untimed.observedAt=nil
 Death(181,{spells={untimed},supplies={}});ShowHost(host);Icons()[1]:Fire('OnEnter')
 check(table.concat(GameTooltip.lines,' '):find('Check time not recorded',1,true),'Missing check time appeared current/at death');Icons()[1]:Fire('OnLeave')
@@ -358,14 +392,15 @@ local previews=0;local originalPreview=U.Preview
 U.Preview=function()previews=previews+1;opened=true;RA:FireCallback('DEATH_RECAP_VISIBILITY',true,{id=0});return true end
 Death(19,{spells={Ready(1)},supplies={}});ShowHost(host);local realPage=page
 check(b.pulse.playing,'New real entry did not begin unviewed')
-E:Preview();check(b:IsShown()and b.summary.text=='Preview · sample checks'and b.points[1][2]==UIParent and b.previewClose:IsShown()and not b.chevron:IsShown(),'Preview card was not labelled, independently centered and dismissible')
+E:Preview();check(b:IsShown()and b.label.text=='Death Log · Preview'and b.points[1][2]==UIParent and b.previewClose:IsShown()and not b.chevron:IsShown(),'Preview card was not labelled, independently centered and dismissible')
+CheckCardLayout(#Icons(),true)
 check(page==realPage and R:GetPage()==realPage,'Card preview replaced the captured real page')
 local previewClick=Icons()[1].scripts.OnClick;local beforePreview=opens
 previewClick();check(previews==1 and opens==beforePreview and page==realPage,'Preview icon opened/mutated a real death page')
-Close();E:HidePreview();check(b:IsShown()and not b.summary.text:find('Preview',1,true)and b.pulse.playing,'Preview consumed real-death attention or failed to restore the real card')
+Close();E:HidePreview();check(b:IsShown()and b.label.text=='Death Log'and b.pulse.playing,'Preview consumed real-death attention or failed to restore the real card')
 E:Preview();previewClick=b.scripts.OnClick;b.previewClose:Fire('OnClick');previewClick()
-check(previews==1 and b:IsShown()and not b.summary.text:find('Preview',1,true),'Dismissed preview click remained active or close lost real card')
-HideHost(host);dead=false;E:Preview();check(b:IsShown()and b.summary.text:find('Preview',1,true),'Preview required own death or a native popup')
+check(previews==1 and b:IsShown()and b.label.text=='Death Log','Dismissed preview click remained active or close lost real card')
+HideHost(host);dead=false;E:Preview();check(b:IsShown()and b.label.text=='Death Log · Preview','Preview required own death or a native popup')
 b:Fire('OnClick');check(previews==2 and opens==beforePreview,'Preview card click did not open only the fictional full log');Close();E:HidePreview();Hidden('No-host preview dismissal retained a floating card')
 combat=true;E:Preview();Hidden('Preview entered during combat');combat=false
 E:Preview();enabled=false;RA:FireCallback('DEATH_RECAP_CHANGED','settings');Hidden('Disable retained preview mode')
@@ -375,7 +410,7 @@ E:Preview();RA:FireCallback('PROFILE_RESET');Hidden('Profile reset retained prev
 -- Preview also works while recording is disabled. Its existing lifecycle and
 -- display subscriptions must be demanded only for that temporary preview.
 enabled=false;RA:FireCallback('DEATH_RECAP_CHANGED','settings');E:Preview()
-check(b:IsShown()and b.summary.text=='Preview · sample checks','Disabled recorder blocked the independent card preview')
+check(b:IsShown()and b.label.text=='Death Log · Preview','Disabled recorder blocked the independent card preview')
 local refreshCalls=0;local entryRefresh=E.Refresh
 E.Refresh=function(self)refreshCalls=refreshCalls+1;return entryRefresh(self)end
 event('UI_SCALE_CHANGED');check(refreshCalls==1 and b:IsShown(),'Disabled-recorder preview did not observe display/scale changes')
@@ -397,10 +432,10 @@ combat=false;E:Preview();E:HidePreview();previewStops=0
 combat=true;event('PLAYER_REGEN_DISABLED');check(previewStops==0,'Explicit preview close retained the combat subscription');combat=false
 enabled=true;RA:FireCallback('DEATH_RECAP_CHANGED','settings')
 E:Preview();Death(20,{spells={Ready(2)},supplies={}});ShowHost(host)
-check(b:IsShown()and not b.summary.text:find('Preview',1,true)and Icons()[1].row.spellID==2,'New real death did not replace preview with its own frozen card')
+check(b:IsShown()and b.label.text=='Death Log'and Icons()[1].row.spellID==2,'New real death did not replace preview with its own frozen card')
 local retainedPage=page;E:Preview();local stoppedPreviewClick=b.scripts.OnClick;local stoppedPreviewCount=previews
 combat=true;event('PLAYER_REGEN_DISABLED')
-check(page==retainedPage and R:GetPage()==retainedPage and b:IsShown()and b.summary.text=='Available when checked'and Icons()[1].row.spellID==2 and b.pulse.playing,'Combat cancellation erased or marked viewed the real entry behind preview')
+check(page==retainedPage and R:GetPage()==retainedPage and b:IsShown()and b.label.text=='Death Log'and Icons()[1].row.spellID==2 and b.pulse.playing,'Combat cancellation erased or marked viewed the real entry behind preview')
 combat=false;stoppedPreviewClick();check(previews==stoppedPreviewCount,'Combat-cancelled preview callback revived the sample log')
 E.HidePreview=entryHidePreview
 U.Preview=originalPreview
@@ -409,6 +444,6 @@ check(ownedSchedules==0,'Entry created a timer or ticker')
 for _,obj in ipairs(objects)do local owner=obj;while owner and owner~=b do owner=owner.parent end
  if owner==b then check(not obj.scripts.OnUpdate,'Owned card/icon descendant installed a per-frame script')end
 end
-cleanErrors();nativePrint('PASS: '..checks..' Death Log entry lifecycle/identity/edge/animation assertions (offline)')
+cleanErrors();nativePrint('PASS: '..checks..' Death Log entry compact-layout/lifecycle/identity/edge/animation assertions (offline)')
 ]=]
 assert(loadstring(source, 'death-recap-entry-fixture'))()

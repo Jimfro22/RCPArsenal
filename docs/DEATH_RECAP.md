@@ -1,4 +1,4 @@
-# Death Log — alpha.39 timeline and selected health
+# Death Log — alpha.40 entry, player context and recorded uses
 
 Enable **Personal Tools → Death Recap** before a new pull. Recording starts OFF;
 Preview, View last and opening settings do not enable it. `/rcp recappreview`
@@ -6,11 +6,17 @@ opens an isolated **Preview** Arcane Mage / The Coiled Altar / Mythic page.
 Its amounts, selected health, heals and effect durations are fictional.
 `/rcp recap` opens the one retained personal page this login.
 
-Automatic opening defaults OFF. The compact alpha.38 availability card above the
+Automatic opening defaults OFF. The compact availability card above the
 visible Blizzard death dialog opens the current captured death, including a
 pending page. It disappears while the log is open and on release, resurrection
 or reset. `/rcp recapentrypreview` shows its separate labelled sample outside
 combat. Its availability evidence remains frozen.
+
+The header shows the player name captured once at the start of the recording
+session, using the captured class's static color. Long names stay on one line;
+the info hover retains the full captured name and realm. Old pages without a
+name keep the original header. Opening a page never queries the current player
+identity. The Preview uses an explicitly fictional identity.
 
 The 880×360 base display aligns the native timeline and bottom health bar at
 x48–832. Additional damage lanes add84 units, shelf rows add38, and approximate
@@ -42,8 +48,13 @@ seconds, a known positive nonfatal hit is important when it is at least20% of
 the recorded maximum health **or** at least50% of the largest known nonfatal hit
 in that interval. The earliest qualifying hit older than five seconds extends
 the view outward to a whole second, capped at−8s. Without a valid maximum, the
-relative criterion still applies. Without positive nonfatal amounts, the window
-stays five seconds. Filtering is presentation-only: older retained events remain
+relative criterion still applies. Valid approximately aligned use receipts can
+also extend the view to their projected native offset, rounded outward to a whole
+second and capped at eight seconds. Uses at5.6s and6.5s therefore open a seven-second
+view even when damage spans less than a second. Missing/stale alignment and uses
+projected earlier than−8s stay in the fallback chips and full report. Without a
+qualifying hit or aligned use, the window stays five seconds. Filtering is
+presentation-only: older retained events remain
 in the full report, and encounter info discloses the omitted count. No old event
 is clamped onto the left edge or silently assigned a new time.
 
@@ -69,7 +80,9 @@ There is no validated exact conversion between native time and GetTime. Missing,
 stale or unreadable anchors leave the factual receipt unaligned rather than
 placing it at zero. Repeated receipts remain distinct. Recorded-use chips and
 bounded overflow preserve individual details, including uses outside the visible
-window. No active-effect duration or readiness verdict follows from a cast.
+window. Utility uses are labelled as utility and excluded from the defensive
+availability shelf and entry card. No active-effect duration or readiness verdict
+follows from a cast.
 
 CDs show drawn checks and crosses only for proven available or unavailable frozen
 states; unresolved checks keep a question mark. The visible check-age caption is
@@ -95,6 +108,15 @@ castability or survival verdict follows. Casts and pending coalesced updates mar
 an explicit gap until checked. Combat end marks ended coverage. Missing data has
 precise restricted/unrecorded/unavailable provenance; it is never silently ready,
 zero, empty or unused. State is frozen; no historical countdown runs.
+
+Fresh independent inactive/held facts keep their new query time even when the
+flags agree with an older direct event. That event's GCD context remains separate;
+an event-dependent interpretation does not gain a newer timestamp. Eligible
+cooldown callbacks read charges for the affected known spells immediately, so a
+death before deferred reconciliation can retain an actual readable charge count.
+Unreadable or missing counts replace the old observation rather than borrowing
+it. Accepted own cast receipts request the existing coalesced reconciliation
+after invalidation. No new polling or inferred charge regeneration is added.
 
 Budget and diagnostics
 ----------------------
@@ -178,7 +200,7 @@ Mythic16, encounter2883/dungeon3429/map3004, root35058, reachable section and ex
 sectionSpellID. Damage IDs may differ from section spell IDs. Combat, stale or
 unverified clicks fail without queued navigation. Real mappings remain unchanged.
 
-Native owner test: use the reviewed test candidate, restart WoW, verify alpha.39; inspect Arcane Preview,
+Native owner test: use the reviewed test candidate, restart WoW, verify alpha.40; inspect Arcane Preview,
 selected-member health, fixed artwork, tooltip wheel, healing highlight and Journal.
 Compare approximate cast-marker ages with their actual recorded-use details. With recording enabled before a clean pull, compare
 own real rows/fatal/HP with Blizzard recap during ongoing combat and afterward;
@@ -204,9 +226,18 @@ use in that coverage, never proof of unused.
 
 Current learned Arcane candidates include Barrier, Alter Time, Block or Cold,
 Mirror Image and Greater Invisibility. Actual known/override/non-passive checks
-decide the roster. Trigger110960 and Alter Time return342247 are not counted as
-initial activation families. No fixed damage-reduction or effect-duration claim
-is added for the new utility candidates.
+decide capture eligibility. Greater Invisibility is utility: retain its eligible
+successful-use receipts, but omit it from defensive availability displays and
+both previews. Mirror Image qualifies as defensive only for Arcane with publicly
+learned Refractive Images1309497, using the existing required-talent gate. Other
+accepted Mirror uses remain utility, including legacy captures without that
+frozen qualification. Refractive Images delays damage; no damage reduction,
+healing, absorption, duration at death or prevention claim is inferred. Both
+fictional previews deliberately model the selected talent. Passive1309497 and
+effect1309793/1309787 never become cast receipts. Trigger110960 and Alter Time
+return342247 are not counted as
+initial activation families. No ordinary Invisibility66 alias, fixed
+damage-reduction value or effect-duration claim is inferred from a receipt.
 
 During normal play, compare all learned candidates with independent action-bar
 and bag evidence: unused ready, immediate use, earlier use that recovered, GCD,
@@ -291,23 +322,26 @@ never retained. The diagnostic does not change readiness, query from cast
 receipts, add a ticker or reconstruct historical cooldowns. It ends on its
 bound, explicit stop, death, combat end, world/profile/roster change or disable.
 
-Alpha.38 entry card
+Alpha.40 entry card
 ------------------
 The compact Death Log card sits centered above Blizzard's death popup with an
 8-pixel logical gap. The entire card, including its unframed icons, opens the
 captured log. It does not cast spells or use items. Only confidently available
 frozen living checks appear: major defensives, minor defensives, then a spaced
 Healthstone/potion group. All confirmed checks stay visible; unusually long lists
-wrap onto additional icon rows. The full log is unchanged.
+wrap onto additional icon rows. The card is160–280 units wide and56 units high
+for one icon row, with22-unit icons and26 units per extra row. With no confirmed
+icons, only its32-unit header remains. Preview is visibly labelled.
 
-**Available when checked** is historical evidence, not an assertion of readiness
+The visible availability caption has been removed. **Available when checked**
+remains in each icon's hover as historical evidence, not an assertion of readiness
 at death. Each icon gives the age of its actual positive check before the local
 death notice. Item-family ages never borrow another candidate's timestamp.
 Healthstone additionally requires a recorded positive remaining-use count; stock
 and an inactive cooldown alone do not establish remaining uses. Unknown or
 pending checks are omitted, never labelled unavailable. With no positive checks
-the card says **No availability confirmed**; a missing living snapshot says
-**Availability was not recorded**.
+the card hover says **No availability confirmed**; a missing living snapshot says
+**Availability was not recorded** in that hover.
 
 The strip is copied once per captured death and does not change when native hit
 data arrives. Existing lifecycle gates remove it when the native popup disappears,

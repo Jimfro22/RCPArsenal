@@ -162,7 +162,7 @@ function R:BuildShareReport(page,preview)
         for i=1,math.min(#supports,64)do local row=supports[i]
             local item=(RA.DeathRecapCatalog or{}).itemUseSpells or{}
             local name,link=Name(row)
-            Add(native,"use",Number(row.offset),Number(row.nativeIndex),name..(item[row.spellID]and": item use"or": defensive use"),name,link)
+            Add(native,"use",Number(row.offset),Number(row.nativeIndex),name..(item[row.spellID]and": item use"or self:GetRecordedUseRole(row)=="utility"and": utility use"or": defensive use"),name,link)
         end
         Add(native,"death",0,math.huge,"Death")
     else
@@ -171,7 +171,7 @@ function R:BuildShareReport(page,preview)
             local observed=Number(row.observedAt)
             local item=(RA.DeathRecapCatalog or{}).itemUseSpells or{}
             local name,link=Name(row)
-            Add(localEvents,"use",observed,i,name..(item[row.spellID]and": item use"or": defensive use"),name,link)
+            Add(localEvents,"use",observed,i,name..(item[row.spellID]and": item use"or self:GetRecordedUseRole(row)=="utility"and": utility use"or": defensive use"),name,link)
         end
         Add(localEvents,"death",died,math.huge,"Death")
     end

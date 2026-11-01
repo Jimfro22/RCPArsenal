@@ -1,0 +1,73 @@
+{
+  "schema": "alpha40-mirror-role-v1",
+  "date": "2026-11-01",
+  "client_build": "12.1.5.70688",
+  "verdict": "Keep Mirror Image eligible for a defensive shelf only for Arcane with publicly verified current Refractive Images selection. Do not remove it wholesale based on the older baseline damage-reduction removal.",
+  "plain_english": "With Refractive Images selected, Arcane Mage delays some incoming damage; casting Mirror Image temporarily increases the portion delayed. The damage is still dealt later, so this is damage smoothing, not 30% damage reduction, healing, an absorb, or immunity.",
+  "identity": {
+    "cast_spellID": 55342,
+    "cast_name": "Mirror Image",
+    "class": "MAGE",
+    "specID": 62,
+    "requiredTalentSpellIDs": [
+      1309497
+    ],
+    "talent_name": "Refractive Images",
+    "traitDefinitionID": 142596,
+    "traitNodeEntryID": 137842,
+    "maxRanks": 1,
+    "traitNodeID": 110850,
+    "traitTreeID": 658,
+    "spec_node_groupID": 7143,
+    "spec_conditionID": 18037,
+    "specSetID": 21,
+    "enhanced_effect_spellID": 1309793,
+    "enhanced_effect_name": "Amplified Refraction",
+    "deferred_damage_spellID": 1309787,
+    "deferred_damage_name": "Refraction"
+  },
+  "effect_contract": {
+    "passive_delayed_percent": 10,
+    "damage_spread_seconds": 8,
+    "mirror_delayed_percent": 30,
+    "mirror_bonus_duration_seconds": 15,
+    "data_support": "70688 SpellEffect 1338490 has base points 10 on 1309497; 1338889 has base points 20 on 1309793. Spell descriptions explicitly link Mirror Image, 1309787 and 1309793. Durations are supported by the official release notes; duration DB joins were not retrieved.",
+    "do_not_treat_as_casts": [
+      1309497,
+      1309787,
+      1309793
+    ],
+    "do_not_infer": [
+      "Damage avoided or healed",
+      "Actual enhanced aura active at death from spell availability alone",
+      "That an available cast would have prevented a death",
+      "Fire or Frost eligibility from the shared Mage tree alone"
+    ]
+  },
+  "current_status": {
+    "classification": "Current release-note feature and present in saved 70688 client data; not merely a future PTR proposal.",
+    "primary_release_source": "https://worldofwarcraft.blizzard.com/en-us/news/24293281/curse-of-ulatek-content-update-notes",
+    "section": "Classes > Mage > Arcane",
+    "verification": "Official search-indexed release page retrieved 2026-11-01; direct page fetch returned 403. Search result provides Arcane-specific developer explanation and the complete 10%/8s,30%/15s mechanic.",
+    "ptr_history_source": "https://us.forums.blizzard.com/en/wow/t/midnight-curse-of-ulatek-ptr-development-notes/2317811/1",
+    "ptr_history_scope": "Historical corroboration only; superseded as the sole availability evidence by the official release notes and 70688 tables.",
+    "native_limit": "No runtime talent selection, activation, aura duration, or damage observation was tested."
+  },
+  "selection_gate": {
+    "required": [
+      "Own public current class MAGE and specialization 62",
+      "Supported learned Mirror Image 55342 and a public supported current override, retaining normal non-passive activation checks",
+      "Public current selected/learned Refractive Images 1309497; never infer selection just because a trait exists in DB",
+      "If selection is unavailable, opaque, or unresolved, leave defensive qualification unknown rather than claiming eligible"
+    ],
+    "existing_support": "DeathRecap.lua:137-168 builds class/spec eligibility, learns supported cast IDs, resolves override, checks every requiredTalentSpellIDs with Known(required)==true, and requires the resolved activation to be non-passive. A catalog entry with specs={62}, spellID=55342, knownSpellIDs={55342}, requiredTalentSpellIDs={1309497} expresses the conservative gate. Runtime public learned-state API behavior for this passive remains untested.",
+    "existing_catalog_issue": "Frozen catalog includes Mirror Image for all three Mage specs with no required talent. Its unconditional defensive classification is broader than this verified role."
+  },
+  "join_limit": "The 70688 files establish talent -> entry -> node -> tree, node group 7143, and condition 18037 -> SpecSet 21. The locally saved group-to-condition and SpecSetMember joins are from 70575 (7143 -> 18037; SpecSet 21 -> 62), so they are corroboration, not mislabeled current joins. The current official release notes independently identify Arcane. Attempts to fetch only those two current join tables failed with network DNS resolution; no additional research is needed for the conservative Arcane + current selected talent gate.",
+  "minimal_checks": [
+    "Arcane + public learned Mirror + selected 1309497: qualify Mirror as damage-delay defensive.",
+    "Arcane without selected1309497, Fire, or Frost: do not qualify Mirror through this role.",
+    "Opaque/unknown required talent: preserve unknown and omit positive defensive claim.",
+    "Record observed cast as55342; never manufacture casts for passive1309497, aura1309793 or deferred damage1309787."
+  ]
+}

@@ -20,7 +20,7 @@ def lua(value):
 def build():
     path=ROOT/'provenance/death-recap/catalog.json';raw=path.read_bytes();data=json.loads(raw)
     supplies=json.loads((path.parent/'consumables.json').read_text())
-    fields=['key','spellID','name','category','class','specs','knownSpellIDs','verified','requiredTalentSpellIDs']
+    fields=['key','spellID','name','category','role','class','specs','knownSpellIDs','verified','requiredTalentSpellIDs']
     entries=[{k:e[k] for k in fields if k in e} for e in data['entries'] if e['verified'] is True]
     spells={i:True for e in supplies['entries'] if e['verified'] for i in e['useSpellIDs']}
     result={'revision':data['revision'],'build':data['build'],'coverageComplete':False,'entries':entries,'itemUseSpells':spells,'journal':{}}

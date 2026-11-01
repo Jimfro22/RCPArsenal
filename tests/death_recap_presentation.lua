@@ -202,7 +202,7 @@ check(#chips==1 and long.width<=230 and long.useLabel.width>0 and long.useLabel.
 do
  local originalPage=page
  page={id=502,diedAt=100,localSessionStartedAt=60,lastAlive={spells={{spellID=235450,name='Barrier',observedAt=99,cooldown='held'}},supplies={}},casts={
-  {spellID=235450,name='Old retained Barrier',observedAt=93,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=235450,name='Old retained Barrier',observedAt=91,source='UNIT_SPELLCAST_SUCCEEDED'},
   {spellID=235450,name='First recent Barrier',observedAt=98.5,source='UNIT_SPELLCAST_SUCCEEDED'},
   {spellID=235450,name='Repeated recent Barrier',observedAt=98.5,source='UNIT_SPELLCAST_SUCCEEDED'},
   {spellID=55342,name='Derived Mirror',observedAt=99,source='DERIVED_FROM_AGGREGATE_ENDPOINT'}},native={recapID=51,recapMaxHealth=100000,rows={
@@ -261,6 +261,57 @@ do
  local hiddenCallback=popup.castMarkers[1]:GetScript('OnEnter');U:Hide();hiddenCallback(popup.castMarkers[1]);check(not popup.tooltipRecap:IsShown(),'Hidden cast marker callback reopened details')
  U:Preview();NoCastMarkers('Preview mode');check(popup.castAlignment==nil,'Preview borrowed live clock alignment')
  page=originalPage;U:ShowLast()
+end
+-- Eligible projected cast offsets extend the native viewport before filtering
+-- damage. Rendering reuses one alignment result and never substitutes age.
+do
+ local originalPage=page;local M=RA.DeathLogModel
+ local align,viewport=M.AlignUses,M.Viewport;local calls,latestAlignment,viewportAlignment=0,nil,nil
+ M.AlignUses=function(self,input)calls=calls+1;latestAlignment=align(self,input);return latestAlignment end
+ M.Viewport=function(self,rows,maximum,alignment)viewportAlignment=alignment;return viewport(self,rows,maximum,alignment)end
+ local rows={
+  {nativeIndex=5,nativeOffset=-8.3,timestamp=1991.7,kind='damage',name='Old report tail',amount=90000,recordedHP=90000},
+  {nativeIndex=4,nativeOffset=-6.8,timestamp=1993.2,kind='damage',name='Newly visible small hit',amount=1000,recordedHP=89000},
+  {nativeIndex=3,nativeOffset=-2,timestamp=1998,kind='damage',name='Recent major hit',amount=50000,recordedHP=39000},
+  {nativeIndex=1,nativeOffset=0,timestamp=2000,kind='damage',name='Exact fatal receipt',amount=1000,recordedHP=1000},
+  {nativeIndex=2,nativeOffset=0,timestamp=2000,kind='unknown',name='Final unknown receipt'}}
+ page={id=503,diedAt=100,localSessionStartedAt=60,lastAlive={spells={},supplies={}},casts={
+  {spellID=235450,name='Barrier',observedAt=94.4,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=414658,name='Ice Cold',observedAt=93.5,source='UNIT_SPELLCAST_SUCCEEDED'},
+  {spellID=55342,name='Mirror Image',observedAt=95.4,source='UNIT_SPELLCAST_SUCCEEDED'}},native={recapID=52,recapMaxHealth=100000,rows=rows,
+  clockDiagnostic={localClock='GetTime',localDeathNoticeAt=100,localSessionStartedAt=60,nativeFatalTimestamp=2000,nativeMaximumTimestamp=2000,nativeRowCount=5}}}
+ local function RenderSpan(span)
+  local before=calls;U:ShowLast()
+  check(calls==before+1 and viewportAlignment==latestAlignment and popup.castAlignment==latestAlignment,'Render recomputed alignment or passed different projections to viewport and markers')
+  check(popup.timeDomain.first==-span and popup.timeDomain.last==0,'Projected-use viewport has the wrong whole-second span')
+ end
+ local function Marker(index)for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i];if marker.entry.index==index then return marker end end end
+ local function Near(a,b)return type(a)=='number'and math.abs(a-b)<.00001 end
+ local report=assert(R:BuildShareText(page));RenderSpan(7)
+ check(popup.castMarkerCount==3 and #popup.castFallback==0 and not popup.usesLabel:IsShown(),'The 5.6/6.5/4.6-second cast case omitted markers or retained duplicate fallback chips')
+ for i,offset in ipairs({-5.6,-6.5,-4.6})do local marker=Marker(i)
+  check(marker and Near(marker.entry.offset,offset)and Near(marker.timeX,48+(offset+7)/7*784),'Cast-driven expansion changed the validated projected position')
+ end
+ local admitted=false;for _,row in ipairs(popup.viewport.rows)do if row==rows[2]then admitted=true end end
+ check(admitted and popup.viewport.omitted==1 and popup.selected==rows[4]and popup.hp.text=='1000 / 100000','Expanded cast window lost newly admitted native damage or changed fatal HP')
+ check(page.native.rows==rows and #rows==5 and R:BuildShareText(page)==report,'Cast-driven viewport changed original history or full report')
+ local selectedRow=popup.selected;Marker(2):Fire('OnEnter');check(popup.selected==selectedRow and popup.hp.text=='1000 / 100000','Newly visible cast hover selected another health sample')
+ rows[4].timestamp,rows[4].nativeOffset=1999.4,-.6;page.native.clockDiagnostic.nativeFatalTimestamp=1999.4;RenderSpan(8)
+ check(Near(Marker(2).entry.offset,-7.1)and Marker(2).age.text=='~6.5s','Shifted fatal/native maximum was replaced with the local age label')
+ rows[4].timestamp,rows[4].nativeOffset=2000,0;page.native.clockDiagnostic.nativeFatalTimestamp=2000
+ page.casts[1].observedAt=92;RenderSpan(8)
+ check(Marker(1)and Marker(1).entry.offset==-8 and Marker(1).timeX==48,'Exactly eight-second projected use was clipped or moved inward')
+ page.casts[1].observedAt=91.999;RenderSpan(7)
+ check(not Marker(1)and popup.castMarkerCount==2 and #popup.castFallback==1 and popup.castFallback[1]==page.casts[1],'Older-than-eight use stretched/clamped the view or disappeared from fallback')
+ page.native.clockDiagnostic.localDeathNoticeAt=99;RenderSpan(5)
+ check(popup.castMarkerCount==0 and #popup.castFallback==3,'Stale alignment extended the viewport or discarded factual receipts')
+ page.native.clockDiagnostic.localDeathNoticeAt=100;local clock=page.native.clockDiagnostic;page.native.clockDiagnostic=nil;RenderSpan(5)
+ check(popup.castMarkerCount==0 and #popup.castFallback==3,'Missing alignment anchor extended the viewport')
+ page.native.clockDiagnostic=clock;page.casts[2].source='DERIVED_FROM_AGGREGATE_ENDPOINT';RenderSpan(5)
+ check(popup.castMarkerCount==1 and Marker(3)and #popup.castFallback==2,'Unverified receipt widened the viewport or a valid recent marker disappeared')
+ rows[2].nativeOffset,rows[2].timestamp,rows[2].amount=-7.7,1992.3,25000;RenderSpan(8)
+ check(popup.viewport.omitted==1 and popup.selected==rows[4],'Existing damage-driven eight-second rule regressed after cast expansion')
+ M.AlignUses,M.Viewport=align,viewport;page=originalPage;U:ShowLast()
 end
 page.native=nil;U:Render()
 U:Preview();NoHealthPlot()

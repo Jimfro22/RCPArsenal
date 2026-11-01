@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-01",
+  "spellID": 110959,
+  "name": "Greater Invisibility",
+  "role": "utility",
+  "build": "12.1.5.70688",
+  "scope": "Effect-role correction only; existing learned/override/passive activation gates retained. No native event identity claim.",
+  "sources": [
+    {
+      "url": "https://worldofwarcraft.blizzard.com/en-us/news/24244455/midnight-pre-expansion-content-update-notes",
+      "finding": "Official Midnight update removes the former Greater Invisibility damage-reduction effect."
+    },
+    {
+      "url": "https://wago.tools/db2/Spell/csv?build=12.1.5.70688&locale=enUS",
+      "recordID": 110959,
+      "finding": "Current text describes invisibility, untargetability and threat removal. Conditional movement-speed talent text does not establish mitigation."
+    }
+  ],
+  "reviewedResearch": "RCP API research outputs/death-log-alpha40-evidence-20261101/invisibility-and-potion-classification.json",
+  "presentation": "Hide from default defensive shelf/card and fictional defensive preview rosters. Retain eligible successful activation receipts explicitly as utility.",
+  "identity": "No unconditional spell66 alias;110960 remains a triggered effect, not an independent activation.",
+  "limits": [
+    "Does not establish selected owner talents or runtime event payloads.",
+    "Untargetability does not establish immunity to all damage or prove a death was preventable.",
+    "Mirror Image classification is outside this correction."
+  ]
+}

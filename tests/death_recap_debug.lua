@@ -47,9 +47,9 @@ check(frozen:find('class="WARRIOR"',1,true)and frozen:find('Loaded metadata (not
 check(frozen:find('rawSpellName="Raw swing metadata" name="Melee" school=1',1,true)and frozen:find('rawSpellName="Captured damage name" name="Captured damage name" school=4',1,true),'Captured raw/display names or school provenance lost')
 check(frozen:find('incomingDamageSource sourceName="Visible attacker"',1,true)and not frozen:find('Hidden attacker',1,true)and frozen:find('sourceName=<redacted-hideCaster>',1,true),'Incoming source visibility was not respected')
 check(frozen:find('Shield not identified; provider not recorded.',1,true),'Absorbed amount acquired an inferred shield provider')
-local first=assert(frozen:find('CAST capturedIndex=1 spellID=871 name="Shield Wall" source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.25 localDeathRelativeAge=1.75',1,true))
-local item=assert(frozen:find('CAST capturedIndex=2 spellID=431416 name=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.75 localDeathRelativeAge=1.25',1,true))
-local repeated=assert(frozen:find('CAST capturedIndex=3 spellID=871 name="Shield Wall" source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.875 localDeathRelativeAge=1.125',1,true))
+local first=assert(frozen:find('CAST capturedIndex=1 spellID=871 name="Shield Wall" role="defensive" defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.25 localDeathRelativeAge=1.75',1,true))
+local item=assert(frozen:find('CAST capturedIndex=2 spellID=431416 name=<not-recorded> role=<not-recorded> defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.75 localDeathRelativeAge=1.25',1,true))
+local repeated=assert(frozen:find('CAST capturedIndex=3 spellID=871 name="Shield Wall" role="defensive" defensiveTalentSpellID=<not-recorded> source="UNIT_SPELLCAST_SUCCEEDED" observedAt=10.875 localDeathRelativeAge=1.125',1,true))
 check(first<item and item<repeated and not frozen:find('OBSERVED USE spellID=431416',1,true),'Raw receipt order/item without defensive aggregate lost')
 check(frozen:find('retainedCount=3 exportedCount=3 exportTruncated=false',1,true)and frozen:find('display may group repeated receipts',1,true),'Raw receipt count/display grouping provenance missing')
 for i=1,20 do check(R:BuildDebugText()==frozen,'Frozen diagnostic changed without capture changes')end
@@ -97,7 +97,7 @@ captured.rows[1].sourceName=sourceName;captured.rows[1].hideCaster=hideCaster
 local savedCasts=page.casts
 page.casts={{spellID=secret,name='bad|Hspell:1|h',source=secret,observedAt=secret}}
 unsafe=assert(R:BuildDebugText())
-check(unsafe:find('CAST capturedIndex=1 spellID=<restricted> name=<malformed> source=<restricted> observedAt=<restricted> localDeathRelativeAge=<restricted>',1,true)and not unsafe:find('|',1,true),'Unsafe cast fields or local age escaped export')
+check(unsafe:find('CAST capturedIndex=1 spellID=<restricted> name=<malformed> role=<not-recorded> defensiveTalentSpellID=<not-recorded> source=<restricted> observedAt=<restricted> localDeathRelativeAge=<restricted>',1,true)and not unsafe:find('|',1,true),'Unsafe cast fields or local age escaped export')
 page.casts={{spellID=871,name='Precise receipt',source='fixture',observedAt=10.000000000000002}}
 check(assert(R:BuildDebugText()):find('observedAt=10.000000000000002 localDeathRelativeAge=1.9999999999999982',1,true),'Local receipt precision rounded or bridged to native clock')
 page.casts={};for i=1,70 do page.casts[i]={spellID=i,name='Receipt '..i,source='fixture',observedAt=i}end
