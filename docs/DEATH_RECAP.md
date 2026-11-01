@@ -313,3 +313,35 @@ missing, wrong-type and failed results stay explicit. Duration objects are
 never retained. The diagnostic does not change readiness, query from cast
 receipts, add a ticker or reconstruct historical cooldowns. It ends on its
 bound, explicit stop, death, combat end, world/profile/roster change or disable.
+
+Alpha.38 entry card
+------------------
+The compact Death Log card sits centered above Blizzard's death popup with an
+8-pixel logical gap. The entire card, including its unframed icons, opens the
+captured log. It does not cast spells or use items. Only confidently available
+frozen living checks appear: major defensives, minor defensives, then a spaced
+Healthstone/potion group. All confirmed checks stay visible; unusually long lists
+wrap onto additional icon rows. The full log is unchanged.
+
+**Available when checked** is historical evidence, not an assertion of readiness
+at death. Each icon gives the age of its actual positive check before the local
+death notice. Item-family ages never borrow another candidate's timestamp.
+Healthstone additionally requires a recorded positive remaining-use count; stock
+and an inactive cooldown alone do not establish remaining uses. Unknown or
+pending checks are omitted, never labelled unavailable. With no positive checks
+the card says **No availability confirmed**; a missing living snapshot says
+**Availability was not recorded**.
+
+The strip is copied once per captured death and does not change when native hit
+data arrives. Existing lifecycle gates remove it when the native popup disappears,
+the player revives/releases, the page changes, or the feature/profile is reset.
+When the full card does not fit above the popup, it uses a centered-below fallback
+or hides if neither position fits, without moving native frames. No scanner,
+timer, ticker or availability API query is added. Spell artwork
+uses the existing asset broker.
+
+`/rcp recapentrypreview` toggles a clearly labelled synthetic card outside combat.
+Its close control exits the preview; clicking the card or a sample icon opens the
+existing sample Death Log. It does not alter a real death's frozen evidence or
+mark that real death as viewed. Validate actual client anchoring, hover/click
+behavior and protected-state handling before considering native acceptance done.

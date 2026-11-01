@@ -4,9 +4,12 @@ RA.DeathRecapEntry = Entry
 local R, UI, T = RA.DeathRecap, RA.DeathRecapUI, RA.Theme
 local C = T.Colors
 local button, token, anchor, layoutHost, placement, shownPage
+local previewPage
+local CARD_MIN, CARD_MAX, CARD_HEIGHT = 216, 288, 76
+local ICON_SIZE, ICON_GAP, ITEM_GAP = 22, 4, 10
 local binding, pulsing, hovered = 0, false, false
 local hooks, subscriptions = {}, {}
-local hookDemand
+local hookDemand, previewCombat
 
 local function Public(value)
     if type(issecretvalue) ~= "function" then return nil end
@@ -31,6 +34,44 @@ end
 local function Number(value)
     value = Public(value)
     if type(value) == "number" and value == value and value > -math.huge and value < math.huge then return value end
+end
+-- A display-only projection of the frozen checks. Never refresh availability here.
+function Entry:GetAvailableRows(page)
+    local rows, sample = {}, page and page.lastAlive
+    rows.hadCheck = type(sample) == "table"
+    if not rows.hadCheck then return rows end
+    local seen = {}
+    local function Add(row, kind, detail)
+        local id = row.spellID or row.itemID
+        if not Number(id) or id <= 0 or id ~= math.floor(id) or seen[(kind or "spell")..id] then return end
+        seen[(kind or "spell")..id] = true
+        rows[#rows+1] = {spellID=not kind and id or nil, itemID=kind and id or nil,
+            name=kind == "stone" and "Healthstone" or kind == "potion" and "Healing potion" or row.name or "Defensive",
+            category=row.category, kind=kind, icon=row.icon, detail=detail,
+            checkedAt=Number(R:GetRecordedCheckTime(row)),remainingUses=Number(row.remainingUses),physicalCount=Number(row.physicalCount)}
+    end
+    for index, row in ipairs(sample.spells or {}) do
+        if index > R.LIMITS.spells then break end
+        local state, detail = R:ClassifyRecordedCheck(row, sample.coverageEndedAt, false)
+        if row.known == true and state == true then Add(row, nil, detail) end
+    end
+    local supplies = {}
+    for index, row in ipairs(sample.supplies or {}) do
+        if index > 32 then break end
+        supplies[#supplies+1] = row
+    end
+    for _, family in ipairs(R:GetSupplyFamilies({lastAlive={supplies=supplies,coverageEndedAt=sample.coverageEndedAt}})) do
+        for _, member in ipairs(family.members) do
+            local uses=Number(member.row.remainingUses)
+            if member.state == true and(family.kind~="stone"or uses and uses>0)then Add(member.row, family.kind, member.detail); break end
+        end
+    end
+    local function Rank(row) return row.kind == "stone" and 2 or row.kind == "potion" and 3 or row.category == "major" and 0 or 1 end
+    table.sort(rows, function(a,b)
+        local ar,br=Rank(a),Rank(b)
+        return ar ~= br and ar < br or ar == br and (a.spellID or a.itemID) < (b.spellID or b.itemID)
+    end)
+    return rows
 end
 local function Mutable(frame)
     local ok, method = pcall(function() return frame.CanChangeProtectedState end)
@@ -59,6 +100,11 @@ local function Enabled()
     local state = R:GetState()
     return state and state.enabled == true
 end
+local function SubscriptionDemand()
+    local demanded=Enabled()or previewPage~=nil
+    for _, subscription in ipairs(subscriptions)do subscription:SetEnabled(demanded)end
+    if previewCombat then previewCombat:SetEnabled(previewPage~=nil)end
+end
 local function OwnDeath()
     return Global(UnitIsDeadOrGhost, "player") == true and Global(UnitIsGhost, "player") == false
 end
@@ -68,7 +114,9 @@ local function Current()
     return page == token.page and page.id == token.id and page.captureGeneration == token.generation
 end
 local function HideTooltip()
-    if button and GameTooltip and Call(GameTooltip, "GetOwner") == button then pcall(GameTooltip.Hide, GameTooltip) end
+    if not button or not GameTooltip then return end
+    local owner = Call(GameTooltip, "GetOwner")
+    if owner == button or owner and Read(owner, "entryOwner") == button then pcall(GameTooltip.Hide, GameTooltip) end
 end
 local function StopGlow()
     if not button then return end
@@ -84,11 +132,14 @@ local function Hide(clearPlacement)
     if button then
         StopGlow(); HideTooltip()
         button:SetScript("OnClick", nil)
+        for _, icon in ipairs(button.icons or {}) do icon:SetScript("OnClick", nil); icon:Hide(); icon.row=nil; icon.overflow=nil end
+        button.boundRows=nil
         button:Hide()
     end
 end
 local function Clear()
-    token, shownPage = nil, nil
+    token, shownPage, previewPage = nil, nil, nil
+    SubscriptionDemand()
     Hide(true)
 end
 local function Paint()
@@ -98,27 +149,94 @@ local function Paint()
     T:SetRoundedColor(button.glow, {C.magenta[1], C.magenta[2], C.magenta[3], 1}, "border")
 end
 local function Attention()
-    if not button or not button:IsVisible() or not token or token.viewed or hovered then StopGlow(); return end
+    if not button or not button:IsVisible() or previewPage or not token or token.viewed or hovered then StopGlow(); return end
     button.glow:Show()
     if not pulsing then button.glow:SetAlpha(.10); button.pulse:Play(); pulsing = true end
+end
+local function ValidHover()
+    return button and button:IsVisible()and(previewPage~=nil and Mutable(button)and Global(InCombatLockdown)==false or not previewPage and Current()and anchor==Host())
+end
+local function Age(row, page)
+    local died, checked = Number(page and page.diedAt), Number(row.checkedAt)
+    if not died or not checked or checked > died then return "Check time not recorded" end
+    return string.format("Checked %.1fs before death notice", died-checked)
+end
+local function TooltipIcon(self)
+    if not self:IsVisible() or not ValidHover() then Hide(true); return end
+    hovered=true; Paint(); Attention()
+    if not GameTooltip then return end
+    local page=previewPage or token.page
+    GameTooltip:SetOwner(self,"ANCHOR_TOP")
+    GameTooltip:SetText(self.row.name)
+    GameTooltip:AddLine("Available when checked",1,1,1)
+    GameTooltip:AddLine(Age(self.row,page),.7,.7,.75,true)
+    if self.row.kind=="stone"and self.row.remainingUses then GameTooltip:AddLine("Uses remaining when checked: "..self.row.remainingUses,.7,.7,.75,true)end
+    if self.row.detail then GameTooltip:AddLine(self.row.detail,.7,.7,.75,true) end
+    GameTooltip:AddLine(previewPage and "Preview · click to open the sample log" or "Click to open Death Log",.7,.7,.75,true)
+    GameTooltip:Show()
+end
+local function Populate(rows)
+    HideTooltip()
+    for _, icon in ipairs(button.icons) do icon:Hide(); icon.row=nil; icon.overflow=nil; icon:SetScript("OnClick",nil) end
+    RA:SetVisualText(button.summary,previewPage and "Preview · sample checks" or #rows > 0 and "Available when checked" or rows.hadCheck and "No availability confirmed" or "Availability was not recorded")
+    button.previewClose:SetShown(previewPage~=nil);button.chevron:SetShown(previewPage==nil)
+    local items=0;for _,row in ipairs(rows)do if row.kind then items=items+1 end end
+    local total=#rows*ICON_SIZE+math.max(0,#rows-1)*ICON_GAP+(items>0 and #rows>items and ITEM_GAP-ICON_GAP or 0)
+    local width=math.min(CARD_MAX,math.max(CARD_MIN,math.ceil((total+24)/4)*4,math.ceil((button.summary:GetStringWidth()+56)/4)*4))
+    local lines,line={{width=0}}
+    line=lines[1]
+    for index,row in ipairs(rows)do
+        local startsItems=row.kind and(index==1 or not rows[index-1].kind)
+        local gap=#line>0 and(startsItems and ITEM_GAP or ICON_GAP)or 0
+        local needed=startsItems and(items*ICON_SIZE+math.max(0,items-1)*ICON_GAP)or ICON_SIZE
+        if #line>0 and line.width+gap+needed>width-24 then line={width=0};lines[#lines+1]=line;gap=0 end
+        line[#line+1]={row=row,x=line.width+gap};line.width=line.width+gap+ICON_SIZE
+    end
+    T.SetSize(button,width,CARD_HEIGHT+(#lines-1)*(ICON_SIZE+ICON_GAP))
+    button.label:SetWidth(width-72);button.summary:SetWidth(width-56)
+    local index=0
+    for lineIndex,strip in ipairs(lines)do for _,item in ipairs(strip)do
+        index=index+1
+        local icon=button.icons[index]
+        if not icon then
+            icon=CreateFrame("Button",nil,button);button.icons[index]=icon;icon.entryOwner=button
+            icon:RegisterForClicks("LeftButtonUp");T.SetSize(icon,ICON_SIZE,ICON_SIZE)
+            icon.texture=icon:CreateTexture(nil,"ARTWORK");icon.texture:SetAllPoints(icon);icon.texture:SetTexCoord(.08,.92,.08,.92)
+            icon:SetScript("OnEnter",TooltipIcon)
+            icon:SetScript("OnLeave",function()hovered=false;HideTooltip();Paint();Attention()end)
+        end
+        icon.row=item.row
+        icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-46-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
+        if item.row.spellID then RA:RegisterSpellIcon(icon.texture,item.row.spellID)
+        else RA:RegisterVisualTexture(icon.texture,item.row.icon or(item.row.kind=="stone"and"Interface\\Icons\\INV_Stone_04"or"Interface\\Icons\\INV_Potion_51"),T.Assets.White) end
+        icon.texture:SetVertexColor(1,1,1);icon.texture:SetDesaturated(false);icon:Show()
+    end end
 end
 local function EnsureButton()
     if button and button.entryConfigured then return true end
     if not button then button = CreateFrame("Button", "RCPArsenalDeathRecapEntry", UIParent); button:Hide() end
     if not Mutable(button) then return false end
     button:SetFrameStrata("DIALOG"); button:SetFrameLevel(100); button:RegisterForClicks("LeftButtonUp")
-    T.SetSize(button, 144, 34)
+    T.SetSize(button, CARD_MIN, CARD_HEIGHT)
     T:ApplyRounded(button, C.surfaceRaised, 6, "base")
     T:ApplyRounded(button, {C.magenta[1], C.magenta[2], C.magenta[3], .45}, 6, "border", "OVERLAY")
     button.logo = button:CreateTexture(nil, "ARTWORK")
-    T.SetSize(button.logo, 24, 24); T.SetPoint(button.logo, "TOPLEFT", button, "TOPLEFT", 8, -5)
+    T.SetSize(button.logo, 24, 24); T.SetPoint(button.logo, "TOPLEFT", button, "TOPLEFT", 12, -9)
     button.logo:SetVertexColor(1, 1, 1)
     T:RegisterAssetTexture(button.logo, T.Assets.HeaderLogo, nil, "LINEAR")
     button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     RA:ApplyFont(button.label, 13, "BOLD", false)
     button.label:SetTextColor(unpack(C.text)); button.label:SetJustifyH("LEFT")
-    T.SetSize(button.label, 96, 18); T.SetPoint(button.label, "LEFT", button, "LEFT", 40, 0)
+    T.SetSize(button.label, CARD_MIN-72, 18); T.SetPoint(button.label, "TOPLEFT", button, "TOPLEFT", 44, -8)
     RA:SetVisualText(button.label, "Death Log")
+    button.chevron=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.chevron,16,"REGULAR",false)
+    button.chevron:SetTextColor(unpack(C.muted));T.SetSize(button.chevron,8,18);T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-12,-9);RA:SetVisualText(button.chevron,"›")
+    button.summary=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.summary,11,"REGULAR",false)
+    button.summary:SetTextColor(unpack(C.textSoft));button.summary:SetJustifyH("LEFT");T.SetSize(button.summary,CARD_MIN-56,14);T.SetPoint(button.summary,"TOPLEFT",button,"TOPLEFT",44,-27)
+    button.icons={}
+    button.previewClose=CreateFrame("Button",nil,button);T.SetSize(button.previewClose,20,20);T.SetPoint(button.previewClose,"TOPRIGHT",button,"TOPRIGHT",-6,-6)
+    button.previewClose.label=button.previewClose:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");button.previewClose.label:SetAllPoints(button.previewClose);RA:ApplyFont(button.previewClose.label,14,"REGULAR",false);RA:SetVisualText(button.previewClose.label,"×")
+    button.previewClose:SetScript("OnClick",function()Entry:HidePreview()end);button.previewClose:Hide()
     button.glow = CreateFrame("Frame", nil, button)
     button.glow:EnableMouse(false)
     T.SetPoint(button.glow, "TOPLEFT", button, "TOPLEFT", -2, 2)
@@ -133,14 +251,14 @@ local function EnsureButton()
     end
     button:SetScript("OnHide", function() StopGlow(); HideTooltip(); hovered = false end)
     button:SetScript("OnEnter", function(self)
-        if not Current() or anchor ~= Host() then Hide(true); return end
+        if not ValidHover() then Hide(true); return end
         hovered = true; Paint(); Attention()
-        local text = "Open your captured log."
-        local page = token.page
-        if not page.native then
+        local text = previewPage and "Preview · open the sample Death Log." or "Open your captured log."
+        local page = previewPage or token.page
+        if not previewPage and not page.native then
             text = text .. (R:GetDiagnostics().fetchPending and " Hit details are loading." or " Hit details are unavailable.")
         end
-        if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(text); GameTooltip:Show() end
+        if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(text);GameTooltip:AddLine("Shown icons were available when checked. Other checks may be missing or uncertain.",.7,.7,.75,true); GameTooltip:Show() end
     end)
     button:SetScript("OnLeave", function() hovered = false; HideTooltip(); Paint(); Attention() end)
     button:SetScript("OnMouseDown", function() T:SetRoundedColor(button, C.surfacePressed, "base") end)
@@ -161,51 +279,83 @@ local function Place(host)
     local bounds, screen = Bounds(host), Bounds(UIParent)
     local scale = Number(Call(UIParent, "GetEffectiveScale"))
     if not bounds or not screen or not scale or scale <= 0 then return false end
-    local action = Call(host, "GetButton", 4)
-    if not Visible(action) then action = Call(host, "GetButton", 1) end
-    local actionBounds = Visible(action) and Bounds(action) or nil
-    local center = actionBounds and (actionBounds.top + actionBounds.bottom)/2
-    local w, h, gap, clearance = 144*scale, 34*scale, 8*scale, 10*scale
+    local w, h, gap, clearance = button:GetWidth()*scale, button:GetHeight()*scale, 8*scale, 10*scale
     local middle = (bounds.left + bounds.right)/2
     local function Fits(left, right, bottom, top)
         return left >= screen.left+clearance and right <= screen.right-clearance
             and bottom >= screen.bottom+clearance and top <= screen.top-clearance
     end
-    local rightFits = center and Fits(bounds.right+gap, bounds.right+gap+w, center-h/2, center+h/2)
-    local belowFits = Fits(middle-w/2, middle+w/2, bounds.bottom-gap-h, bounds.bottom-gap)
-    local mode = layoutHost == host and placement or nil
-    if mode == "right" and not rightFits or mode == "below" and not belowFits then mode = nil end
-    mode = mode or (rightFits and "right" or belowFits and "below")
-    if not mode then return false end
+    local above=Fits(middle-w/2,middle+w/2,bounds.top+gap,bounds.top+gap+h)
+    if not above and not Fits(middle-w/2,middle+w/2,bounds.bottom-gap-h,bounds.bottom-gap)then return false end
     button:ClearAllPoints()
-    if mode == "right" then
-        T.SetPoint(button, "LEFT", host, "RIGHT", 8, (center-(bounds.top+bounds.bottom)/2)/scale)
-    else T.SetPoint(button, "TOP", host, "BOTTOM", 0, -8) end
-    layoutHost, placement = host, mode
+    if above then T.SetPoint(button,"BOTTOM",host,"TOP",0,8)else T.SetPoint(button,"TOP",host,"BOTTOM",0,-8)end
+    layoutHost, placement = host, above and "above"or"below"
     return true
 end
 local function RefreshNow()
+    if previewPage then
+        if Global(InCombatLockdown)~=false or button and not Mutable(button)then previewPage=nil;SubscriptionDemand();Hide(true);return end
+        if Call(UI,"IsShown")~=false or not EnsureButton() then Hide(true); return end
+        if button.boundRows~=previewPage.available then Populate(previewPage.available);button.boundRows=previewPage.available end
+        button:ClearAllPoints();T.SetPoint(button,"CENTER",UIParent,"CENTER",0,80)
+        anchor=nil;binding=binding+1
+        local expectedPage,expectedBinding=previewPage,binding
+        local function Open(self)
+            if previewPage~=expectedPage or binding~=expectedBinding or not button:IsVisible() or not Mutable(button)or Global(InCombatLockdown)~=false
+                or self and self~=button and not self:IsVisible() then return end
+            previewPage=nil;SubscriptionDemand();Hide(true);UI:Preview()
+        end
+        button:SetScript("OnClick",Open)
+        for _,icon in ipairs(button.icons)do if icon:IsShown()then icon:SetScript("OnClick",Open)end end
+        Paint();button:Show();StopGlow();return
+    end
     if not hooks.StaticPopup_Show or not hooks.StaticPopup_OnShow or not hooks.StaticPopup_OnHide then Hide(true); return end
     if not Current() then Hide(true); return end
     local host = Host()
     if not host then Hide(true); return end
     if Call(UI, "IsShown") ~= false then Hide(false); return end
     if not EnsureButton() then Hide(true); return end
+    if button.boundRows~=token.available then Populate(token.available);button.boundRows=token.available end
     if not Place(host) then Hide(true); return end
     anchor = host; binding = binding + 1
     local clickBinding, clickToken = binding, token
-    button:SetScript("OnClick", function()
+    local function Open(self)
         if clickBinding ~= binding or clickToken ~= token or anchor ~= host or not Current()
-            or Host() ~= host or Call(UI, "IsShown") ~= false then return end
+            or Host() ~= host or Call(UI, "IsShown") ~= false or self and self~=button and not self:IsVisible() then return end
         if UI:ShowLast() == true and token == clickToken then token.viewed = true end
         Entry:Refresh()
-    end)
+    end
+    button:SetScript("OnClick",Open)
+    for _,icon in ipairs(button.icons)do if icon:IsShown()then icon:SetScript("OnClick",Open)end end
     Paint(); button:Show(); Attention()
 end
 function Entry:Refresh()
     local ok = pcall(RefreshNow)
     if not ok then pcall(Hide, true) end
 end
+function Entry:HidePreview()
+    previewPage=nil;SubscriptionDemand();Hide(true);self:Refresh()
+end
+function Entry:Preview()
+    if Global(InCombatLockdown)~=false then return false end
+    if previewPage then self:HidePreview();return true end
+    Hide(true)
+    previewPage={diedAt=100,lastAlive={spells={
+        {spellID=45438,name="Ice Block",known=true,category="major",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
+        {spellID=55342,name="Mirror Image",known=true,category="minor",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=98.4},
+        {spellID=110959,name="Greater Invisibility",known=true,category="minor",cooldown="inactive",chargeQuery="not_applicable",cooldownAt=99},
+    },supplies={
+        {kind="stone",itemID=5512,physicalCount=1,remainingUses=1,cooldown="inactive",cooldownAt=99},
+        {kind="potion",itemID=241304,physicalCount=1,cooldown="inactive",cooldownAt=99},
+    }}}
+    previewPage.available=self:GetAvailableRows(previewPage)
+    SubscriptionDemand()
+    if Call(UI,"IsShown")==true then UI:Hide()end
+    self:Refresh();return button and button:IsShown()or false
+end
+previewCombat=RA:RegisterOptionalEvent("PLAYER_REGEN_DISABLED",function()
+    if previewPage then Entry:HidePreview()end
+end)
 local function InstallHooks()
     if type(hooksecurefunc) ~= "function" then return end
     local callbacks = {
@@ -231,7 +381,7 @@ local function InstallHooks()
 end
 local function Settings()
     local enabled = Enabled()
-    for _, subscription in ipairs(subscriptions) do subscription:SetEnabled(enabled) end
+    SubscriptionDemand()
     if not enabled then Clear() end
     InstallHooks(); Entry:Refresh()
 end
@@ -251,12 +401,13 @@ hookDemand = RA:RegisterOptionalEvent("ADDON_LOADED", InstallHooks)
 RA:RegisterInitializer(function() hookDemand:SetEnabled(true); Settings() end)
 RA:RegisterCallback("DEATH_RECAP_CHANGED", function(kind)
     if kind == "death" then
+        previewPage=nil
         local page = R:GetPage()
         if Enabled() and OwnDeath() and type(page) == "table" and Number(page.id) and Number(page.captureGeneration) then
             if not token or token.page ~= page or token.generation ~= page.captureGeneration then
                 Hide(true)
                 token = {page=page, id=page.id, generation=page.captureGeneration,
-                    viewed=shownPage == page and Call(UI, "IsShown") == true}
+                    available=Entry:GetAvailableRows(page),viewed=shownPage == page and Call(UI, "IsShown") == true}
             end
         else Clear() end
     elseif kind == "life" or kind == "reset" or kind == "unavailable" then Clear()
