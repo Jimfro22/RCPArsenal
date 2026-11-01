@@ -12,6 +12,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp markers|r - configure the normal marker sequence, optional hold wheel and keys")
     print("  |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
     print("  |cff3aa7ff/rcp recappreview|r - private tester; report and reminder controls work")
+    print("  |cff3aa7ff/rcp recapentrypreview|r - preview the compact Death Log card")
     print("  |cff3aa7ff/rcp recapstatus|r or |cff3aa7ff/rcp recapaudit|r - safe local capture diagnostics")
     print("  |cff3aa7ff/rcp recapdebug [reread]|r or |cff3aa7ff/rcp recapdebug cooldowns [start||stop||show]|r - copy diagnostics or arm a bounded Mirror Image capture")
     print("  |cff3aa7ff/rcp recapblizzard|r - request Blizzard recap for the accepted frozen ID")
@@ -94,6 +95,8 @@ local function HandleSlash(raw)
     if command=="recap"then
         if not RA.DeathRecapUI:ShowLast()then RA:OpenConfig("MYTOOLS")end
     elseif command=="recappreview"then RA.DeathRecapUI:Preview()
+    elseif command=="recapentrypreview"then
+        if not RA.DeathRecapEntry:Preview()then RA:Print("Death Log card preview is unavailable right now. Try outside combat.")end
     elseif command=="recapblizzard"then
         if rest~=""then RA:Print("Usage: /rcp recapblizzard (accepted frozen ID only)");return end
         local _,reason=RA.DeathRecap:OpenBlizzardRecap();RA:Print(reason)
