@@ -8,6 +8,7 @@ function CreateFrame()
     function frame:RegisterEvent(name)self.events[name]=true;self.filters[name]=nil;self.registrations=self.registrations+1 end
     function frame:RegisterUnitEvent(name,unit)self.events[name]=true;self.filters[name]=unit;self.registrations=self.registrations+1 end
     function frame:UnregisterEvent(name)self.events[name]=nil;self.filters[name]=nil;self.unregistrations=self.unregistrations+1 end
+    function frame:IsEventRegistered(name)return self.events[name]==true end
     function frame:SetScript(_,fn)self.event=fn end
     return frame
 end
@@ -20,10 +21,12 @@ local ordinary,optional=0,0
 local base=frame.registrations
 local sub=RA:RegisterOptionalEvent('UNIT_HEALTH',function()optional=optional+1 end,'player')
 check(not frame.events.UNIT_HEALTH and frame.registrations==base,'Disabled subscription registered native traffic')
+check(sub:GetNativeRegistration()==false,'Disabled native registration reported active')
 for i=1,100 do emit('UNIT_HEALTH','player') end
 check(optional==0,'Disabled optional callback ran')
 sub:SetEnabled(true)
 check(frame.events.UNIT_HEALTH and frame.filters.UNIT_HEALTH=='player','Player-only native filter missing')
+check(sub:GetNativeRegistration()==true,'Actual native registration was not observable')
 local registered=frame.registrations
 sub:SetEnabled(true);check(frame.registrations==registered,'Unchanged demand reregistered event')
 emit('UNIT_HEALTH','raid1');emit('UNIT_HEALTH','player')

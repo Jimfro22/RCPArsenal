@@ -4,7 +4,7 @@ _G.RCPArsenal = RA
 _G.RaidArsenal = RA -- legacy global retained for compatibility
 
 RA.ADDON_NAME = ADDON_NAME
-RA.VERSION = "0.15.3-alpha.43"
+RA.VERSION = "0.15.3-alpha.44"
 RA.BUILD = RA.VERSION
 RA.READINESS_PROTOCOL = 1
 RA.CATALOG_VERSION = 6
@@ -632,6 +632,11 @@ local function RefreshEventRegistration(event)
     end
 end
 local Subscription = {}
+function Subscription:GetNativeRegistration()
+    if type(eventFrame.IsEventRegistered)~="function"then return nil end
+    local ok,registered=pcall(eventFrame.IsEventRegistered,eventFrame,self.event)
+    if ok then return registered end
+end
 function Subscription:SetEnabled(enabled)
     enabled = not (type(issecretvalue) == "function" and issecretvalue(enabled)) and enabled == true
     if self.enabled == enabled then return end

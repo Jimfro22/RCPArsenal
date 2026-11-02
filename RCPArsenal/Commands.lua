@@ -16,7 +16,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp recapcheck|r - check your character before combat; recording must be enabled")
     print("  |cff3aa7ff/rcp recapstatus|r or |cff3aa7ff/rcp recapaudit|r - safe local capture diagnostics")
     print("  |cff3aa7ff/rcp recapfacts|r - plain recorded defensive, consumable and death facts")
-    print("  |cff3aa7ff/rcp recapdebug live|r - copy the selected death's eight-second incoming receipt test")
+    print("  |cff3aa7ff/rcp recapdebug live start|r - arm a 30-second incoming-event comparison; after death use |cff3aa7ff/rcp recapdebug live|r")
     print("  |cff3aa7ff/rcp recapdebug [reread]|r or |cff3aa7ff/rcp recapdebug cooldowns [start||stop||show]|r - copy diagnostics or arm a bounded Mirror Image capture")
     print("  |cff3aa7ff/rcp recapblizzard|r - request Blizzard recap for the accepted frozen ID")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
@@ -106,6 +106,7 @@ local function HandleSlash(raw)
         if rest~=""then RA:Print("Usage: /rcp recapblizzard (accepted frozen ID only)");return end
         local _,reason=RA.DeathRecap:OpenBlizzardRecap();RA:Print(reason)
     elseif command=="recapdebug"then
+        if rest=="live start"then local _,why=RA.DeathRecapDebug:StartIncomingProbe();RA:Print(why);return end
         if rest=="live"then
             local text,reason=RA.DeathRecap:BuildLiveHistoryText()
             if not text then RA:Print(reason);return end
