@@ -590,6 +590,7 @@ local function OnDeath()
     session.dead=true;session.incomingRecording=false;last=page;table.insert(history,1,page)
     while #history>5 do table.remove(history)end
     if not explicitHistorySelection or not Recap:IsRetainedPage(selectedHistory)then selectedHistory=page;explicitHistorySelection=false end
+    Diagnostic("CapturePersonalNativeProbe",page)
     SaveHistory();Notify("death");FetchNative(page,generation)
 end
 function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
@@ -805,6 +806,22 @@ function Recap:GetCooldownDiagnosticIdentity()
             return{resolvedSpellID=entry.spellID,baseSpellID=55342,specID=session.specID}
         end
     end
+end
+-- Only the manually armed transport probe may compare the default response.
+function Recap:ReadPersonalNativeForProbe(page)
+    local probe=page and Table(page.liveIncoming)and Table(page.liveIncoming.probe)
+    if not Enabled()or page~=last or page.restored or page.personalNativeProbe or not probe or probe.stopReason~="own-death"or probe.endedAt~=page.diedAt then
+        return nil,"No matching owner-armed death probe"
+    end
+    -- Blizzard's release dialog opens its own default recap without an ID.
+    -- Capture that separate public response once for comparison only. It is
+    -- never adopted as a meter ID, merged into the timeline or reread on hover.
+    local packet,reason=NativePacket()
+    if page~=last then return nil,"Recorded page changed during probe"end
+    if not packet then return nil,reason end
+    local maximum=0;for _,row in ipairs(packet.rows)do maximum=math.max(maximum,row.timestamp)end
+    for _,row in ipairs(packet.rows)do row.nativeOffset=row.timestamp-maximum end
+    return packet
 end
 -- Explicit diagnostic action only: one sanitized read of the accepted frozen
 -- ID. No association, lifecycle timer, or replacement of the captured packet.

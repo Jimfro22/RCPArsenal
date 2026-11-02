@@ -158,6 +158,8 @@ function D:GetFrozenSnapshot()
     local snapshot={header=Fields(page,HEADER),native=Packet(page.native),lastAlive=Sample(page.lastAlive),deathNotice=Sample(page.deathObservation),precombat=Sample(page.precombatBaseline),
         coverage=Fields(page.useCoverage,COVERAGE),directEvents={},uses={},casts=Casts(page.casts,page.diedAt),
         loaded=Fields({addonVersion=RA.VERSION,addonBuild=RA.BUILD,catalogBuild=catalog and catalog.build,catalogRevision=catalog and catalog.revision},LOADED)}
+    local personal=Table(page.personalNativeProbe)
+    if personal then snapshot.personalNative={packet=Packet(personal),metadata=Fields(personal,{"source","status","observedAt"})}end
     local contexts=Table(page.directSpellEvents)
     for _,name in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES"})do
         snapshot.directEvents[name]=Context(contexts and contexts[name])
@@ -174,6 +176,14 @@ function D:GetFrozenSnapshot()
         snapshot.uses[#snapshot.uses+1]=Fields(use,USE)
     end
     return snapshot,nil,page
+end
+function D:CapturePersonalNativeProbe(input)
+    local page=Table(input);local live=page and Table(page.liveIncoming);local probe=live and Table(live.probe)
+    if not page or page.personalNativeProbe or not probe or probe.stopReason~="own-death"or probe.endedAt~=page.diedAt then return end
+    local packet,reason=R:ReadPersonalNativeForProbe(page)
+    packet=packet or{rows={}}
+    packet.source="personal-default";packet.status=packet.readBefore and"public-response"or(type(reason)=="string"and reason or"unavailable")
+    packet.observedAt=Scalar(page.diedAt);page.personalNativeProbe=packet
 end
 local function Writer()
     local lines,bytes,full={},0,false
@@ -253,7 +263,7 @@ function R:BuildCoreFactsText()
     if page.restored then Add('Saved death; this report does not query your current character.')end
     return Finish()
 end
-function R:BuildLiveHistoryText()
+function R:BuildLiveHistoryText(includeRaw)
     local page=Table(self:GetSelectedPage());local live=page and Table(page.liveIncoming)
     if not live then return nil,"No live incoming history in this death; record a new death with Death Recap enabled"end
     local Add,Finish=Writer();local died=Scalar(page.diedAt)
@@ -283,6 +293,12 @@ function R:BuildLiveHistoryText()
             and died>=row.observedAt and died-row.observedAt<=8 and(row.kind=="damage"or row.kind=="healing")then
             Add(string.format("-%.1fs  %s  %.0f",died-row.observedAt,row.kind=="damage"and"DAMAGE"or"HEAL",row.amount))
         end
+    end
+    if includeRaw==true then
+        Add("RAW LIVE RECEIPTS - local clock only; exact public timestamps, no spell/source matching")
+        Add("  death "..FieldText(Fields(page,{"id","diedAt","localSessionStartedAt"}),{"id","diedAt","localSessionStartedAt"}))
+        local keys={"sequence","observedAt","kind","amount","flag","school"}
+        for index=1,math.min(#rows,256)do Add("  receipt="..index.." "..FieldText(Fields(rows[index],keys),keys))end
     end
     return Finish()
 end
@@ -343,6 +359,27 @@ local function WriteDiff(Add,before,after)
     end
     Add("  changedFieldsOrSlots="..changed.."; comparison covers retained rows only")
 end
+local function WritePersonalNativeProbe(Add,linked,probe)
+    if not probe then return end
+    Add("PERSONAL DEFAULT PROBE "..FieldText(probe.metadata,{"source","status","observedAt"}))
+    WritePacket(Add,"FROZEN PERSONAL DEFAULT - diagnostic only, never adopted as a meter ID",probe.packet)
+    local personal=probe.packet
+    local different,comparable=0,#linked.rows>0 and #personal.rows>0
+    for i=1,math.max(#linked.rows,#personal.rows)do
+        local a,b=linked.rows[i],personal.rows[i]
+        if not a or not b then different=different+1
+        else
+            local changed=false
+            for _,key in ipairs({"timestamp","event","rawSpellID","amount","recordedHP","absorbed","overkill","resisted","blocked","school"})do
+                if Field(a,key)~=Field(b,key)then changed=true end
+            end
+            if a.unavailable.timestamp or b.unavailable.timestamp or a.unavailable.amount or b.unavailable.amount then comparable=false end
+            if changed then different=different+1 end
+        end
+    end
+    Add("NATIVE SOURCE COMPARISON - original array slots only; no event identity or clock mapping inferred")
+    Add("  linkedRows="..#linked.rows.." personalDefaultRows="..#personal.rows.." differentRows="..different.." capturedFieldsMatch="..(comparable and tostring(different==0)or"not-comparable"))
+end
 function R:BuildDebugText(reread)
     local snapshot,reason,page=D:GetFrozenSnapshot()
     if not snapshot then return nil,reason end
@@ -366,6 +403,7 @@ function R:BuildDebugText(reread)
     Add(FieldText(snapshot.header,HEADER));Add("coverage "..FieldText(snapshot.coverage,COVERAGE))
     WriteCasts(Add,snapshot.casts)
     WritePacket(Add,"FROZEN NATIVE",snapshot.native)
+    WritePersonalNativeProbe(Add,snapshot.native,snapshot.personalNative)
     if reread==true then
         if comparison then WritePacket(Add,"EXPLICIT SAME-ID REREAD",comparison);WriteDiff(Add,snapshot.native,comparison)
         else local value,status=Scalar(readReason);Add("EXPLICIT SAME-ID REREAD unavailable="..Encode(value,status))end
@@ -381,7 +419,7 @@ function R:BuildDebugText(reread)
         end
     end
     for _,use in ipairs(snapshot.uses)do Add("OBSERVED USE "..FieldText(use,USE))end
-    local liveText=self:BuildLiveHistoryText();if liveText then Add(liveText)end
+    local liveText=self:BuildLiveHistoryText(true);if liveText then Add(liveText)end
     Add("END DEBUG - frozen capture unchanged; no chat submission")
     return Finish()
 end

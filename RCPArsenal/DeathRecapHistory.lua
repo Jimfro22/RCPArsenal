@@ -15,12 +15,14 @@ local function Set(keys)local out={};for key in keys:gmatch('%S+')do out[key]=tr
 local NUMERIC=Set('id diedAt recordedAt specID localSessionStartedAt nativeAttempts spellID baseSpellID defensiveTalentSpellID observedAt cooldownAt chargesAt currentCharges maxCharges pendingAt chargesPendingAt eventSequence invalidationGeneration invalidatedAt ownCooldownAt itemID icon carriedAt cacheGeneration physicalCount countAt remainingUses usesAt frozenAtCombatEntry auditEpoch encounterID difficulty startedAt endedAt coverageEndedAt rejectedReceipts lateReceipts firstSuccessfulUseAt lastSuccessfulUseAt observedCount recapID recapMaxHealth timestamp rawSpellID amount nativeIndex nativeOffset recordedHP absorbed overkill resisted blocked school nativeReadLocalBefore nativeReadLocalAfter nativeFirstTimestamp nativeMinimumTimestamp nativeMaximumTimestamp nativeFatalTimestamp nativeRowCount value sequence total rejected restricted capacity seconds callbacks inactive unitRejected actionRejected armedAt deadline playerCallbacks otherCallbacks unreadableUnits textCallbacks textIncomingCallbacks secondAmount')
 local BOOLEAN=Set('known isEnabled isActive isOnGCD chargesActive valid ownCooldownActive ownCooldownZero carried partial familyAbsenceVerified enableCooldownTimer combatEntryObserved truncated hideCaster sourceConfirmed avoidable deadly recording sessionPrecombat lockdownAtDeath nativeRegistered active')
 local IDS=Set('spellID baseSpellID defensiveTalentSpellID itemID encounterID specID recapID rawSpellID school nativeIndex')
-local function Fields(input,keys)
+NUMERIC.localDeathNoticeAt=true
+NUMERIC.readBefore=true;NUMERIC.readAfter=true
+local function Fields(input,keys,textOnly)
     input=Plain(input);if not input then return nil end
     local out={}
     for key in keys:gmatch('%S+')do
         local value=Scalar(input[key]);local kind=type(value)
-        local accepted=NUMERIC[key]and kind=='number'or BOOLEAN[key]and kind=='boolean'or not NUMERIC[key]and not BOOLEAN[key]and kind=='string'
+        local accepted=textOnly and kind=='string'or not textOnly and(NUMERIC[key]and kind=='number'or BOOLEAN[key]and kind=='boolean'or not NUMERIC[key]and not BOOLEAN[key]and kind=='string')
         if key=='icon'and kind=='string'then accepted=true end
         if IDS[key]and(kind~='number'or value<1 or value>2147483647 or value~=math.floor(value))then accepted=false end
         if accepted then out[key]=value end
@@ -78,7 +80,6 @@ function H:Snapshot(input)
             end
         end
     end
-    local native=Plain(input.native)
     local live=Plain(input.liveIncoming)
     if live then
         out.liveIncoming=Fields(live,'source clock startedAt endedAt combatEntryObserved total rejected restricted capacity seconds callbacks inactive unitRejected actionRejected recording sessionPrecombat lockdownAtDeath nativeRegistered')
@@ -92,15 +93,16 @@ function H:Snapshot(input)
             out.liveIncoming.probe.textSamples=Array(probe.textSamples,6,function(v)return Fields(v,keys)end)
         end
     end
+    for _,key in ipairs({'native','personalNativeProbe'})do local native=Plain(input[key])
     if native then
-        out.native=Fields(native,'recapID recapMaxHealth recapMaxHealthStatus truncated association clock')
-        out.native.clockDiagnostic=Fields(native.clockDiagnostic,CLOCK)
-        out.native.rows=Array(native.rows,64,function(v)
+        out[key]=Fields(native,'recapID recapMaxHealth recapMaxHealthStatus truncated association clock source status observedAt readBefore readAfter')
+        out[key].clockDiagnostic=Fields(native.clockDiagnostic,CLOCK)
+        out[key].rows=Array(native.rows,64,function(v)
             local row=Fields(v,'timestamp destGUID spellID kind name rawSpellID rawSpellName event amount nativeIndex nativeOffset recordedHP sourceName hideCaster sourceConfirmed sourceKey hideCasterStatus absorbed overkill resisted blocked school avoidable deadly')
-            if row then row.fieldStatus=Fields(v.fieldStatus,'hp source absorbed overkill')end
+            if row then row.fieldStatus=Fields(v.fieldStatus,'hp source absorbed overkill',true)end
             return row
         end)
-    end
+    end end
     return out
 end
 local function Root()return Plain(RaidArsenalDB)end
