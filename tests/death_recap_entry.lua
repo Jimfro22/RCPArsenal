@@ -35,6 +35,7 @@ end
 function methods:IsForbidden()return self.forbidden==true end
 function methods:GetScript(name)return self.scripts[name]end
 function methods:SetFrameLevel(value)self.level=value end
+function methods:RegisterForClicks(...)self.clicks={...}end
 function methods:SetFrameStrata(value)self.strata=value end
 function methods:SetVertexColor(...)self.rgb={...}end
 function methods:CreateLine()return object('Line',nil,self)end
@@ -156,30 +157,30 @@ check(stateReads==0,'Frozen projection queried current APIs')
 for _,saved in ipairs(savedAPIs)do saved.object[saved.key]=saved.value end
 ShowHost(host);Hidden('Popup alone advertised a retained death')
 Death(1);local b=named.RCPArsenalDeathRecapEntry
-check(b and b:IsShown()and b.width==160 and b.height==56 and b.parent==UIParent,'Native-first death did not create the compact independent zero-icon card')
+check(b and b:IsShown()and b.width==184 and b.height==68 and b.parent==UIParent,'Native-first death did not create the compact independent zero-icon card')
 check(b.points[1][1]=='BOTTOM'and b.points[1][2]==host and b.points[1][3]=='TOP'and b.points[1][4]==0 and b.points[1][5]==8,'Card did not center above its native host with an eight-unit gap')
 check(b.logo.lastDesired==RA.Theme.Assets.HeaderLogo and b.logo.filter=='LINEAR'and b.logo.width==18 and b.logo.height==18,'Existing logo broker/filter or compact size lost')
-check(b.label.text=='Death Summary'and b.label.fontSize==13 and b.summary==nil and b.chevron and b.pulse.looping=='REPEAT','Compact card title, chevron or pulse missing, or removed caption remains')
-check(b.logo.points[1][4]==10 and b.logo.points[1][5]==-6 and b.label.points[1][4]==36 and b.label.points[1][5]==-6 and b.label.height==18,'Zero-icon card header was not centered in its shorter height')
+check(b.label.text=='Death Summary'and b.label.fontSize==13 and b.summary==nil and b.chevron==nil and b.pulse.looping=='REPEAT','Compact card title, chevron or pulse missing, or removed caption remains')
+check(math.abs(b.logo.points[1][4]-(b.width-b.label.points[1][4]-b.label.width))<.001 and b.logo.points[1][5]==-10 and b.label.points[1][4]==b.logo.points[1][4]+25 and b.label.points[1][5]==-10 and b.label.height==18,'Summary logo/title pair is not centered')
 check(#b.pulse.animations==2 and b.pulse.animations[1].fromAlpha==.10 and b.pulse.animations[1].toAlpha==.22 and b.pulse.animations[1].duration==1.4 and b.pulse.animations[2].duration==1.4,'Pulse escaped 2.8s .10/.22 breath')
 local starts=pulseStarts
 RA:FireCallback('DEATH_RECAP_CHANGED','native');RA:FireCallback('DEATH_RECAP_CHANGED','death')
 check(pulseStarts==starts,'Native update or duplicate death restarted pulse')
-b:Fire('OnEnter');check(GameTooltip.text:find('loading',1,true)and not b.pulse.playing,'Pending help/hover attention wrong')
+b:Fire('OnEnter');check(b.hint:IsShown()and b.hint.open.label.text=='Open'and b.hint.close.label.text=='Close'and not b.pulse.playing,'Pending summary lost its compact actions or hover retained attention')
 b:Fire('OnLeave');local click=b.scripts.OnClick;click()
 check(opens==1 and opened,'Pending entry could not open captured page');Hidden('Open log retained entry')
 Close();check(b:IsShown()and not b.pulse.playing,'Closing viewed death restarted attention')
 b:Fire('OnEnter');HideHost(host);Hidden('Native hide left floating entry')
-check(not GameTooltip:IsShown(),'Native hide left tooltip')
+check(not b.hint:IsShown(),'Native hide left summary actions')
 ShowHost(host);check(b:IsShown()and not b.pulse.playing,'Same death did not survive native hide/reshow')
 local stale=b.scripts.OnClick
 HideHost(host);host.which='RESURRECT';host.shown=true;visibleHost=host;nativeHooks.StaticPopup_OnShow(host)
 Hidden('Pooled frame reuse kept entry');stale();check(opens==1,'Old click opened after host reuse')
 host.which='DEATH';ShowHost(host);check(b:IsShown(),'Same death did not return after offer dismissal')
 page.pending=false;RA:FireCallback('DEATH_RECAP_CHANGED','native');b:Fire('OnEnter')
-check(GameTooltip.text:find('unavailable',1,true),'Unavailable tooltip falsely claimed ready/loading');b:Fire('OnLeave')
+check(b.hint:IsShown()and b.hint.open.label.text=='Open','Missing hit details changed the summary open action');b:Fire('OnLeave')
 page.native={};RA:FireCallback('DEATH_RECAP_CHANGED','native');b:Fire('OnEnter')
-check(GameTooltip.text=='Open your captured log.','Ready native details changed the open-log promise or invented availability provenance');b:Fire('OnLeave')
+check(b.hint:IsShown()and b.hint.open.label.text=='Open','Native details changed the summary open action');b:Fire('OnLeave')
 stale=b.scripts.OnClick;page={id=99,captureGeneration=99};stale();check(opens==1,'Page replacement opened last page through stale click')
 RA:FireCallback('DEATH_RECAP_CHANGED','native');Hidden('Native update latched an unwitnessed page')
 Death(2);check(b:IsShown()and b.pulse.playing,'Replacement death did not reset attention')
@@ -253,20 +254,20 @@ local function Icons()
 end
 local function CheckCardLayout(expected,preview)
  local visible=Icons();local strips={};local rowCount=0
- check(#visible==expected and b.width>=160 and b.width<=280 and b.width%4==0 and b.summary==nil,'Compact card bounds/icon count or caption removal changed')
- local headerY=expected==0 and -7 or -6
- check(b.logo.width==18 and b.logo.height==18 and b.logo.points[1][4]==10 and b.logo.points[1][5]==headerY,'Compact logo geometry changed')
- check(b.label.text==(preview and'Death Summary · Preview'or'Death Summary')and b.label.fontSize==13 and b.label.height==18 and b.label.points[1][4]==36 and b.label.points[1][5]==headerY,'Compact header lost title geometry or explicit Preview label')
+ check(#visible==expected and b.width>=184 and b.width<=296 and b.width%4==0 and b.summary==nil,'Compact card bounds/icon count or caption removal changed')
+ local headerY=-10
+ check(b.logo.width==18 and b.logo.height==18 and b.logo.points[1][4]>=14 and b.logo.points[1][5]==headerY,'Compact logo geometry changed')
+ check(b.label.text==(preview and'Death Summary · Preview'or'Death Summary')and b.label.fontSize==13 and b.label.height==18 and b.label.points[1][4]==b.logo.points[1][4]+25 and b.label.points[1][5]==headerY,'Compact header lost title geometry or explicit Preview label')
  check(b.label.width>=b.label:GetStringWidth(),'Compact header clipped its visible title')
- check(b.chevron.width==8 and b.chevron.points[1][4]==-8 and b.chevron.points[1][5]==headerY,'Open cue lost right inset or header alignment')
+ check(b.chevron==nil and math.abs(b.logo.points[1][4]-(b.width-b.label.points[1][4]-b.label.width))<.001,'Removed chevron or centered header pair regressed')
  for _,icon in ipairs(visible)do
   local x,y=icon.points[1][4],icon.points[1][5]
-  check(icon.width==22 and icon.height==22 and x>=8 and x+22<=b.width-8 and -y+22<=b.height-6,'Compact icon or strip padding changed')
-  check(y<=-28 and(-y-28)%26==0,'Compact strip has a blank caption band or invalid row step')
+  check(icon.width==22 and icon.height==22 and x>=14 and x+22<=b.width-14 and -y+22<=b.height-10,'Compact icon or strip padding changed')
+  check(y<=-36 and(-y-36)%26==0,'Compact strip has a blank caption band or invalid row step')
   if not strips[y]then strips[y]={first=x,last=x+22};rowCount=rowCount+1 else strips[y].first=math.min(strips[y].first,x);strips[y].last=math.max(strips[y].last,x+22)end
  end
  for _,strip in pairs(strips)do check(math.abs(strip.first-(b.width-strip.last))<.001,'Wrapped icon row is not independently centered')end
- check(b.height==(expected==0 and 32 or 56+(rowCount-1)*26),'Compact card height retained a caption band or lost extra-row spacing')
+ check(b.height==(expected==0 and 38 or 68+(rowCount-1)*26),'Compact card height retained a caption band or lost extra-row spacing')
 end
 local helperCalls=0;local availableHelper=E.GetRows
 E.GetRows=function(self,value)helperCalls=helperCalls+1;return availableHelper(self,value)end
@@ -274,18 +275,17 @@ local freshSample={spells={Ready(30,'major',99),Ready(40,'major',97),Ready(10,'m
 Death(11,freshSample);ShowHost(host)
 local icons=Icons()
 check(#icons==5 and helperCalls==1,'Death card did not cache its positive living-check snapshot once')
-check(b.width==160 and b.height==56,'Common five-icon state did not fit the compact 160 by 56 card')
+check(b.width==184 and b.height==68,'Common five-icon state did not fit the compact 160 by 56 card')
 CheckCardLayout(5)
 for i,icon in ipairs(icons)do
- check(icon.width==22 and icon.height==22 and icon.points[1][5]==-28,'Normal icon row lost its compact size or vertical position')
+ check(icon.width==22 and icon.height==22 and icon.points[1][5]==-36,'Normal icon row lost its compact size or vertical position')
  if i>1 then
   local gap=icon.points[1][4]-icons[i-1].points[1][4]-icons[i-1].width
   check(math.abs(gap-(i==4 and 10 or 4))<.001,'Normal icon row lost the small defensive gap or item-family separation')
  end
 end
-check(b.chevron:IsShown()and not b.previewClose:IsShown(),'Live card exposed preview close or lost open cue')
-b:Fire('OnEnter');local cardHelp=table.concat(GameTooltip.lines,' ')
-check(cardHelp:find('red X = unavailable',1,true)and cardHelp:find('? = unconfirmed',1,true),'Caption removal lost historical availability or uncertainty from card hover');b:Fire('OnLeave')
+check(b.chevron==nil and not b.previewClose:IsShown(),'Live card exposed a chevron or preview close')
+b:Fire('OnEnter');check(b.hint:IsShown()and b.hint.open.side=='left'and b.hint.close.side=='right'and b.hint.open.label.text=='Open'and b.hint.close.label.text=='Close','Summary hover is not two mouse-button actions');b:Fire('OnLeave');check(not b.hint:IsShown(),'Summary action hint survived leave')
 for i,icon in ipairs(icons)do
  check(icon.kind=='Button'and icon.parent==b and icon.width==icon.height and not icon.cooldown and not icon.hotkey and next(icon.attrs)==nil,'Evidence icon acquired an action/cooldown/hotkey control')
  check(icon.row and icon.row.checkedAt and(icon.row.spellID or icon.row.representativeItemID),'Available icon lost its frozen identity/check time')
@@ -293,20 +293,19 @@ for i,icon in ipairs(icons)do
  Hidden('Icon-opened log retained entry');Close();icons=Icons()
 end
 icons=Icons();icons[1]:Fire('OnEnter')
-local iconHelp=table.concat(GameTooltip.lines,' ')
-check(GameTooltip:GetOwner()==icons[1]and GameTooltip.text=='Defensive 30'and iconHelp:find('Available when checked',1,true)and iconHelp:find('1.0s before death notice',1,true)and iconHelp:find('Click to open Death Log',1,true),'Available spell hover lost historical availability, captured name/check age or open action')
+check(b.hint:IsShown()and icons[1].row.name=='Defensive 30'and icons[1].row.recordedState==true and icons[1].row.checkedAt==99,'Shared icon action hint changed frozen availability evidence')
 check(not b.pulse.playing,'Icon hover retained attention animation')
 local iconClick=icons[1].scripts.OnClick;local beforeIcons=opens
-HideHost(host);Hidden('Host hide retained icon card');check(not GameTooltip:IsShown(),'Host hide left child-owned availability tooltip')
+HideHost(host);Hidden('Host hide retained icon card');check(not b.hint:IsShown(),'Host hide left child-owned summary actions')
 host.which='RESURRECT';host.shown=true;visibleHost=host;nativeHooks.StaticPopup_OnShow(host);iconClick()
 check(opens==beforeIcons,'Saved icon click opened after native host reuse')
 host.which='DEATH';ShowHost(host);icons=Icons()
 freshSample.spells[1].name='Changed after freeze';freshSample.spells[1].cooldown='active'
 page.native={};RA:FireCallback('DEATH_RECAP_CHANGED','native');event('UI_SCALE_CHANGED')
 icons=Icons();check(helperCalls==1 and #icons==5 and icons[1].row.name=='Defensive 30','Native/layout refresh reclassified or mutated the death-time availability projection')
-icons[5]:Fire('OnEnter');check(table.concat(GameTooltip.lines,' '):find('9.0s before death',1,true),'Potion tooltip used newer family check or discovery time')
+icons[5]:Fire('OnEnter');check(b.hint:IsShown()and icons[5].row.checkedAt==91,'Potion action hint changed the frozen family check')
 icons[5]:Fire('OnLeave')
-icons[4]:Fire('OnEnter');check(table.concat(GameTooltip.lines,' '):find('Uses remaining when checked: 1',1,true),'Healthstone tooltip omitted its frozen remaining-use count');icons[4]:Fire('OnLeave')
+icons[4]:Fire('OnEnter');check(b.hint:IsShown()and icons[4].row.representativeRow.remainingUses==1,'Healthstone action hint changed frozen remaining uses');icons[4]:Fire('OnLeave')
 iconClick=icons[1].scripts.OnClick;page.captureGeneration=999;iconClick();check(opens==beforeIcons,'Saved icon click bypassed changed capture generation')
 E:Refresh();Hidden('Changed-generation icon card remained visible')
 Death(12,{spells={Ready(1)},supplies={}});ShowHost(host);iconClick=Icons()[1].scripts.OnClick
@@ -326,38 +325,36 @@ for _,icon in ipairs(icons)do
  check(icon.row and not icon.overflow and icon.width==22 and icon.height==22,'Wrapped evidence became a count-only overflow or changed icon size')
  count=count+1
  if icon.row and icon.row.kind=='stone'then stone=icon elseif icon.row and icon.row.kind=='potion'then potion=icon end
- local point=icon.points[1];check(point[4]>=8 and point[4]+icon.width<=b.width-8 and -point[5]+icon.height<=b.height-6,'Available icon lost its side/bottom padding or overflows card bounds')
+ local point=icon.points[1];check(point[4]>=14 and point[4]+icon.width<=b.width-14 and -point[5]+icon.height<=b.height-10,'Available icon lost its side/bottom padding or overflows card bounds')
  lines[point[5]]=true
  local before=opens;icon:Fire('OnClick');check(opens==before+1 and opened,'Wrapped evidence icon did not open its frozen page');Close()
 end
 local lineCount=0;for _ in pairs(lines)do lineCount=lineCount+1 end
-check(#icons==34 and count==34 and stone and potion and lineCount>1 and b.height==56+(lineCount-1)*26,'Wrapped card omitted available icons, lost supply families or grew outside its row-height rule')
+check(#icons==34 and count==34 and stone and potion and lineCount>1 and b.height==68+(lineCount-1)*26,'Wrapped card omitted available icons, lost supply families or grew outside its row-height rule')
 CheckCardLayout(34)
 check(stone.points[1][5]==potion.points[1][5],'Wrapped item pair split across rows')
 local ten={spells={},supplies={positiveStone,positivePotion}}
 for i=1,8 do ten.spells[i]=Ready(800+i)end
 Death(151,ten);ShowHost(host);icons=Icons()
-check(#icons==10 and b.width==280 and b.height==56,'Ten available icons did not fit the 280 by 56 single-row card')
+check(#icons==10 and b.width==292 and b.height==68,'Ten available icons did not fit the 280 by 56 single-row card')
 CheckCardLayout(10)
-for _,icon in ipairs(icons)do check(icon.points[1][5]==-28,'Normal ten-icon state wrapped unnecessarily')end
+for _,icon in ipairs(icons)do check(icon.points[1][5]==-36,'Normal ten-icon state wrapped unnecessarily')end
 local boundary={spells={},supplies={positiveStone,positivePotion}}
 for i=1,9 do boundary.spells[i]=Ready(900+i)end
 Death(152,boundary);ShowHost(host);icons=Icons();CheckCardLayout(11)
-check(b.width==280 and b.height==82 and icons[9].points[1][5]==-28 and icons[10].row.kind=='stone'and icons[11].row.kind=='potion'and icons[10].points[1][5]==-54 and icons[11].points[1][5]==-54,'Near-full spell row split the item pair or left an extra caption band')
-Death(16,{spells={Ready(1)},supplies={}});ShowHost(host);check(#Icons()==3 and not Icons()[1].overflow and b.width==160 and b.height==56,'Sparse death retained wrapped rows/extra icons or failed to compact')
+check(b.width==296 and b.height==94 and icons[9].points[1][5]==-36 and icons[10].row.kind=='stone'and icons[11].row.kind=='potion'and icons[10].points[1][5]==-62 and icons[11].points[1][5]==-62,'Near-full spell row split the item pair or left an extra caption band')
+Death(16,{spells={Ready(1)},supplies={}});ShowHost(host);check(#Icons()==3 and not Icons()[1].overflow and b.width==184 and b.height==68,'Sparse death retained wrapped rows/extra icons or failed to compact')
 CheckCardLayout(3)
 Death(17,{spells={{spellID=1,known=true,cooldown='unknown'}},supplies={}});ShowHost(host)
-check(#Icons()==3 and b.width==160 and b.height==56,'Unknown-only check retained old icons or a reserved caption band')
-CheckCardLayout(3);b:Fire('OnEnter');local emptyHelp=table.concat(GameTooltip.lines,' ')
-check(emptyHelp:find('? = unconfirmed.',1,true),'Unknown-only hover lost recorded-check provenance or uncertainty');b:Fire('OnLeave')
-Death(18);ShowHost(host);check(#Icons()==2 and b.width==160 and b.height==56,'Missing living sample retained old icons or a reserved caption band')
-CheckCardLayout(2);b:Fire('OnEnter');emptyHelp=table.concat(GameTooltip.lines,' ')
-check(emptyHelp:find('? = unconfirmed.',1,true),'Missing living sample was confused with a negative/unknown recorded check');b:Fire('OnLeave')
+check(#Icons()==3 and b.width==184 and b.height==68,'Unknown-only check retained old icons or a reserved caption band')
+CheckCardLayout(3);b:Fire('OnEnter');check(b.hint:IsShown()and Icons()[1].row.recordedState==nil,'Unknown-only row gained availability from the action hint');b:Fire('OnLeave')
+Death(18);ShowHost(host);check(#Icons()==2 and b.width==184 and b.height==68,'Missing living sample retained old icons or a reserved caption band')
+CheckCardLayout(2);b:Fire('OnEnter');check(b.hint:IsShown()and Icons()[1].row.recordedState==nil,'Missing sample gained a negative/positive check from the action hint');b:Fire('OnLeave')
 local untimed=Ready(1);untimed.cooldownAt=nil;untimed.observedAt=nil
 Death(181,{spells={untimed},supplies={}});ShowHost(host);Icons()[1]:Fire('OnEnter')
-check(table.concat(GameTooltip.lines,' '):find('Check time not recorded',1,true),'Missing check time appeared current/at death');Icons()[1]:Fire('OnLeave')
+check(b.hint:IsShown()and Icons()[1].row.checkedAt==nil,'Missing check time became a current timestamp');Icons()[1]:Fire('OnLeave')
 untimed.cooldownAt=101;Death(182,{spells={untimed},supplies={}});ShowHost(host);Icons()[1]:Fire('OnEnter')
-check(table.concat(GameTooltip.lines,' '):find('Check time not recorded',1,true)and not table.concat(GameTooltip.lines,' '):find('-1.0s',1,true),'Future check timestamp was rendered as an honest pre-death age');Icons()[1]:Fire('OnLeave')
+check(b.hint:IsShown()and Icons()[1].row.checkedAt==101,'Future check timestamp was changed by the action hint');Icons()[1]:Fire('OnLeave')
 E.GetRows=availableHelper
 
 -- Card Preview is explicitly synthetic, may run without a death popup, and
@@ -366,7 +363,7 @@ local previews=0;local originalPreview=U.Preview
 U.Preview=function()previews=previews+1;opened=true;RA:FireCallback('DEATH_RECAP_VISIBILITY',true,{id=0});return true end
 Death(19,{spells={Ready(1)},supplies={}});ShowHost(host);local realPage=page
 check(b.pulse.playing,'New real entry did not begin unviewed')
-E:Preview();check(b:IsShown()and b.label.text=='Death Summary · Preview'and b.points[1][2]==UIParent and b.previewClose:IsShown()and not b.chevron:IsShown(),'Preview card was not labelled, independently centered and dismissible')
+E:Preview();check(b:IsShown()and b.label.text=='Death Summary · Preview'and b.points[1][2]==UIParent and b.previewClose:IsShown()and b.chevron==nil,'Preview card was not labelled, independently centered and dismissible')
 CheckCardLayout(#Icons(),true)
 check(page==realPage and R:GetPage()==realPage,'Card preview replaced the captured real page')
 local previewClick=Icons()[1].scripts.OnClick;local beforePreview=opens
@@ -424,6 +421,19 @@ local negative=false
 for _,icon in ipairs(Icons())do if icon.row.spellID==41 then negative=true;check(icon.recordedState==false and icon.statusLines[1]:IsShown(),'Before-combat negative lost drawn X')end end
 check(negative,'Before-combat projection dropped unavailable spell')
 combat=true;event('PLAYER_REGEN_DISABLED');Hidden('Character check survived combat entry');combat=false;R.CheckCharacter=originalCharacterCheck
+-- Right-click dismissal is scoped to this death, including icon hotspots.
+enabled=true;dead=false;Close();Death(190,{spells={Ready(40)},supplies={}});ShowHost(host)
+check(b:IsShown()and b.clicks[2]=='RightButtonUp'and Icons()[1].clicks[2]=='RightButtonUp','Summary or icon hotspot omitted the right-click registration')
+b:Fire('OnEnter');check(b.hint:IsShown()and b.hint.open.side=='left'and b.hint.close.side=='right','Summary action glyphs do not match their mouse buttons')
+local dismissedClick=Icons()[1].scripts.OnClick;local previousOpens=opens
+Icons()[1]:Fire('OnClick','RightButton');Hidden('Right-click on a status icon did not dismiss the summary')
+check(not b.hint:IsShown()and opens==previousOpens,'Right-click left hover help or opened the log')
+RA:FireCallback('DEATH_RECAP_CHANGED','native');RA:FireCallback('DEATH_RECAP_VISIBILITY',false)
+Hidden('Late data or visibility update reopened the dismissed death')
+dismissedClick(nil,'LeftButton');check(opens==previousOpens,'Dismissed click closure remained active')
+Death(191,{spells={Ready(40)},supplies={}});ShowHost(host);check(b:IsShown(),'Dismissal leaked into a later death')
+b:Fire('OnClick','LeftButton');check(opens==previousOpens+1 and opened,'Left-click stopped opening after right-click dismissal')
+Close();b:Fire('OnClick','RightButton');Hidden('Header right-click did not dismiss the summary')
 check(nativeWrites==0,'Companion changed native frames')
 check(ownedSchedules==0,'Entry created a timer or ticker')
 for _,obj in ipairs(objects)do local owner=obj;while owner and owner~=b do owner=owner.parent end
