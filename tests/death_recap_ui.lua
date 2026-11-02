@@ -52,7 +52,11 @@ function GameTooltip:AddLine()error('Recap facts appended to native tooltip')end
 local priorVisualText=RA.SetVisualText
 function RA:SetVisualText(region,value)
  local popup=named.RCPArsenalDeathRecap
- if popup and popup.tooltipRecap and(region.parent==popup.tooltipRecap or region.parent==popup.tooltipRecap.body)then tooltipLines[#tooltipLines+1]=value end
+ local parent=region.parent
+ while popup and popup.tooltipRecap and parent do
+  if parent==popup.tooltipRecap or parent==popup.tooltipRecap.body then tooltipLines[#tooltipLines+1]=value;break end
+  parent=parent.parent
+ end
  return priorVisualText(self,region,value)
 end
 UISpecialFrames={}
@@ -254,7 +258,7 @@ for _,parentScale in ipairs({.8,1,1.25})do for _,panelScale in ipairs({.64,.8,1}
   local target={left=px+(b.group.iconX-23)*panelScale,right=px+(b.group.iconX+23)*panelScale,bottom=py+ph-(b.damageY+46)*panelScale,top=py+ph-b.damageY*panelScale}
   check(area(r,target)==0,'Tooltip covers hovered event despite room')
   local point=GameTooltip.points[#GameTooltip.points];check(math.abs(point[4]*.9-r.left)<.001 and math.abs(point[5]*.9-(r.top-GameTooltip.height*.9))<.001,'Tooltip offsets mixed effective scales')
-  GameTooltip:SetSize(320,300);GameTooltip:Fire('OnSizeChanged');check(math.abs(popup.tooltipPlacement.right-popup.tooltipPlacement.left-288)<.001,'Native tooltip size change left stale placement')
+  GameTooltip:SetSize(320,300);GameTooltip:Fire('OnSizeChanged');check(math.abs(popup.tooltipPlacement.right-popup.tooltipPlacement.left-math.max(288,popup.tooltipRecap.width*popup.tooltipRecap:GetEffectiveScale()))<.001,'Native tooltip size change left stale placement')
   b:Fire('OnLeave');check(not GameTooltip:IsShown()and popup.tooltipPlacement==nil,'Tooltip ownership/placement survived leave')
   cases=cases+1
  end
@@ -292,7 +296,7 @@ for _,b in ipairs(hits())do for _,row in ipairs(b.group.rows)do if row.kind=='un
 end end end
 check(unknownGroup and unknownCount==18,'Unknown-event density fixture lost original receipts')
 tooltipLines={};unknownGroup:Fire('OnEnter');local unknownCopy=table.concat(tooltipLines,' ')
-check(tooltipSpell==unknownGroup.group.rows[1].spellID and unknownCopy:find('Amount unavailable',1,true)and not unknownCopy:find(' damage',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits: '..unknownCopy)
+check(tooltipSpell==unknownGroup.group.rows[1].spellID and unknownCopy:find('Amount not recorded',1,true)and not unknownCopy:find(' damage',1,true)and not unknownCopy:find(' hits',1,true),'Unknown event kinds became damage hits: '..unknownCopy)
 page.native.rows[1].kind='unknown';U:ShowLast();tooltipLines={};hover(1)
 check(popup.healthContext.text:find('Death record',1,true)and not popup.healthContext.text:find('Killing blow',1,true)and not table.concat(tooltipLines,' '):find('Killing blow',1,true),'Unknown fatal event acquired a confirmed damage/killing-blow claim')
 -- Mixed sources/spells cluster by raw time. Artwork stays on the largest hit,
@@ -308,10 +312,11 @@ do
  check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and popup.percent.text=='1%','Fatal selection substituted largest-hit HP or invented zero health')
  local art=cluster.icon.texture;tooltipLines={};tooltipSpell=nil;cluster:Fire('OnEnter');local detail=table.concat(tooltipLines,' ')
  check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and cluster.group.rows[cluster.member]==clusterRows[3]and cluster.icon.texture==art and tooltipSpell==733,'First actual cluster hover replaced fatal receipt with largest-hit HP/spell')
- check(detail:find('3 hits',1,true)and detail:find('Contains killing blow',1,true),'Mixed fatal hover lost cluster or killing-blow detail')
- for _,fact in ipairs({'-0.4s · Earlier largest · 50,001 · Visible caster','-0.2s · Middle hit · 15,002','0.0s · Exact fatal · 10,003 · Killing blow · Health shown'})do
-  check(detail:find(fact,1,true),'Cluster detail lost exact original receipt: '..fact)
+ check(detail:find('3 hits',1,true)and detail:find('Killing blow',1,true),'Mixed fatal hover lost cluster or killing-blow detail')
+ for _,fact in ipairs({'-0.4s','Earlier largest','50,001','Visible caster','-0.2s','Middle hit','15,002','0.0s','Exact fatal','10,003'})do
+  check(detail:find(fact,1,true),'Structured cluster detail lost exact original receipt: '..fact)
  end
+ check(not detail:find('Health shown',1,true)and not detail:find('Largest hit',1,true),'Structured rows retained redundant diagnostic prose')
  check(not detail:find('Hidden caster',1,true)and not detail:find('Restricted caster',1,true),'Mixed cluster exposed a hidden or restricted source')
  cluster:Fire('OnMouseWheel',-1)
  check(popup.selected==clusterRows[1]and popup.hp.text=='60000 / 100000'and tooltipSpell==731 and cluster.icon.texture==art,'Cluster wheel failed to wrap to original HP/native spell while preserving artwork')
@@ -376,10 +381,12 @@ local smallHeight,largeHeight
 for i,text in ipairs({'A',string.rep('Long',24),'A',string.rep('X',96)})do
  page.native.rows[1].sourceName=text;U:ShowLast();hover(2)
  local card=popup.tooltipRecap;local sourceRow
- for _,f in ipairs(card.lines)do if f:IsShown()then
-  check(f.wordWrap and f.nonSpaceWrap and f.maxLines==0 and f.measuredWithHeight==0,'Pooled row measured with a stale height/wrap constraint')
-  check(f.height>=f.naturalWrappedHeight,'Wrapped text exceeds allocated row height')
-  if f.text:find('Source:',1,true)then sourceRow=f end
+ for _,row in ipairs(card.eventRows)do if row:IsShown()then
+  for _,f in ipairs({row.ability,row.source})do if f:IsShown()then
+   check(f.wordWrap and f.nonSpaceWrap and f.maxLines==0 and f.measuredWithHeight==0,'Pooled row measured with a stale height/wrap constraint')
+   check(f.height>=f.naturalWrappedHeight,'Wrapped text exceeds allocated row height')
+  end end
+  if row.source.text==text then sourceRow=row.source end
  end end
  check(sourceRow,'Source row disappeared')
  if i==1 then smallHeight=card.height elseif i==2 then largeHeight=card.height;check(largeHeight>smallHeight and sourceRow.height>sourceRow.fontSize,'Long row did not expand after a short row')

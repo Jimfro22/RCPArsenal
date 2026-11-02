@@ -16,6 +16,27 @@ end
 local function Surface(owner,color,key)
     T:ApplyRounded(owner,color,8,key or"base")
 end
+function UI:CreateMouseHint(parent,side,label,width)
+    local hint=CreateFrame("Frame",nil,parent);Size(hint,width or 78,20);hint:EnableMouse(false)
+    hint.side=side;hint.mouse=CreateFrame("Frame",nil,hint);Size(hint.mouse,14,18);Point(hint.mouse,"LEFT",hint,"LEFT",0,0)
+    local glyph=hint.mouse
+    local fill=glyph:CreateTexture(nil,"ARTWORK");hint.highlight=fill
+    if side=="wheel"then Size(fill,2,5);Point(fill,"TOPLEFT",glyph,"TOPLEFT",6,-2)
+    else Size(fill,5,6);Point(fill,"TOPLEFT",glyph,"TOPLEFT",side=="right"and 8 or 1,-1)end
+    fill:SetColorTexture(unpack(C.magenta))
+    local vertices={{3,0},{11,0},{14,-3},{14,-15},{11,-18},{3,-18},{0,-15},{0,-3},{3,0}}
+    for i=1,#vertices-1 do
+        local a,b=vertices[i],vertices[i+1];local line=glyph:CreateLine(nil,"OVERLAY")
+        line:SetThickness(1);line:SetColorTexture(unpack(C.textSoft));line:SetStartPoint("TOPLEFT",glyph,a[1],a[2]);line:SetEndPoint("TOPLEFT",glyph,b[1],b[2])
+    end
+    for _,p in ipairs({{0,-8,14,-8},{7,0,7,-8}})do
+        local line=glyph:CreateLine(nil,"OVERLAY");line:SetThickness(1);line:SetColorTexture(unpack(C.textSoft))
+        line:SetStartPoint("TOPLEFT",glyph,p[1],p[2]);line:SetEndPoint("TOPLEFT",glyph,p[3],p[4])
+    end
+    hint.label=Font(hint,11,"REGULAR",C.textSoft);Point(hint.label,"LEFT",hint,"LEFT",22,0)
+    hint.label:SetWidth((width or 78)-22);hint.label:SetHeight(20);hint.label:SetJustifyV("MIDDLE");Text(hint.label,label)
+    return hint
+end
 local function Button(parent,text,width,callback)
     local b=CreateFrame("Button",nil,parent);Size(b,width,24);Surface(b,C.surfaceRaised)
     b.label=Font(b,11,"BOLD");Point(b.label,"CENTER",b,"CENTER",0,0);b.label:SetJustifyH("CENTER");Text(b.label,text)
@@ -107,13 +128,100 @@ local function PositionTooltip()
     end
     if tooltipNative then GameTooltip:SetClampedToScreen(true)end;tooltipPlacing=false
 end
-local function RecapBox(lines,color,heading,focusIndex)
+local function EnsureRecapBox()
     if not tooltipRecap then
         tooltipRecap=CreateFrame("Frame",nil,UIParent);tooltipRecap:SetFrameStrata("TOOLTIP");Surface(tooltipRecap,C.canvasDeep);T:ApplyRounded(tooltipRecap,C.lineStrong,8,"border","BORDER")
         tooltipRecap.scroll=CreateFrame("ScrollFrame",nil,tooltipRecap);tooltipRecap.scroll:SetAllPoints(tooltipRecap);tooltipRecap.scroll:SetClipsChildren(true)
         tooltipRecap.body=CreateFrame("Frame",nil,tooltipRecap.scroll);tooltipRecap.scroll:SetScrollChild(tooltipRecap.body);tooltipRecap.lines={}
     end
     frame.tooltipRecap=tooltipRecap
+end
+local function AvailableTooltipHeight()
+    local available=384;local sh,ss,rs=ReadMetric(UIParent,"GetHeight"),ReadMetric(UIParent,"GetEffectiveScale"),ReadMetric(tooltipRecap,"GetEffectiveScale")
+    if sh and sh>0 and ss and ss>0 and rs and rs>0 then
+        local native=tooltipNative and(ReadMetric(GameTooltip,"GetHeight")or 0)*(ReadMetric(GameTooltip,"GetEffectiveScale")or 1)/rs or 0
+        available=math.max(40,math.min(384,sh*ss/rs-native-48))
+    end
+    return available
+end
+local function HideDamageDetails()
+    if not tooltipRecap or not tooltipRecap.eventRows then return end
+    for _,row in ipairs(tooltipRecap.eventRows)do row:Hide()end
+    tooltipRecap.eventHeading:Hide();tooltipRecap.eventCount:Hide();tooltipRecap.eventRule:Hide();tooltipRecap.eventHint:Hide()
+end
+local function DamageRecapBox(data)
+    local card=tooltipRecap;card.eventRows=card.eventRows or{}
+    if not card.eventHeading then
+        card.eventHeading=Font(card,13,"BOLD",C.text);card.eventCount=Font(card,11,"REGULAR",C.muted)
+        card.eventRule=card:CreateTexture(nil,"ARTWORK");card.eventRule:SetColorTexture(unpack(C.lineStrong))
+        card.eventHint=UI:CreateMouseHint(card,"wheel","Scroll to browse",156)
+    end
+    for _,f in ipairs(card.lines)do f:Hide();if f.recapIcon then f.recapIcon:Hide()end;if f.recapAmount then f.recapAmount:Hide();f.recapTime:Hide()end end
+    for _,row in ipairs(card.eventRows)do row:Hide()end
+    local width,amountWidth=360,64
+    for i,entry in ipairs(data.damageEvents)do
+        local row=card.eventRows[i]
+        if not row then
+            row=CreateFrame("Frame",nil,card.body);row:EnableMouse(false);card.eventRows[i]=row
+            row.background=row:CreateTexture(nil,"BACKGROUND");row.background:SetAllPoints(row);row.background:SetColorTexture(unpack(C.surfaceRaised))
+            row.selection=row:CreateTexture(nil,"BORDER");row.selection:SetColorTexture(unpack(C.magenta))
+            row.icon=row:CreateTexture(nil,"ARTWORK");Size(row.icon,22,22);row.icon:SetTexCoord(.08,.92,.08,.92)
+            row.time=Font(row,11,"REGULAR",C.muted);row.ability=Font(row,12,"BOLD",C.text);row.amount=Font(row,12,"BOLD")
+            row.source=Font(row,11,"REGULAR",C.muted);row.status=Font(row,10,"BOLD");row.mitigation=Font(row,10,"REGULAR",C.textSoft)
+        end
+        row.entry=entry;row.selected=i==data.selectedIndex
+        Text(row.ability,entry.text);Text(row.time,entry.timeText);Text(row.amount,entry.amountText);Text(row.source,entry.sourceText)
+        Text(row.status,entry.fatalText);Text(row.mitigation,entry.mitigationText)
+        row.amount:SetTextColor(unpack(entry.damage and C.danger or C.text));row.status:SetTextColor(unpack(entry.damage and C.danger or C.textSoft))
+        row.source:SetTextColor(unpack(entry.sourceColor or C.muted))
+        row.background:SetShown(row.selected);row.selection:SetShown(row.selected)
+        if entry.iconSpellID then
+            if row.iconSpellID~=entry.iconSpellID then RA:RegisterSpellIcon(row.icon,entry.iconSpellID);row.iconSpellID=entry.iconSpellID end
+            row.icon:Show()
+        else row.iconSpellID=nil;row.icon:Hide()end
+        amountWidth=math.max(amountWidth,ReadMetric(row.amount,"GetUnboundedStringWidth")or ReadMetric(row.amount,"GetStringWidth")or 0)
+    end
+    amountWidth=math.min(150,amountWidth);local nameWidth=width-92-12-amountWidth-10
+    local y,focus=0
+    for i,entry in ipairs(data.damageEvents)do
+        local row=card.eventRows[i];row:ClearAllPoints();Point(row,"TOPLEFT",card.body,"TOPLEFT",0,-y)
+        for _,f in ipairs({row.ability,row.source,row.mitigation})do f:SetWidth(nameWidth);f:SetHeight(0);f:SetWordWrap(true);f:SetNonSpaceWrap(true);f:SetMaxLines(0)end
+        local nameHeight=math.max(14,ReadMetric(row.ability,"GetStringHeight")or 14)
+        local sourceHeight=entry.sourceText and math.max(13,ReadMetric(row.source,"GetStringHeight")or 13)or 0
+        local mitigationHeight=entry.mitigationText and math.max(12,ReadMetric(row.mitigation,"GetStringHeight")or 12)or 0
+        local height=math.max(40,nameHeight+sourceHeight+mitigationHeight+12)
+        Size(row,width,height);row.y=y;row.rowHeight=height
+        row.ability:SetHeight(nameHeight);row.source:SetHeight(sourceHeight);row.mitigation:SetHeight(mitigationHeight)
+        for _,f in ipairs({row.time,row.ability,row.amount,row.source,row.status,row.mitigation,row.icon,row.selection})do f:ClearAllPoints()end
+        Point(row.time,"TOPLEFT",row,"TOPLEFT",12,-8);Size(row.time,40,16)
+        Point(row.icon,"TOPLEFT",row,"TOPLEFT",60,-8)
+        Point(row.ability,"TOPLEFT",row,"TOPLEFT",92,-7)
+        Point(row.source,"TOPLEFT",row,"TOPLEFT",92,-9-nameHeight);row.source:SetShown(entry.sourceText~=nil)
+        Point(row.mitigation,"TOPLEFT",row,"TOPLEFT",92,-9-nameHeight-sourceHeight);row.mitigation:SetShown(entry.mitigationText~=nil)
+        Point(row.amount,"TOPRIGHT",row,"TOPRIGHT",-12,-7);Size(row.amount,amountWidth,16);row.amount:SetJustifyH("RIGHT")
+        Point(row.status,"TOPRIGHT",row,"TOPRIGHT",-12,-25);Size(row.status,amountWidth,14);row.status:SetJustifyH("RIGHT");row.status:SetShown(entry.fatalText~=nil)
+        Point(row.selection,"TOPLEFT",row,"TOPLEFT",0,-5);Size(row.selection,2,height-10)
+        row:Show();if row.selected then focus=row end;y=y+height+2
+    end
+    local header,footer=38,#data.damageEvents>1 and 30 or 8
+    local available=AvailableTooltipHeight();if available<110 then header,footer=28,0 end
+    local bodyHeight=math.max(1,y-2);local visible=math.max(1,math.min(bodyHeight,available-header-footer))
+    Size(card,width,header+visible+footer);Size(card.body,width,bodyHeight)
+    card.scroll:ClearAllPoints();Point(card.scroll,"TOPLEFT",card,"TOPLEFT",0,-header);Size(card.scroll,width,visible)
+    Text(card.eventHeading,data.totalText);Text(card.eventCount,data.countText)
+    card.eventHeading:ClearAllPoints();Point(card.eventHeading,"TOPLEFT",card,"TOPLEFT",12,-10);Size(card.eventHeading,width-116,18)
+    card.eventCount:ClearAllPoints();Point(card.eventCount,"TOPRIGHT",card,"TOPRIGHT",-12,-12);Size(card.eventCount,80,16);card.eventCount:SetJustifyH("RIGHT")
+    card.eventRule:ClearAllPoints();Point(card.eventRule,"TOPLEFT",card,"TOPLEFT",12,-header+3);Size(card.eventRule,width-24,1)
+    card.eventHint:ClearAllPoints();Point(card.eventHint,"BOTTOM",card,"BOTTOM",0,5);card.eventHint:SetShown(footer>8)
+    card.eventHeading:Show();card.eventCount:Show();card.eventRule:Show()
+    card.overflowing=bodyHeight>visible
+    local offset=focus and math.max(0,focus.y-math.max(0,(visible-focus.rowHeight)/2))or 0
+    card.scroll:SetVerticalScroll(math.min(math.max(0,bodyHeight-visible),offset));card:Show()
+end
+local function RecapBox(lines,color,heading,focusIndex)
+    EnsureRecapBox()
+    if lines.damageEvents then DamageRecapBox(lines);return end
+    HideDamageDetails();tooltipRecap.scroll:ClearAllPoints();tooltipRecap.scroll:SetAllPoints(tooltipRecap)
     local first=heading and 1 or 2
     local width,count=220,math.min(80,math.max(0,#lines-first+1))
     for i=#tooltipRecap.lines+1,count do
@@ -163,11 +271,7 @@ local function RecapBox(lines,color,heading,focusIndex)
         h=math.ceil(math.max(f.iconSpellID and 18 or(i==1 and 16 or 15),h))+2;f:SetHeight(h);y=y+h+3
     end
     local total=math.max(24,y+5)
-    local available=384;local sh,ss,rs=ReadMetric(UIParent,"GetHeight"),ReadMetric(UIParent,"GetEffectiveScale"),ReadMetric(tooltipRecap,"GetEffectiveScale")
-    if sh and sh>0 and ss and ss>0 and rs and rs>0 then
-        local native=tooltipNative and(ReadMetric(GameTooltip,"GetHeight")or 0)*(ReadMetric(GameTooltip,"GetEffectiveScale")or 1)/rs or 0
-        available=math.max(40,math.min(384,sh*ss/rs-native-48))
-    end
+    local available=AvailableTooltipHeight()
     local height=math.min(total,available);Size(tooltipRecap,width,height);Size(tooltipRecap.body,width,total)
     tooltipRecap.overflowing=total>height
     local focus=focusIndex and tooltipRecap.lines[focusIndex-first+1]
@@ -765,34 +869,27 @@ local function Select(page,row,item,force)
     if item then Place(frame.interval,"TOPLEFT",frame,"TOPLEFT",X(item.first),-130-(contentShift or 0));Size(frame.interval,math.max(1,X(item.last)-X(item.first)),HEALTH_TOP-40-130+extraHeight-(contentShift or 0));frame.interval:Show()else frame.interval:Hide()end
 end
 local function SelectedTooltip(b,page,target)
-    local item=b.group;local row=item.rows[b.member or 1];local lines={#item.rows>1 and"Damage cluster"or row.name or"Recorded event"}
-    local focusIndex
-    local amount=row.amount~=nil and Amount(row.amount)or"Amount unavailable"
-    if #item.rows==1 then
-        lines[#lines+1]=amount..(row.amount~=nil and(row.kind=="damage"and" damage"or" recorded")or"")
-        lines[#lines+1]=RecapAge(row.nativeOffset)
-    else
-        local total=item.amountComplete and Amount(item.amount)or(item.knownAmounts>0 and"≥"..Amount(item.amount)or"Amount unavailable")
-        local noun="hits";for _,member in ipairs(item.rows)do if member.kind~="damage"then noun="events";break end end
-        lines[#lines+1]=total..(noun=="hits"and" damage"or" recorded").." · "..#item.rows.." "..noun
-        local representative=Representative(item)
-        lines[#lines+1]="Icon: "..(representative.name or"Recorded hit")..(representative.amount==nil and" · Representative event"or item.amountComplete and" · Largest hit"or" · Largest known hit")
-        if item.fatalRow then lines[#lines+1]=item.fatalRow.kind=="damage"and"Contains killing blow"or"Contains death record"end
-        lines[#lines+1]="Mouse wheel: inspect each hit"
-        for i,member in ipairs(item.rows)do
-            local source=member.sourceName and member.hideCaster~=true and member.hideCasterStatus~="restricted"and(" · "..member.sourceName)or""
-            lines[#lines+1]=(i==b.member and"› "or"")..string.format("%.1fs · ",member.nativeOffset)..(member.name or"Recorded hit").." · "..(member.amount~=nil and ExactAmount(member.amount)or"Amount unavailable")..source..(member.nativeIndex==1 and(member.kind=="damage"and" · Killing blow"or" · Death record")or"")..(i==b.member and" · Health shown"or"")
-            if i==b.member then focusIndex=#lines end
+    local item=b.group;local row=item.rows[b.member or 1]
+    local allDamage=true;for _,member in ipairs(item.rows)do if member.kind~="damage"then allDamage=false end end
+    local total=item.amountComplete and Amount(item.amount)or(item.knownAmounts>0 and"≥"..Amount(item.amount)or"Amount not recorded")
+    local lines={row.name or"Recorded event",damageEvents={},selectedIndex=b.member or 1,
+        totalText=total..(item.knownAmounts>0 and(allDamage and" damage"or" recorded")or""),
+        countText=#item.rows..(allDamage and(#item.rows==1 and" hit"or" hits")or(#item.rows==1 and" event"or" events"))}
+    for _,member in ipairs(item.rows)do
+        local source=member.hideCaster~=true and member.hideCasterStatus~="restricted"and CapturedText(member.sourceName)or nil
+        local class=source and CapturedText(member.sourceClass)
+        local mitigation={}
+        for _,field in ipairs({{"overkill","overkill"},{"resisted","resisted"},{"blocked","blocked"}})do
+            local value=Number(member[field[1]]);if value and value>0 then mitigation[#mitigation+1]=Amount(value).." "..field[2]end
         end
+        local time=Metric(member.nativeOffset)
+        lines.damageEvents[#lines.damageEvents+1]={text=CapturedText(member.name)or"Recorded event",iconSpellID=Number(member.spellID,true),
+            timeText=time and string.format("%.1fs",time)or"—",amountText=member.amount~=nil and ExactAmount(member.amount)or"—",
+            sourceText=source,sourceColor=class and CLASS_FILES[class]and{CapturedClassColor(class)}or C.muted,
+            fatalText=member.nativeIndex==1 and(member.kind=="damage"and"Killing blow"or"Death record")or nil,
+            mitigationText=#mitigation>0 and table.concat(mitigation," · ")or nil,damage=member.kind=="damage"}
     end
-    if row.sourceName and row.hideCaster~=true and row.hideCasterStatus~="restricted"then lines[#lines+1]={text="Source: "..row.sourceName,color=C.textSoft}end
-    if row.nativeIndex==1 then lines[#lines+1]=row.kind=="damage"and"Killing blow"or"Death record"end
-    local mitigation={}
-    for _,field in ipairs({{"overkill","Overkill"},{"resisted","Resisted"},{"blocked","Blocked"}})do
-        local value=Number(row[field[1]]);if value and value>0 then mitigation[#mitigation+1]=field[2].." "..Amount(value)end
-    end
-    if #mitigation>0 then lines[#lines+1]=table.concat(mitigation," · ")end
-    Tooltip(target or b,lines,row.spellID,nil,pink,focusIndex)
+    Tooltip(target or b,lines,row.spellID)
 end
 local function Nearest(item,time,currentRow)
     local best,distance

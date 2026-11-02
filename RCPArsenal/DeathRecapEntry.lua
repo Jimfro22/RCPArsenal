@@ -5,7 +5,7 @@ local R, UI, T = RA.DeathRecap, RA.DeathRecapUI, RA.Theme
 local C = T.Colors
 local button, token, anchor, layoutHost, placement, shownPage
 local previewPage
-local CARD_MIN, CARD_MAX, CARD_HEIGHT = 160, 280, 56
+local CARD_MIN, CARD_MAX, CARD_HEIGHT, PADDING = 184, 296, 68, 14
 local ICON_SIZE, ICON_GAP, ITEM_GAP = 22, 4, 10
 local binding, pulsing, hovered = 0, false, false
 local hooks, subscriptions = {}, {}
@@ -73,11 +73,12 @@ local function OwnDeath()
     return Global(UnitIsDeadOrGhost, "player") == true and Global(UnitIsGhost, "player") == false
 end
 local function Current()
-    if not token or not Enabled() or not OwnDeath() or button and not Mutable(button) then return false end
+    if not token or token.dismissed or not Enabled() or not OwnDeath() or button and not Mutable(button) then return false end
     local page = R:GetPage()
     return page == token.page and page.id == token.id and page.captureGeneration == token.generation
 end
 local function HideTooltip()
+    if button and button.hint then button.hint:Hide()end
     if not button or not GameTooltip then return end
     local owner = Call(GameTooltip, "GetOwner")
     if owner == button or owner and Read(owner, "entryOwner") == button then pcall(GameTooltip.Hide, GameTooltip) end
@@ -120,57 +121,40 @@ end
 local function ValidHover()
     return button and button:IsVisible()and(previewPage~=nil and Mutable(button)and Global(InCombatLockdown)==false or not previewPage and Current()and anchor==Host())
 end
-local function Age(row, page)
-    local died, checked = Number(page and page.diedAt), Number(row.checkedAt)
-    if not died or not checked or checked > died then return "Check time not recorded" end
-    return page.beforeCombat and"Recorded before combat"or string.format("Checked %.1fs before death notice", died-checked)
-end
 local function TooltipIcon(self)
     if not self:IsVisible() or not ValidHover() then Hide(true); return end
     hovered=true; Paint(); Attention()
-    if not GameTooltip then return end
-    local page=previewPage or token.page
-    GameTooltip:SetOwner(self,"ANCHOR_TOP")
-    GameTooltip:SetText(self.row.name)
-    GameTooltip:AddLine(self.row.recordedState==true and"Available when checked"or self.row.recordedState==false and"Unavailable when checked"or"Availability not confirmed",1,1,1)
-    GameTooltip:AddLine(Age(self.row,page),.7,.7,.75,true)
-    if self.nativeChargeCount then GameTooltip:AddLine("Captured charge count displayed directly by Blizzard; availability remains unconfirmed.",.7,.7,.75,true)end
-    for _,line in ipairs(R:GetPrecombatNotes(self.row))do GameTooltip:AddLine(line,.7,.7,.75,true)end
-    local member=self.row.representativeRow
-    if member then
-        if member.itemID then GameTooltip:AddLine("Recorded item: "..member.itemID,.7,.7,.75,true)end
-        if member.physicalCount~=nil then GameTooltip:AddLine("Carried when checked: "..member.physicalCount,.7,.7,.75,true)end
-        if member.remainingUses~=nil then GameTooltip:AddLine("Uses remaining when checked: "..member.remainingUses,.7,.7,.75,true)end
-    end
-    if self.row.detail then GameTooltip:AddLine(self.row.detail,.7,.7,.75,true) end
-    GameTooltip:AddLine(previewPage and(previewPage.beforeCombat and"Before combat · Frozen character check"or"Preview · click to open the sample log")or"Click to open Death Log",.7,.7,.75,true)
-    GameTooltip:Show()
+    HideTooltip();button.hint:Show()
 end
 local function Populate(rows)
     HideTooltip()
     for _, icon in ipairs(button.icons) do icon:Hide(); icon.row=nil; icon.overflow=nil; icon:SetScript("OnClick",nil) end
     RA:SetVisualText(button.label,previewPage and(previewPage.beforeCombat and"Before combat"or"Death Summary · Preview")or"Death Summary")
-    button.previewClose:SetShown(previewPage~=nil);button.chevron:SetShown(previewPage==nil)
+    button.previewClose:SetShown(previewPage~=nil)
+    button.hint.open:SetShown(not(previewPage and previewPage.beforeCombat))
+    button.hint.close:ClearAllPoints()
+    if previewPage and previewPage.beforeCombat then T.SetPoint(button.hint.close,"CENTER",button.hint,"CENTER",0,0)
+    else T.SetPoint(button.hint.close,"RIGHT",button.hint,"RIGHT",-12,0)end
     local items=0;for _,row in ipairs(rows)do if row.kind then items=items+1 end end
     local total=#rows*ICON_SIZE+math.max(0,#rows-1)*ICON_GAP+(items>0 and #rows>items and ITEM_GAP-ICON_GAP or 0)
     local titleWidth=Number(Call(button.label,"GetUnboundedStringWidth"))or Number(Call(button.label,"GetStringWidth"))or 0
-    local headerWidth=36+titleWidth+(previewPage and 34 or 24)
-    local width=math.min(CARD_MAX,math.max(CARD_MIN,math.ceil((total+16)/4)*4,math.ceil(headerWidth/4)*4))
+    local headerWidth=25+titleWidth+2*PADDING+(previewPage and 48 or 0)
+    local width=math.min(CARD_MAX,math.max(CARD_MIN,math.ceil((total+2*PADDING)/4)*4,math.ceil(headerWidth/4)*4))
     local lines,line={{width=0}}
     line=lines[1]
     for index,row in ipairs(rows)do
         local startsItems=row.kind and(index==1 or not rows[index-1].kind)
         local gap=#line>0 and(startsItems and ITEM_GAP or ICON_GAP)or 0
         local needed=startsItems and(items*ICON_SIZE+math.max(0,items-1)*ICON_GAP)or ICON_SIZE
-        if #line>0 and line.width+gap+needed>width-16 then line={width=0};lines[#lines+1]=line;gap=0 end
+        if #line>0 and line.width+gap+needed>width-2*PADDING then line={width=0};lines[#lines+1]=line;gap=0 end
         line[#line+1]={row=row,x=line.width+gap};line.width=line.width+gap+ICON_SIZE
     end
-    T.SetSize(button,width,#rows==0 and 32 or CARD_HEIGHT+(#lines-1)*(ICON_SIZE+ICON_GAP))
-    button.label:SetWidth(width-36-(previewPage and 34 or 24))
-    local headerY=#rows==0 and 7 or 6
-    button.logo:ClearAllPoints();T.SetPoint(button.logo,"TOPLEFT",button,"TOPLEFT",10,-headerY)
-    button.label:ClearAllPoints();T.SetPoint(button.label,"TOPLEFT",button,"TOPLEFT",36,-headerY)
-    button.chevron:ClearAllPoints();T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-8,-headerY)
+    T.SetSize(button,width,#rows==0 and 38 or CARD_HEIGHT+(#lines-1)*(ICON_SIZE+ICON_GAP))
+    local labelWidth=math.min(titleWidth,width-2*PADDING-25-(previewPage and 48 or 0))
+    button.label:SetWidth(labelWidth)
+    local headerY=10;local headerX=(width-25-labelWidth)/2
+    button.logo:ClearAllPoints();T.SetPoint(button.logo,"TOPLEFT",button,"TOPLEFT",headerX,-headerY)
+    button.label:ClearAllPoints();T.SetPoint(button.label,"TOPLEFT",button,"TOPLEFT",headerX+25,-headerY)
     button.previewClose:ClearAllPoints();T.SetPoint(button.previewClose,"TOPRIGHT",button,"TOPRIGHT",-6,-headerY+1)
     local index=0
     for lineIndex,strip in ipairs(lines)do for _,item in ipairs(strip)do
@@ -178,13 +162,13 @@ local function Populate(rows)
         local icon=button.icons[index]
         if not icon then
             icon=CreateFrame("Button",nil,button);button.icons[index]=icon;icon.entryOwner=button
-            icon:RegisterForClicks("LeftButtonUp");T.SetSize(icon,ICON_SIZE,ICON_SIZE)
+            icon:RegisterForClicks("LeftButtonUp","RightButtonUp");T.SetSize(icon,ICON_SIZE,ICON_SIZE)
             icon.texture=icon:CreateTexture(nil,"ARTWORK");icon.texture:SetAllPoints(icon);icon.texture:SetTexCoord(.08,.92,.08,.92)
             icon:SetScript("OnEnter",TooltipIcon)
             icon:SetScript("OnLeave",function()hovered=false;HideTooltip();Paint();Attention()end)
         end
         icon.row=item.row
-        icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-28-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
+        icon:ClearAllPoints();T.SetPoint(icon,"TOPLEFT",button,"TOPLEFT",(width-strip.width)/2+item.x,-36-(lineIndex-1)*(ICON_SIZE+ICON_GAP))
         if item.row.spellID then RA:RegisterSpellIcon(icon.texture,item.row.spellID)
         else RA:RegisterVisualTexture(icon.texture,item.row.icon or(item.row.kind=="stone"and"Interface\\Icons\\INV_Stone_04"or"Interface\\Icons\\INV_Potion_51"),T.Assets.White) end
         UI:PaintCooldownStatus(icon,icon.texture,item.row.recordedState,item.row);icon:Show()
@@ -194,7 +178,7 @@ local function EnsureButton()
     if button and button.entryConfigured then return true end
     if not button then button = CreateFrame("Button", "RCPArsenalDeathRecapEntry", UIParent); button:Hide() end
     if not Mutable(button) then return false end
-    button:SetFrameStrata("DIALOG"); button:SetFrameLevel(100); button:RegisterForClicks("LeftButtonUp")
+    button:SetFrameStrata("DIALOG"); button:SetFrameLevel(100); button:RegisterForClicks("LeftButtonUp","RightButtonUp")
     T.SetSize(button, CARD_MIN, CARD_HEIGHT)
     T:ApplyRounded(button, C.surfaceRaised, 6, "base")
     T:ApplyRounded(button, {C.magenta[1], C.magenta[2], C.magenta[3], .45}, 6, "border", "OVERLAY")
@@ -206,10 +190,13 @@ local function EnsureButton()
     RA:ApplyFont(button.label, 13, "BOLD", false)
     button.label:SetWordWrap(false);button.label:SetMaxLines(1)
     button.label:SetTextColor(unpack(C.text)); button.label:SetJustifyH("LEFT")
+    button.label:SetJustifyV("MIDDLE")
     T.SetSize(button.label, CARD_MIN-60, 18); T.SetPoint(button.label, "TOPLEFT", button, "TOPLEFT", 36, -6)
     RA:SetVisualText(button.label, "Death Summary")
-    button.chevron=button:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");RA:ApplyFont(button.chevron,16,"REGULAR",false)
-    button.chevron:SetTextColor(unpack(C.muted));T.SetSize(button.chevron,8,18);T.SetPoint(button.chevron,"TOPRIGHT",button,"TOPRIGHT",-8,-6);RA:SetVisualText(button.chevron,"›")
+    button.hint=CreateFrame("Frame",nil,UIParent);T.SetSize(button.hint,188,38);button.hint:SetFrameStrata("TOOLTIP");button.hint:SetClampedToScreen(true);button.hint:EnableMouse(false)
+    T.SetPoint(button.hint,"BOTTOM",button,"TOP",0,6);T:ApplyRounded(button.hint,C.canvasDeep,6,"base");T:ApplyRounded(button.hint,C.lineStrong,6,"border","BORDER")
+    button.hint.open=UI:CreateMouseHint(button.hint,"left","Open",70);T.SetPoint(button.hint.open,"LEFT",button.hint,"LEFT",14,0)
+    button.hint.close=UI:CreateMouseHint(button.hint,"right","Close",72);T.SetPoint(button.hint.close,"RIGHT",button.hint,"RIGHT",-12,0);button.hint:Hide()
     button.icons={}
     button.previewClose=CreateFrame("Button",nil,button);T.SetSize(button.previewClose,20,20);T.SetPoint(button.previewClose,"TOPRIGHT",button,"TOPRIGHT",-6,-6)
     button.previewClose.label=button.previewClose:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");button.previewClose.label:SetAllPoints(button.previewClose);RA:ApplyFont(button.previewClose.label,14,"REGULAR",false);RA:SetVisualText(button.previewClose.label,"×")
@@ -228,16 +215,7 @@ local function EnsureButton()
     end
     button:SetScript("OnHide", function() StopGlow(); HideTooltip(); hovered = false end)
     button:SetScript("OnEnter", function(self)
-        if not ValidHover() then Hide(true); return end
-        hovered = true; Paint(); Attention()
-        local text = previewPage and(previewPage.beforeCombat and"Before combat · Recorded character check. This does not predict readiness at a later death."or"Preview · open the sample Death Log.")or"Open your captured log."
-        local page = previewPage or token.page
-        local rows=button.boundRows
-        if not previewPage and rows and #rows==0 then text=text.." "..(rows.hadCheck and"No availability confirmed."or"Availability was not recorded.")end
-        if not previewPage and not page.native then
-            text = text .. (R:GetDiagnostics().fetchPending and " Hit details are loading." or " Hit details are unavailable.")
-        end
-        if GameTooltip then GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(text);GameTooltip:AddLine("Frozen checks: check = available, red X = unavailable, ? = unconfirmed.",.7,.7,.75,true); GameTooltip:Show() end
+        TooltipIcon(self)
     end)
     button:SetScript("OnLeave", function() hovered = false; HideTooltip(); Paint(); Attention() end)
     button:SetScript("OnMouseDown", function() T:SetRoundedColor(button, C.surfacePressed, "base") end)
@@ -279,9 +257,10 @@ local function RefreshNow()
         button:ClearAllPoints();T.SetPoint(button,"CENTER",UIParent,"CENTER",0,80)
         anchor=nil;binding=binding+1
         local expectedPage,expectedBinding=previewPage,binding
-        local function Open(self)
+        local function Open(self,mouseButton)
             if previewPage~=expectedPage or binding~=expectedBinding or not button:IsVisible() or not Mutable(button)or Global(InCombatLockdown)~=false
                 or self and self~=button and not self:IsVisible() then return end
+            if mouseButton=="RightButton"then Entry:HidePreview();return end
             if previewPage.beforeCombat then return end
             previewPage=nil;SubscriptionDemand();Hide(true);UI:Preview()
         end
@@ -299,9 +278,10 @@ local function RefreshNow()
     if not Place(host) then Hide(true); return end
     anchor = host; binding = binding + 1
     local clickBinding, clickToken = binding, token
-    local function Open(self)
+    local function Open(self,mouseButton)
         if clickBinding ~= binding or clickToken ~= token or anchor ~= host or not Current()
             or Host() ~= host or Call(UI, "IsShown") ~= false or self and self~=button and not self:IsVisible() then return end
+        if mouseButton=="RightButton"then token.dismissed=true;Entry:Refresh();return end
         if UI:ShowLast() == true and token == clickToken then token.viewed = true end
         Entry:Refresh()
     end
