@@ -1,4 +1,44 @@
-# Death Log and Death Summary — alpha.42
+# Death Log and Death Summary — alpha.43
+
+## Native status badges and incoming-history test
+
+The owner's latest screenshot confirms native counts for Ice Cold and Barrier,
+correct item stock, and both use receipts. Charge numbers are now presented as
+check/X badges with a native 0..1 StatusBar fill. Lua never compares the restricted
+count or reads the fill back. The zero-charge X is underneath the fill; one or
+more charges cover it with a check. Mirror Image's supported ignore-GCD duration
+query now retains its immediate IsActive/IsZero scalar predicates for native
+SetAlphaFromBoolean presentation. Only consistent pairs display check/X; a failed
+binding or conflicting pair retains the neutral fallback. No ticking duration
+object or private predicate is exported or saved. Native badge pixels require
+testing; the public diagnostic report cannot read these private displayed states.
+
+Owner captures 3066 and 3077 each contain exactly ten native damage rows spanning
+1.804s and 1.232s respectively. Arsenal accepts up to64 returned native rows;
+it does not discard them at ten. The documented GetRecapEvents call has no count
+or pagination argument. Combat-log message limits do not establish a larger death
+recap limit.
+
+With Death Recap enabled, a separate player-filtered UNIT_COMBAT recorder now
+retains at most256 readable incoming damage/healing receipts from the last eight
+seconds. It is a fixed ring with constant work per event, no timer, no new bag or
+cooldown queries, and no subscription while disabled. Restricted/malformed amounts
+are counted as omitted, never changed to zero. Spell names, attackers, health and
+absorption are not supplied by this feed and are not guessed. Native named hits
+and local receipts are not merged or deduplicated by approximate timestamps.
+
+After a new death, `/rcp recapdebug live` opens its plain, copyable receipt list;
+the selected death among the five retained pages controls this readout. Public
+receipts survive reload through the bounded history allowlist. This first pass is
+a native evidence test, not a claim that a complete named eight-second combat log
+has been recovered. The visible spell timeline still uses Blizzard's native rows.
+
+Pinned API and Blizzard UI sources (build70688):
+
+- [UNIT_COMBAT payload](https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/UnitDocumentation.lua)
+- [StatusBar secret-safe setters](https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleStatusBarAPIDocumentation.lua)
+- [Region boolean alpha setter](https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleRegionAPIDocumentation.lua)
+- [Native death recap API](https://github.com/Gethe/wow-ui-source/blob/d07eb00237d8891f153215db98a5df880a26cfe5/Interface/AddOns/Blizzard_APIDocumentationGenerated/DeathRecapDocumentation.lua)
 
 ## Fresh consumable checks
 

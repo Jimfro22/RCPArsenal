@@ -247,8 +247,33 @@ function R:BuildCoreFactsText()
     Add('')
     local native=Table(page.native);local rows=native and Table(native.rows)
     Add('DAMAGE: '..(rows and #rows..' retained records' or'No native recap attached'))
+    local live=Table(page.liveIncoming)
+    if live then Add('LIVE INCOMING: '..#(Table(live.rows)or{})..' receipts in the last 8 seconds; /rcp recapdebug live')end
     Add('Coverage: '..(page.useCoverage and page.useCoverage.combatEntryObserved==true and'combat entry observed'or'incomplete combat entry'))
     if page.restored then Add('Saved death; this report does not query your current character.')end
+    return Finish()
+end
+function R:BuildLiveHistoryText()
+    local page=Table(self:GetSelectedPage());local live=page and Table(page.liveIncoming)
+    if not live then return nil,"No live incoming history in this death; record a new death with Death Recap enabled"end
+    local Add,Finish=Writer();local died=Scalar(page.diedAt)
+    Add("RCP live incoming history - death #"..string.format("%.0f",page.id))
+    Add("Your incoming damage/healing receipts. This feed contains no spell names or attackers.")
+    Add("Times are local receipt times before the death notice, separate from Blizzard's named recap.")
+    local rows=Table(live.rows)or{}
+    Add(string.format("Retained %d receipts / 8 seconds; capacity 256. %d readable receipts this combat; %d restricted amounts; %d rejected amounts.",#rows,Scalar(live.total)or 0,Scalar(live.restricted)or 0,Scalar(live.rejected)or 0))
+    if Scalar(live.total)and live.total>256 then Add("Capacity reached: the busiest eight-second window may be incomplete.")end
+    if #rows==0 then Add("No readable UNIT_COMBAT receipts captured. The native recap is unchanged.")end
+    local native=Table(page.native);local nativeRows=native and Table(native.rows)
+    if nativeRows then Add("Blizzard's separate named recap retained "..#nativeRows.." hits.")end
+    Add("")
+    for index=1,math.min(#rows,256)do
+        local row=Fields(rows[index],{"observedAt","kind","amount","school"})
+        if type(died)=="number"and type(row.observedAt)=="number"and type(row.amount)=="number"
+            and died>=row.observedAt and died-row.observedAt<=8 and(row.kind=="damage"or row.kind=="healing")then
+            Add(string.format("-%.1fs  %s  %.0f",died-row.observedAt,row.kind=="damage"and"DAMAGE"or"HEAL",row.amount))
+        end
+    end
     return Finish()
 end
 local function WritePacket(Add,label,packet)
@@ -346,6 +371,7 @@ function R:BuildDebugText(reread)
         end
     end
     for _,use in ipairs(snapshot.uses)do Add("OBSERVED USE "..FieldText(use,USE))end
+    local liveText=self:BuildLiveHistoryText();if liveText then Add(liveText)end
     Add("END DEBUG - frozen capture unchanged; no chat submission")
     return Finish()
 end
