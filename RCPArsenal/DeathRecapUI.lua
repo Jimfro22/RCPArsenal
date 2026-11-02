@@ -598,6 +598,30 @@ local function CooldownSlots(rows)
     end
     return slots
 end
+local function NativeStatusLayers(b)
+    if b.nativeStatus then return b.nativeStatus end
+    local badge=b.statusBadge
+    local native={};b.nativeStatus=native
+    native.charge=CreateFrame("StatusBar",nil,badge);native.charge:SetAllPoints(badge)
+    native.charge:SetFrameLevel(badge:GetFrameLevel()+2);native.charge:SetMinMaxValues(0,1)
+    native.charge:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8");native.charge:SetStatusBarColor(unpack(C.canvasDeep))
+    local fill=native.charge:GetStatusBarTexture()
+    native.charge.check=native.charge:CreateTexture(nil,"OVERLAY")
+    native.charge.check:SetAllPoints(fill);native.charge.check:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+    local function Glyph(ready)
+        local parent=CreateFrame("Frame",nil,badge);parent:SetAllPoints(badge);parent:SetFrameLevel(badge:GetFrameLevel()+3)
+        local glyph=CreateFrame("Frame",nil,parent);parent.glyph=glyph;glyph:SetAllPoints(parent);Surface(glyph,C.canvasDeep)
+        local positions=ready and{{3,-8,6,-11},{6,-11,13,-4}}or{{4,-4,12,-12},{12,-4,4,-12}}
+        for _,p in ipairs(positions)do
+            local line=glyph:CreateLine(nil,"OVERLAY");line:SetThickness(2);line:SetColorTexture(unpack(ready and C.success or C.danger))
+            line:SetStartPoint("TOPLEFT",glyph,p[1],p[2]);line:SetEndPoint("TOPLEFT",glyph,p[3],p[4])
+        end
+        return parent
+    end
+    native.ready,native.unready=Glyph(true),Glyph(false)
+    native.charge:Hide();native.ready:Hide();native.unready:Hide()
+    return native
+end
 function UI:PaintCooldownStatus(b,texture,state,row)
     local shade=state==false and .4 or 1
     if state==nil then texture:SetVertexColor(.55,.65,.85);texture:SetAlpha(.8)else texture:SetVertexColor(shade,shade,shade);texture:SetAlpha(1)end
@@ -611,8 +635,8 @@ function UI:PaintCooldownStatus(b,texture,state,row)
     -- Expressway has no checkmark glyph. Draw both proven states so their
     -- meaning survives font changes; the unknown question mark is text.
     Text(b.info,state==true and"✓"or state==false and"×"or"?");b.info:SetShown(state==nil);b.recordedState=state
-    b.info:SetTextColor(unpack(C.textSoft));b.nativeChargeCount=state==nil and row and R:RenderRecordedChargeCount(b.info,row)or false
-    if b.nativeChargeCount then b.info:SetTextColor(unpack(C.text))end
+    b.info:SetTextColor(unpack(C.textSoft));b.nativeChargeCount=false
+    if b.nativeStatus then for _,key in ipairs({"charge","ready","unready"})do b.nativeStatus[key]:Hide()end end
     for _,line in ipairs(b.statusLines)do line:SetShown(state~=nil);line:SetColorTexture(unpack(state==true and C.success or C.danger))end
     if state==true then
         b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,3,-8);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,6,-11)
@@ -620,6 +644,18 @@ function UI:PaintCooldownStatus(b,texture,state,row)
     elseif state==false then
         b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,4,-4);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,12,-12)
         b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,12,-4);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,4,-12)
+    end
+    if state==nil and row and type(R.GetRecordedNativeStatusKind)=="function"and R:GetRecordedNativeStatusKind(row)then
+        local native=NativeStatusLayers(b)
+        if R:BindRecordedChargeStatus(native.charge,row)then
+            -- The red X is covered by the native fill only when at least one
+            -- charge remains. Its private value is never read back into Lua.
+            b.info:Hide()
+            for _,line in ipairs(b.statusLines)do line:Show();line:SetColorTexture(unpack(C.danger))end
+            b.statusLines[1]:SetStartPoint("TOPLEFT",b.statusBadge,4,-4);b.statusLines[1]:SetEndPoint("TOPLEFT",b.statusBadge,12,-12)
+            b.statusLines[2]:SetStartPoint("TOPLEFT",b.statusBadge,12,-4);b.statusLines[2]:SetEndPoint("TOPLEFT",b.statusBadge,4,-12)
+            native.charge:Show()
+        elseif R:BindRecordedCooldownStatus(native.ready,native.unready,row)then native.ready:Show();native.unready:Show()end
     end
 end
 local function Shelf(page,example,time)

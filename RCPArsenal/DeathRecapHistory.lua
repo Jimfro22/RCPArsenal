@@ -12,7 +12,7 @@ local function Scalar(v)
     if type(v)=='string'and #v<=256 and not v:find('[%c|]')then return v end
 end
 local function Set(keys)local out={};for key in keys:gmatch('%S+')do out[key]=true end;return out end
-local NUMERIC=Set('id diedAt recordedAt specID localSessionStartedAt nativeAttempts spellID baseSpellID defensiveTalentSpellID observedAt cooldownAt chargesAt currentCharges maxCharges pendingAt chargesPendingAt eventSequence invalidationGeneration invalidatedAt ownCooldownAt itemID icon carriedAt cacheGeneration physicalCount countAt remainingUses usesAt frozenAtCombatEntry auditEpoch encounterID difficulty startedAt endedAt coverageEndedAt rejectedReceipts lateReceipts firstSuccessfulUseAt lastSuccessfulUseAt observedCount recapID recapMaxHealth timestamp rawSpellID amount nativeIndex nativeOffset recordedHP absorbed overkill resisted blocked school nativeReadLocalBefore nativeReadLocalAfter nativeFirstTimestamp nativeMinimumTimestamp nativeMaximumTimestamp nativeFatalTimestamp nativeRowCount value')
+local NUMERIC=Set('id diedAt recordedAt specID localSessionStartedAt nativeAttempts spellID baseSpellID defensiveTalentSpellID observedAt cooldownAt chargesAt currentCharges maxCharges pendingAt chargesPendingAt eventSequence invalidationGeneration invalidatedAt ownCooldownAt itemID icon carriedAt cacheGeneration physicalCount countAt remainingUses usesAt frozenAtCombatEntry auditEpoch encounterID difficulty startedAt endedAt coverageEndedAt rejectedReceipts lateReceipts firstSuccessfulUseAt lastSuccessfulUseAt observedCount recapID recapMaxHealth timestamp rawSpellID amount nativeIndex nativeOffset recordedHP absorbed overkill resisted blocked school nativeReadLocalBefore nativeReadLocalAfter nativeFirstTimestamp nativeMinimumTimestamp nativeMaximumTimestamp nativeFatalTimestamp nativeRowCount value sequence total rejected restricted capacity seconds')
 local BOOLEAN=Set('known isEnabled isActive isOnGCD chargesActive valid ownCooldownActive ownCooldownZero carried partial familyAbsenceVerified enableCooldownTimer combatEntryObserved truncated hideCaster sourceConfirmed avoidable deadly')
 local IDS=Set('spellID baseSpellID defensiveTalentSpellID itemID encounterID specID recapID rawSpellID school nativeIndex')
 local function Fields(input,keys)
@@ -79,6 +79,11 @@ function H:Snapshot(input)
         end
     end
     local native=Plain(input.native)
+    local live=Plain(input.liveIncoming)
+    if live then
+        out.liveIncoming=Fields(live,'source clock startedAt endedAt combatEntryObserved total rejected restricted capacity seconds')
+        out.liveIncoming.rows=Array(live.rows,256,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
+    end
     if native then
         out.native=Fields(native,'recapID recapMaxHealth recapMaxHealthStatus truncated association clock')
         out.native.clockDiagnostic=Fields(native.clockDiagnostic,CLOCK)

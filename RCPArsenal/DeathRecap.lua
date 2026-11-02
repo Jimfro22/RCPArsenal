@@ -1,7 +1,7 @@
 local _, RA = ...
 local Recap = {}
 RA.DeathRecap = Recap
-Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5 }
+Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5, incoming=256, incomingSeconds=8 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
@@ -10,6 +10,7 @@ local RefreshTicker,cooldownObserver
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
 local opaqueChargeCounts=setmetatable({},{__mode="k"})
+local opaqueCooldownStates=setmetatable({},{__mode="k"})
 local history,selectedHistory,explicitHistorySelection={},nil,false
 local function SaveHistory()RA.DeathRecapHistory:Save(history,serial)end
 function Recap:GetHistory()local out={};for i,page in ipairs(history)do out[i]=page end;return out end
@@ -110,6 +111,7 @@ local function Copy(value)
     if type(value)~="table" then return value end
     local result={};for key,item in pairs(value)do result[key]=Copy(item)end
     if opaqueChargeCounts[value]then opaqueChargeCounts[result]=opaqueChargeCounts[value]end
+    if opaqueCooldownStates[value]then opaqueCooldownStates[result]=opaqueCooldownStates[value]end
     return result
 end
 local function Notify(kind)RA:FireCallback("DEATH_RECAP_CHANGED",kind)end
@@ -266,10 +268,17 @@ local function SpellObservation(entry,time,reason)
                 if type(method)~="function"then return nil,"unsupported"end
                 local called,value=pcall(method,duration)
                 if not called then return nil,"API-error"end
-                return Bool(value),FieldStatus(value,"boolean")
+                return Bool(value),FieldStatus(value,"boolean"),value
             end
-            row.ownCooldownActive,row.ownCooldownActiveStatus=Boolean("IsActive")
-            row.ownCooldownZero,row.ownCooldownZeroStatus=Boolean("IsZero")
+            local rawActive,rawZero
+            row.ownCooldownActive,row.ownCooldownActiveStatus,rawActive=Boolean("IsActive")
+            row.ownCooldownZero,row.ownCooldownZeroStatus,rawZero=Boolean("IsZero")
+            local function Predicate(status)return status=="public"or status=="restricted"end
+            if Predicate(row.ownCooldownActiveStatus)and Predicate(row.ownCooldownZeroStatus)then
+                -- Freeze scalar predicates, not a duration object that keeps ticking.
+                -- Only native alpha setters may consume these opaque booleans.
+                opaqueCooldownStates[row]={active=rawActive,zero=rawZero}
+            end
             if row.ownCooldownActive==false and row.ownCooldownZero==true then row.ownCooldownState="inactive"
             elseif row.ownCooldownActive==true and row.ownCooldownZero==false then row.ownCooldownState="active"end
             if row.ownCooldownState then row.cooldown=row.ownCooldownState end
@@ -339,7 +348,7 @@ local function Pending(domain,time,reason,spellID)
     if not session or not sample then return end
     local rows=domain=="items"and sample.supplies or sample.spells
     for _,row in ipairs(rows)do if not spellID or row.spellID==spellID then
-        row.pendingAt=row.pendingAt or time;row.pendingReason=reason;opaqueChargeCounts[row]=nil
+        row.pendingAt=row.pendingAt or time;row.pendingReason=reason;opaqueChargeCounts[row]=nil;opaqueCooldownStates[row]=nil
         if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedAt=time;row.directCooldown.invalidatedBy=reason end
     end end
     if domain=="items"then session.itemsDirty=true end
@@ -441,7 +450,7 @@ local function NewSession(reason,combatEntryObserved)
     Notify("reset")
     local entries,spec,class,overflow,unknown=BuildEntries()
     local playerName,playerRealm=PlayerIdentity()
-    session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
+    session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},incoming={},incomingCount=0,incomingRejected=0,incomingRestricted=0,startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
         playerGUID=String(Call(UnitGUID,"player")),playerName=playerName,playerRealm=playerRealm,coverage=reason,overflow=overflow,unknownKnown=unknown,
         encounter=Copy(encounterContext),eventAt={},precombatSession=not Combat()}
     if Combat()then
@@ -556,6 +565,17 @@ local function OnDeath()
             reason=session.coverage,endedAt=session.lastAlive and session.lastAlive.coverageEndedAt,rejectedReceipts=session.rejectedUseReceipts or 0,lateReceipts=session.lateUseReceipts or 0},deathObservation=Observe("death-notification",true),
         association=Association:Freeze(),nativeAttempts=0,nativeStatus="Waiting for a fresh personal native recap"}
     for _,cast in ipairs(session.casts)do if time-cast.observedAt<=Recap.LIMITS.seconds then page.casts[#page.casts+1]=Copy(cast)end end
+    -- Separate clocks and identities: these are local UNIT_COMBAT receipts,
+    -- never replacements for, or deduplicated guesses about, native spell rows.
+    page.liveIncoming={source="UNIT_COMBAT:player",clock="GetTime",startedAt=session.startedAt,endedAt=time,
+        combatEntryObserved=session.combatEntryObserved,total=session.incomingCount,rejected=session.incomingRejected,
+        restricted=session.incomingRestricted,capacity=Recap.LIMITS.incoming,seconds=Recap.LIMITS.incomingSeconds,rows={}}
+    for sequence=math.max(1,session.incomingCount-Recap.LIMITS.incoming+1),session.incomingCount do
+        local receipt=session.incoming[(sequence-1)%Recap.LIMITS.incoming+1]
+        if receipt and receipt.observedAt<=time and time-receipt.observedAt<=Recap.LIMITS.incomingSeconds then
+            page.liveIncoming.rows[#page.liveIncoming.rows+1]=Copy(receipt)
+        end
+    end
     page.recordedAt=Number(Call(GetServerTime))
     session.dead=true;last=page;table.insert(history,1,page)
     while #history>5 do table.remove(history)end
@@ -716,6 +736,33 @@ function Recap:RenderRecordedChargeCount(fontString,row)
     if ok then fontString.__raNativeText=true;fontString.__raVisualText=nil end
     return ok
 end
+function Recap:BindRecordedChargeStatus(bar,row)
+    if row.pendingAt or row.chargesPendingAt or row.coverageEndedAt then return false end
+    local witness=opaqueChargeCounts[row]
+    if not witness or type(bar.SetValue)~="function"then return false end
+    -- A native 0..1 fill presents zero versus one-or-more. No Lua comparison,
+    -- getter, text readback or public readiness value is derived from the fill.
+    return pcall(bar.SetValue,bar,witness.count)
+end
+function Recap:GetRecordedNativeStatusKind(row)
+    if row.pendingAt or row.chargesPendingAt or row.coverageEndedAt then return nil end
+    if opaqueChargeCounts[row]then return "charge"end
+    if opaqueCooldownStates[row]then return "cooldown"end
+end
+function Recap:BindRecordedCooldownStatus(ready,unready,row)
+    if row.pendingAt or row.chargesPendingAt or row.coverageEndedAt then return false end
+    local witness=opaqueCooldownStates[row]
+    if not witness then return false end
+    local function Bind(parent,child,a,b)
+        parent:SetAlphaFromBoolean(witness.active,a,1-a)
+        child:SetAlphaFromBoolean(witness.zero,b,1-b)
+    end
+    -- Multiplication by native parent alpha displays only the two consistent
+    -- predicate pairs. Conflicting results leave the underlying neutral badge.
+    local ok=pcall(function()Bind(ready,ready.glyph,0,1);Bind(unready,unready.glyph,1,0)end)
+    if not ok then ready:Hide();unready:Hide()end
+    return ok
+end
 function Recap:GetCooldownPreviewPage()
     return{diedAt=100,lastAlive={observedAt=99,spells={
         {spellID=342245,name="Alter Time",known=true,category="minor",cooldown="active",chargeQuery="not_applicable",cooldownAt=99},
@@ -839,7 +886,7 @@ end
 function Recap:EnableReminder()
     return RA.PersonalTools:SetOption("consumableReminder",true)
 end
-local function Passive(event,callback)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback)end
+local function Passive(event,callback,unit)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback,unit)end
 local function Active(event,callback,unit)
     local subscription=RA:RegisterOptionalEvent(event,function(name,...)
         if Enabled()and Alive()and not Combat()then
@@ -861,6 +908,23 @@ local function Active(event,callback,unit)
     if event=="SPELL_UPDATE_COOLDOWN"then cooldownObserver=subscription end
 end
 Passive("PLAYER_DEAD",OnDeath)
+Passive("UNIT_COMBAT",function(_,unit,action,flag,amount,school)
+    if not Enabled()or not session or session.dead or session.precombatSession or not Combat()then return end
+    if String(unit)~="player"then return end
+    action=String(action);if action~="WOUND"and action~="HEAL"then return end
+    local time=Now();if not time or not session.startedAt or time<session.startedAt then return end
+    local value=Number(amount,0,1e15);local status=FieldStatus(amount,"number")
+    if not value then
+        if status=="restricted"then session.incomingRestricted=session.incomingRestricted+1
+        else session.incomingRejected=session.incomingRejected+1 end
+        return
+    end
+    -- Native unit filtering plus the public player token establishes whose
+    -- receipt this is. UNIT_COMBAT supplies neither spell ID nor attacker.
+    local sequence=session.incomingCount+1;session.incomingCount=sequence
+    session.incoming[(sequence-1)%Recap.LIMITS.incoming+1]={sequence=sequence,observedAt=time,
+        kind=action=="WOUND"and"damage"or"healing",amount=value,flag=String(flag),school=Number(school,0,127)}
+end,"player")
 Passive("PLAYER_REGEN_DISABLED",function()Diagnostic("CaptureCombatEntered");BeginCombat("Observed combat entry; bounded 30-second history",true)end)
 Passive("PLAYER_REGEN_ENABLED",function()
     Diagnostic("CaptureCombatEnded")
