@@ -6,7 +6,7 @@ local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
 local encounterContext;local encounterSerial=0
-local RefreshTicker,cooldownObserver
+local RefreshTicker,cooldownObserver,incomingObserver
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
 local opaqueChargeCounts=setmetatable({},{__mode="k"})
@@ -450,7 +450,8 @@ local function NewSession(reason,combatEntryObserved)
     Notify("reset")
     local entries,spec,class,overflow,unknown=BuildEntries()
     local playerName,playerRealm=PlayerIdentity()
-    session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},incoming={},incomingCount=0,incomingRejected=0,incomingRestricted=0,startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
+    session={entries=entries,specID=spec,class=class,casts={},observedUses={},directSpellEvents={},incoming={},incomingCount=0,incomingRejected=0,incomingRestricted=0,
+        incomingRecording=false,incomingCallbacks=0,incomingInactive=0,incomingUnitRejected=0,incomingActionRejected=0,incomingTrace={},startedAt=Now(),combatEntryObserved=combatEntryObserved==true,
         playerGUID=String(Call(UnitGUID,"player")),playerName=playerName,playerRealm=playerRealm,coverage=reason,overflow=overflow,unknownKnown=unknown,
         encounter=Copy(encounterContext),eventAt={},precombatSession=not Combat()}
     if Combat()then
@@ -492,6 +493,9 @@ end
 local function BeginCombat(reason,combatEntryObserved)
     StopRecording();NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()or not session then return end
+    -- The combat-entry event arms this stream explicitly. Its lifetime must
+    -- not depend on a precombat flag or a second lockdown query in each hit.
+    session.incomingRecording=true
     Observe("pull-baseline",false)
     for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
 end
@@ -557,6 +561,7 @@ local function OnDeath()
     Diagnostic("StopCooldownCapture","own-death")
     StopRecording();CancelFetch()
     local time=Now();if not session or not time then Notify("unavailable");return end
+    Diagnostic("StopIncomingProbe","own-death",time)
     serial=serial+1
     local page={id=serial,captureGeneration=generation,diedAt=time,playerGUID=session.playerGUID,playerName=session.playerName,playerRealm=session.playerRealm,specID=session.specID,class=session.class,
         coverage=session.coverage,overflow=session.overflow,unknownKnown=session.unknownKnown,
@@ -569,7 +574,12 @@ local function OnDeath()
     -- never replacements for, or deduplicated guesses about, native spell rows.
     page.liveIncoming={source="UNIT_COMBAT:player",clock="GetTime",startedAt=session.startedAt,endedAt=time,
         combatEntryObserved=session.combatEntryObserved,total=session.incomingCount,rejected=session.incomingRejected,
-        restricted=session.incomingRestricted,capacity=Recap.LIMITS.incoming,seconds=Recap.LIMITS.incomingSeconds,rows={}}
+        restricted=session.incomingRestricted,callbacks=session.incomingCallbacks,inactive=session.incomingInactive,
+        unitRejected=session.incomingUnitRejected,actionRejected=session.incomingActionRejected,recording=session.incomingRecording,
+        sessionPrecombat=session.precombatSession,lockdownAtDeath=Combat(),
+        nativeRegistered=Bool(Call(incomingObserver and incomingObserver.GetNativeRegistration,incomingObserver)),
+        trace=Copy(session.incomingTrace),probe=Copy(Call(RA.DeathRecapDebug and RA.DeathRecapDebug.GetIncomingProbeForDeath,RA.DeathRecapDebug,time)),
+        capacity=Recap.LIMITS.incoming,seconds=Recap.LIMITS.incomingSeconds,rows={}}
     for sequence=math.max(1,session.incomingCount-Recap.LIMITS.incoming+1),session.incomingCount do
         local receipt=session.incoming[(sequence-1)%Recap.LIMITS.incoming+1]
         if receipt and receipt.observedAt<=time and time-receipt.observedAt<=Recap.LIMITS.incomingSeconds then
@@ -577,7 +587,7 @@ local function OnDeath()
         end
     end
     page.recordedAt=Number(Call(GetServerTime))
-    session.dead=true;last=page;table.insert(history,1,page)
+    session.dead=true;session.incomingRecording=false;last=page;table.insert(history,1,page)
     while #history>5 do table.remove(history)end
     if not explicitHistorySelection or not Recap:IsRetainedPage(selectedHistory)then selectedHistory=page;explicitHistorySelection=false end
     SaveHistory();Notify("death");FetchNative(page,generation)
@@ -867,6 +877,7 @@ function Recap:GetState()
 end
 function Recap:Refresh()
     Diagnostic("StopCooldownCapture",Enabled()and"observer-reset"or"disabled")
+    Diagnostic("StopIncomingProbe",Enabled()and"observer-reset"or"disabled")
     Notify("reset")
     StopRecording();CancelFetch();session=nil;baseline=nil
     local enabled=Enabled()
@@ -886,7 +897,9 @@ end
 function Recap:EnableReminder()
     return RA.PersonalTools:SetOption("consumableReminder",true)
 end
-local function Passive(event,callback,unit)passive[#passive+1]=RA:RegisterOptionalEvent(event,callback,unit)end
+local function Passive(event,callback,unit)
+    local subscription=RA:RegisterOptionalEvent(event,callback,unit);passive[#passive+1]=subscription;return subscription
+end
 local function Active(event,callback,unit)
     local subscription=RA:RegisterOptionalEvent(event,function(name,...)
         if Enabled()and Alive()and not Combat()then
@@ -908,10 +921,17 @@ local function Active(event,callback,unit)
     if event=="SPELL_UPDATE_COOLDOWN"then cooldownObserver=subscription end
 end
 Passive("PLAYER_DEAD",OnDeath)
-Passive("UNIT_COMBAT",function(_,unit,action,flag,amount,school)
-    if not Enabled()or not session or session.dead or session.precombatSession or not Combat()then return end
-    if String(unit)~="player"then return end
-    action=String(action);if action~="WOUND"and action~="HEAL"then return end
+incomingObserver=Passive("UNIT_COMBAT",function(_,unit,action,flag,amount,school)
+    if not session then return end
+    session.incomingCallbacks=session.incomingCallbacks+1
+    if #session.incomingTrace<6 then
+        local function Token(value)local s=String(value,32);return s and s:match("^[%w_]+$")and s or nil end
+        session.incomingTrace[#session.incomingTrace+1]={observedAt=Now(),recording=session.incomingRecording,
+            unit=Token(unit),unitStatus=FieldStatus(unit,"string"),action=Token(action),actionStatus=FieldStatus(action,"string")}
+    end
+    if not Enabled()or session.dead or not session.incomingRecording then session.incomingInactive=session.incomingInactive+1;return end
+    if String(unit)~="player"then session.incomingUnitRejected=session.incomingUnitRejected+1;return end
+    action=String(action);if action~="WOUND"and action~="HEAL"then session.incomingActionRejected=session.incomingActionRejected+1;return end
     local time=Now();if not time or not session.startedAt or time<session.startedAt then return end
     local value=Number(amount,0,1e15);local status=FieldStatus(amount,"number")
     if not value then
@@ -928,6 +948,7 @@ end,"player")
 Passive("PLAYER_REGEN_DISABLED",function()Diagnostic("CaptureCombatEntered");BeginCombat("Observed combat entry; bounded 30-second history",true)end)
 Passive("PLAYER_REGEN_ENABLED",function()
     Diagnostic("CaptureCombatEnded")
+    if session then session.incomingRecording=false end
     if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     if session then for _,row in ipairs(session.lastAlive and session.lastAlive.spells or{})do if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedBy="coverage-ended"end end end
     StopRecording()

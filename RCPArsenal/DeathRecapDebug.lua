@@ -262,6 +262,16 @@ function R:BuildLiveHistoryText()
     Add("Times are local receipt times before the death notice, separate from Blizzard's named recap.")
     local rows=Table(live.rows)or{}
     Add(string.format("Retained %d receipts / 8 seconds; capacity 256. %d readable receipts this combat; %d restricted amounts; %d rejected amounts.",#rows,Scalar(live.total)or 0,Scalar(live.restricted)or 0,Scalar(live.rejected)or 0))
+    if Scalar(live.callbacks)~=nil then
+        local function Count(v)local n=Scalar(v);return type(n)=="number"and n or 0 end
+        local function Yes(v)return v==true and"yes"or v==false and"no"or"not recorded"end
+        Add(string.format("Recorder callbacks: %d; native player-event registration: %s; armed at death: %s.",Count(live.callbacks),Yes(Scalar(live.nativeRegistered)),Yes(Scalar(live.recording))))
+        Add(string.format("Skipped: %d inactive; %d unit-filter; %d action-filter.",Count(live.inactive),Count(live.unitRejected),Count(live.actionRejected)))
+        for i,entry in ipairs(Table(live.trace)or{})do if i<=6 then
+            Add("Callback "..i..": "..FieldText(Fields(entry,{"unit","unitStatus","action","actionStatus","recording"}),{"unit","unitStatus","action","actionStatus","recording"}))
+        end end
+    end
+    if type(D.AppendIncomingProbeText)=="function"then D:AppendIncomingProbeText(Add,live.probe)end
     if Scalar(live.total)and live.total>256 then Add("Capacity reached: the busiest eight-second window may be incomplete.")end
     if #rows==0 then Add("No readable UNIT_COMBAT receipts captured. The native recap is unchanged.")end
     local native=Table(page.native);local nativeRows=native and Table(native.rows)
@@ -390,6 +400,85 @@ local function ReadScalar(fn,kind,...)
     if type(fn)~="function"then return nil,"unavailable"end
     local ok,value=pcall(fn,...);if not ok then return nil,"call-error"end
     return Guard(value,kind)
+end
+-- Manually armed transport comparison only. Its own frame is unregistered at
+-- death, timeout or disable. It never changes global combat-text settings.
+local incomingProbe,incomingProbeFrame,incomingProbeTimer
+local incomingTextTypes={DAMAGE=true,SPELL_DAMAGE=true,DAMAGE_CRIT=true,SPELL_DAMAGE_CRIT=true,DAMAGE_SHIELD=true,
+    HEAL=true,HEAL_CRIT=true,PERIODIC_HEAL=true,PERIODIC_HEAL_CRIT=true,HEAL_ABSORB=true,PERIODIC_HEAL_ABSORB=true,HEAL_CRIT_ABSORB=true}
+local function ProbeToken(value)
+    local s,status=Guard(value,"string")
+    if s and(#s>32 or not s:match("^[%w_]+$"))then return nil,"malformed"end
+    return s,status
+end
+function D:StopIncomingProbe(reason,time)
+    local owner=incomingProbe
+    if not owner or not owner.active then return false end
+    owner.active=false;owner.stopReason=reason or"explicit-stop";owner.endedAt=Guard(time,"number")or ReadScalar(GetTime,"number")
+    incomingProbeFrame:UnregisterAllEvents()
+    if incomingProbeTimer then incomingProbeTimer:Cancel();incomingProbeTimer=nil end
+    return true
+end
+function D:GetIncomingProbeForDeath(time)
+    if incomingProbe and incomingProbe.stopReason=="own-death"and incomingProbe.endedAt==time then return incomingProbe end
+end
+function D:StartIncomingProbe()
+    if not R:GetState().enabled then return false,"Enable Death Recap before starting the incoming-event test"end
+    local time=ReadScalar(GetTime,"number")
+    if not time or time<0 or time+30==math.huge or not C_Timer or type(C_Timer.NewTimer)~="function"then return false,"Incoming-event test clock or timeout unavailable"end
+    self:StopIncomingProbe("replaced",time)
+    incomingProbeFrame=incomingProbeFrame or CreateFrame("Frame")
+    local owner={active=true,armedAt=time,deadline=time+30,callbacks=0,playerCallbacks=0,otherCallbacks=0,unreadableUnits=0,textCallbacks=0,textIncomingCallbacks=0,samples={},textSamples={}}
+    incomingProbe=owner
+    local ok=pcall(function()incomingProbeFrame:RegisterEvent("UNIT_COMBAT");incomingProbeFrame:RegisterEvent("COMBAT_TEXT_UPDATE")end)
+    if not ok then self:StopIncomingProbe("registration-error",time);return false,"Incoming-event test registration failed"end
+    owner.nativeRegistered=ReadScalar(incomingProbeFrame.IsEventRegistered,"boolean",incomingProbeFrame,"UNIT_COMBAT")
+    incomingProbeFrame:SetScript("OnEvent",function(_,event,unit,action,flag,amount,school)
+        local now=ReadScalar(GetTime,"number")
+        if incomingProbe~=owner or not owner.active then return end
+        if not now or now<owner.armedAt or now>=owner.deadline then D:StopIncomingProbe("timeout",now);return end
+        if event=="COMBAT_TEXT_UPDATE"then
+            owner.textCallbacks=owner.textCallbacks+1
+            local kind=ProbeToken(unit)
+            if kind and not incomingTextTypes[kind]then return end
+            if kind then owner.textIncomingCallbacks=owner.textIncomingCallbacks+1 end
+            if #owner.textSamples<6 then
+                local sample={};sample.action,sample.actionStatus=ProbeToken(unit)
+                sample.unit=ReadScalar(C_CombatText and C_CombatText.GetActiveUnit,"string")
+                if C_CombatText and type(C_CombatText.GetCurrentEventInfo)=="function"then
+                    local called,a,b=pcall(C_CombatText.GetCurrentEventInfo)
+                    if called then sample.amount,sample.amountStatus=Guard(a,"number");sample.secondAmount,sample.secondAmountStatus=Guard(b,"number")end
+                end
+                owner.textSamples[#owner.textSamples+1]=sample
+            end
+            return
+        end
+        owner.callbacks=owner.callbacks+1
+        local u=ProbeToken(unit)
+        if u=="player"then owner.playerCallbacks=owner.playerCallbacks+1
+        elseif u then owner.otherCallbacks=owner.otherCallbacks+1
+        else owner.unreadableUnits=owner.unreadableUnits+1 end
+        if #owner.samples<6 and(u=="player"or not u)then
+            local sample={};sample.unit,sample.unitStatus=ProbeToken(unit);sample.action,sample.actionStatus=ProbeToken(action)
+            sample.amount,sample.amountStatus=Guard(amount,"number");sample.school=Guard(school,"number")
+            owner.samples[#owner.samples+1]=sample
+        end
+    end)
+    local timerOK,timer=pcall(C_Timer.NewTimer,30,function()if incomingProbe==owner and owner.active then D:StopIncomingProbe("timeout")end end)
+    if not timerOK or not timer then self:StopIncomingProbe("timer-error");return false,"Incoming-event test timeout failed"end
+    incomingProbeTimer=timer
+    return true,"Incoming-event test armed for 30 seconds. Start combat now; after death use /rcp recapdebug live."
+end
+function D:AppendIncomingProbeText(Add,input)
+    local p=Table(input);if not p then return end
+    local metadata={"callbacks","playerCallbacks","otherCallbacks","unreadableUnits","textCallbacks","textIncomingCallbacks","nativeRegistered","stopReason"}
+    Add("UNFILTERED TRANSPORT TEST "..FieldText(Fields(p,metadata),metadata))
+    for _,group in ipairs({{"UNIT_COMBAT",p.samples},{"COMBAT_TEXT_UPDATE",p.textSamples}})do
+        for i,sample in ipairs(Table(group[2])or{})do if i<=6 then
+            local keys={"unit","unitStatus","action","actionStatus","amount","amountStatus","secondAmount","secondAmountStatus","school"}
+            Add(group[1].." sample "..i..": "..FieldText(Fields(sample,keys),keys,true))
+        end end
+    end
 end
 local function Identity()
     local ok,value=pcall(R.GetCooldownDiagnosticIdentity,R)
