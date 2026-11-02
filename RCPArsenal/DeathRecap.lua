@@ -212,6 +212,11 @@ local function BuildEntries()
     end
     return entries,spec,class,overflow,unknown
 end
+local function NormalCooldown(row)
+    -- Some ordinary cooldowns also return a one-charge API record. Only
+    -- multi-charge spells need a remaining-charge count to separate 0 from 1+.
+    return row.chargeQuery=="not_applicable"or row.chargeQuery=="public"and row.maxCharges==1
+end
 local function SpellObservation(entry,time,reason)
     stats.spellQueries=stats.spellQueries+1
     local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,role=entry.role,defensiveTalentSpellID=entry.defensiveTalentSpellID,
@@ -250,15 +255,15 @@ local function SpellObservation(entry,time,reason)
         row.chargeCountStatus=FieldStatus(charges.currentCharges,"number")
         if row.currentCharges and (row.currentCharges~=math.floor(row.currentCharges)
             or not row.maxCharges or row.currentCharges>row.maxCharges)then row.currentCharges=nil end
-        if row.maxCharges and row.chargeCountStatus=="restricted"then
+        if row.maxCharges and row.maxCharges>1 and row.chargeCountStatus=="restricted"then
             -- Direct native text passthrough only. Never compare, stringify,
             -- export or put this opaque scalar into a public captured table.
             opaqueChargeCounts[row]={count=charges.currentCharges,observedAt=time}
         end
     end
-    -- Only an independently confirmed noncharge spell may use the supported
-    -- ignore-GCD duration query. Drop the userdata after guarded scalar reads.
-    if row.isEnabled==true and row.cooldown=="active-context-unknown"and row.chargeQuery=="not_applicable"then
+    -- Confirm the ordinary/single-charge case before querying its own cooldown.
+    -- Drop the userdata after guarded scalar reads; never apply this to 2+ charges.
+    if row.isEnabled==true and row.cooldown=="active-context-unknown"and NormalCooldown(row)then
         local duration,status=Query(C_Spell and C_Spell.GetSpellCooldownDuration,entry.spellID,true)
         row.ownCooldownQuery=status;row.ownCooldownAt=time;row.ownCooldownSource="ignoreGCD-duration"
         if type(duration)=="userdata"then
@@ -343,11 +348,11 @@ local function SupplyObservations(time,reason,death)
     end
     return result
 end
-local function Pending(domain,time,reason,spellID)
+local function Pending(domain,time,reason,spellID,chargesOnly)
     local sample=Combat()and session and session.lastAlive or baseline
     if not session or not sample then return end
     local rows=domain=="items"and sample.supplies or sample.spells
-    for _,row in ipairs(rows)do if not spellID or row.spellID==spellID then
+    for _,row in ipairs(rows)do if(not spellID or row.spellID==spellID)and(not chargesOnly or not NormalCooldown(row))then
         row.pendingAt=row.pendingAt or time;row.pendingReason=reason;opaqueChargeCounts[row]=nil;opaqueCooldownStates[row]=nil
         if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedAt=time;row.directCooldown.invalidatedBy=reason end
     end end
@@ -362,7 +367,9 @@ local function ReconcileSpell(entry,previous,time,reason,death)
     local direct=previous and Copy(previous.directCooldown)
     row.directCooldown=direct
     if direct and direct.valid then
-        if direct.isEnabled~=row.isEnabled or direct.isActive~=row.isActive or row.cooldownQuery~="public"then
+        if direct.chargeQuery~=row.chargeQuery or direct.maxCharges~=row.maxCharges then
+            direct.valid=false;direct.invalidatedAt=time;direct.invalidatedBy="charge-model-changed"
+        elseif direct.isEnabled~=row.isEnabled or direct.isActive~=row.isActive or row.cooldownQuery~="public"then
             direct.valid=false;direct.invalidatedAt=time;direct.invalidatedBy="generic-flags-changed"
         elseif not death and not row.ownCooldownState and not direct.ownCooldownState and row.cooldown~="inactive"and row.cooldown~="held"then
             -- Keep the direct check's original age. The newer generic flags and
@@ -611,16 +618,17 @@ function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
         return nil,row.cooldown=="inactive"and"Off cooldown when checked; stock was not confirmed"or"Item state was not fully recorded"
     end
     if row.cooldown=="held"then return false,"Cooldown on hold"..suffix end
-    if not row.chargesPendingAt and row.currentCharges and row.currentCharges>0 then return true,row.currentCharges..(row.currentCharges==1 and" charge"or" charges")..suffix end
+    -- A one-charge API wrapper does not bypass its ordinary spell cooldown.
+    if not NormalCooldown(row)and not row.chargesPendingAt and row.currentCharges and row.currentCharges>0 then return true,row.currentCharges..(row.currentCharges==1 and" charge"or" charges")..suffix end
     if not row.chargesPendingAt and row.currentCharges==0 then return false,"No charges"..suffix end
-    if row.chargeQuery=="public"and(row.maxCharges or row.chargesActive~=nil)then
+    if row.chargeQuery=="public"and not NormalCooldown(row)and(row.maxCharges or row.chargesActive~=nil)then
         return nil,row.cooldown=="inactive"and"Normal cooldown was inactive; remaining charges were not established"or"Remaining charges were not established"
     end
     if row.cooldown=="inactive"then
-        if example or row.chargeQuery=="not_applicable"then return true,"Off cooldown"..suffix end
+        if example or NormalCooldown(row)then return true,"Off cooldown"..suffix end
         return nil,"Normal cooldown was inactive; charge state was not established"
     end
-    if row.cooldown=="active"and row.chargeQuery=="not_applicable"then return false,"Cooldown active"..suffix end
+    if row.cooldown=="active"and NormalCooldown(row)then return false,"Cooldown active"..suffix end
     if row.cooldown=="gcd-observed"then return nil,"A global cooldown was observed; other cooldown state was not established"end
     if row.cooldown=="active-context-unknown"then return nil,"Cooldown active when checked; global and spell cooldowns could not be separated"end
     if row.chargeReason=="restricted"or row.chargeCountStatus=="restricted"then return nil,"Charge count was not provided by Blizzard"end
@@ -1084,7 +1092,9 @@ end)
 Active("SPELL_UPDATE_CHARGES",function(event)
     local time=Now();if not session or not time or not Alive()then return end
     session.directSpellEvents[event]={event=event,observedAt=time,payload={}}
-    Pending("spells",time,"charge-event")
+    -- This event has no spell identity. Refresh potential charge spells, while
+    -- preserving independent noncharge cooldown evidence at its original age.
+    Pending("spells",time,"charge-event",nil,true)
     if session.eventAt[event]and time-session.eventAt[event]<.1 then
         stats.coalescedEvents=(stats.coalescedEvents or 0)+1;ScheduleObservation()
     else session.eventAt[event]=time;Observe("charge-event",false)end
