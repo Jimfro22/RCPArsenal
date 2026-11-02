@@ -148,6 +148,7 @@ local function HideDamageDetails()
     if not tooltipRecap or not tooltipRecap.eventRows then return end
     for _,row in ipairs(tooltipRecap.eventRows)do row:Hide()end
     tooltipRecap.eventHeading:Hide();tooltipRecap.eventCount:Hide();tooltipRecap.eventRule:Hide();tooltipRecap.eventHint:Hide()
+    if tooltipRecap.eventOrigin then tooltipRecap.eventOrigin:Hide()end
 end
 local function DamageRecapBox(data)
     local card=tooltipRecap;card.eventRows=card.eventRows or{}
@@ -172,7 +173,7 @@ local function DamageRecapBox(data)
         row.entry=entry;row.selected=i==data.selectedIndex
         Text(row.ability,entry.text);Text(row.time,entry.timeText);Text(row.amount,entry.amountText);Text(row.source,entry.sourceText)
         Text(row.status,entry.fatalText);Text(row.mitigation,entry.mitigationText)
-        row.amount:SetTextColor(unpack(entry.damage and C.danger or C.text));row.status:SetTextColor(unpack(entry.damage and C.danger or C.textSoft))
+        row.amount:SetTextColor(unpack(entry.amountColor or(entry.damage and C.danger or C.text)));row.status:SetTextColor(unpack(entry.damage and C.danger or C.textSoft))
         row.source:SetTextColor(unpack(entry.sourceColor or C.muted))
         row.background:SetShown(row.selected);row.selection:SetShown(row.selected)
         if entry.iconSpellID then
@@ -181,7 +182,8 @@ local function DamageRecapBox(data)
         else row.iconSpellID=nil;row.icon:Hide()end
         amountWidth=math.max(amountWidth,ReadMetric(row.amount,"GetUnboundedStringWidth")or ReadMetric(row.amount,"GetStringWidth")or 0)
     end
-    amountWidth=math.min(150,amountWidth);local nameWidth=width-92-12-amountWidth-10
+    local textX=data.compactRows and 60 or 92
+    amountWidth=math.min(150,amountWidth);local nameWidth=width-textX-12-amountWidth-10
     local y,focus=0
     for i,entry in ipairs(data.damageEvents)do
         local row=card.eventRows[i];row:ClearAllPoints();Point(row,"TOPLEFT",card.body,"TOPLEFT",0,-y)
@@ -189,21 +191,21 @@ local function DamageRecapBox(data)
         local nameHeight=math.max(14,ReadMetric(row.ability,"GetStringHeight")or 14)
         local sourceHeight=entry.sourceText and math.max(13,ReadMetric(row.source,"GetStringHeight")or 13)or 0
         local mitigationHeight=entry.mitigationText and math.max(12,ReadMetric(row.mitigation,"GetStringHeight")or 12)or 0
-        local height=math.max(40,nameHeight+sourceHeight+mitigationHeight+12)
+        local height=math.max(data.compactRows and 28 or 40,nameHeight+sourceHeight+mitigationHeight+12)
         Size(row,width,height);row.y=y;row.rowHeight=height
         row.ability:SetHeight(nameHeight);row.source:SetHeight(sourceHeight);row.mitigation:SetHeight(mitigationHeight)
         for _,f in ipairs({row.time,row.ability,row.amount,row.source,row.status,row.mitigation,row.icon,row.selection})do f:ClearAllPoints()end
         Point(row.time,"TOPLEFT",row,"TOPLEFT",12,-8);Size(row.time,40,16)
         Point(row.icon,"TOPLEFT",row,"TOPLEFT",60,-8)
-        Point(row.ability,"TOPLEFT",row,"TOPLEFT",92,-7)
-        Point(row.source,"TOPLEFT",row,"TOPLEFT",92,-9-nameHeight);row.source:SetShown(entry.sourceText~=nil)
-        Point(row.mitigation,"TOPLEFT",row,"TOPLEFT",92,-9-nameHeight-sourceHeight);row.mitigation:SetShown(entry.mitigationText~=nil)
+        Point(row.ability,"TOPLEFT",row,"TOPLEFT",textX,-7)
+        Point(row.source,"TOPLEFT",row,"TOPLEFT",textX,-9-nameHeight);row.source:SetShown(entry.sourceText~=nil)
+        Point(row.mitigation,"TOPLEFT",row,"TOPLEFT",textX,-9-nameHeight-sourceHeight);row.mitigation:SetShown(entry.mitigationText~=nil)
         Point(row.amount,"TOPRIGHT",row,"TOPRIGHT",-12,-7);Size(row.amount,amountWidth,16);row.amount:SetJustifyH("RIGHT")
         Point(row.status,"TOPRIGHT",row,"TOPRIGHT",-12,-25);Size(row.status,amountWidth,14);row.status:SetJustifyH("RIGHT");row.status:SetShown(entry.fatalText~=nil)
         Point(row.selection,"TOPLEFT",row,"TOPLEFT",0,-5);Size(row.selection,2,height-10)
         row:Show();if row.selected then focus=row end;y=y+height+2
     end
-    local header,footer=38,#data.damageEvents>1 and 30 or 8
+    local header,footer=data.originText and 54 or 38,#data.damageEvents>1 and 30 or 8
     local available=AvailableTooltipHeight();if available<110 then header,footer=28,0 end
     local bodyHeight=math.max(1,y-2);local visible=math.max(1,math.min(bodyHeight,available-header-footer))
     Size(card,width,header+visible+footer);Size(card.body,width,bodyHeight)
@@ -211,6 +213,10 @@ local function DamageRecapBox(data)
     Text(card.eventHeading,data.totalText);Text(card.eventCount,data.countText)
     card.eventHeading:ClearAllPoints();Point(card.eventHeading,"TOPLEFT",card,"TOPLEFT",12,-10);Size(card.eventHeading,width-116,18)
     card.eventCount:ClearAllPoints();Point(card.eventCount,"TOPRIGHT",card,"TOPRIGHT",-12,-12);Size(card.eventCount,80,16);card.eventCount:SetJustifyH("RIGHT")
+    if data.originText then
+        card.eventOrigin=card.eventOrigin or Font(card,10,"REGULAR",C.muted)
+        card.eventOrigin:ClearAllPoints();Point(card.eventOrigin,"TOPLEFT",card,"TOPLEFT",12,-30);Size(card.eventOrigin,width-24,14);Text(card.eventOrigin,data.originText);card.eventOrigin:SetShown(header>28)
+    elseif card.eventOrigin then card.eventOrigin:Hide()end
     card.eventRule:ClearAllPoints();Point(card.eventRule,"TOPLEFT",card,"TOPLEFT",12,-header+3);Size(card.eventRule,width-24,1)
     card.eventHint:ClearAllPoints();Point(card.eventHint,"BOTTOM",card,"BOTTOM",0,5);card.eventHint:SetShown(footer>8)
     card.eventHeading:Show();card.eventCount:Show();card.eventRule:Show()
@@ -580,6 +586,8 @@ function UI:Hide()
     StopDragging(false);PositionDemand(false)
     StopMotion();HideTooltip();R:CancelShare("Log closed");if share then if share.copy then share.copy:ClearFocus()end;share:Hide()end;if actionShield then actionShield:Hide()end
     if frame then
+        if UI.HideIncoming then UI:HideIncoming(frame)end
+        if frame.feedSelector then frame.feedSelector:Hide()end
         frame:Hide();frame.selected,frame.selectedItem=nil,nil;frame.healthPanel:SetScript("OnEnter",nil)
         if frame.historyMenu then frame.historyMenu:Hide()end
         for _,b in ipairs(damagePool)do b.group=nil;b:SetScript("OnEnter",nil);b:SetScript("OnClick",nil);b:SetScript("OnMouseWheel",nil)
@@ -927,7 +935,7 @@ local function PrepareCastMarkers(page,example,alignment)
         if not lane then for candidate=1,lanes do if counts[candidate]<12 and(not lane or ends[candidate]<ends[lane])then lane=candidate end end end
         b.entry,b.lane,b.timeX=entry,lane,x;b.iconX=math.max(x,ends[lane]+29);ends[lane]=b.iconX+29;counts[lane]=counts[lane]+1
         b.stems=b.stems or{};b.connectors=b.connectors or{}
-        b.age=b.age or Font(b,10,"REGULAR",lavender);Place(b.age,"TOP",b,"BOTTOM",0,-3);Text(b.age,string.format("~%.1fs",entry.age))
+        b.age=b.age or Font(b,10,"REGULAR",lavender);Place(b.age,"TOP",b,"BOTTOM",0,-3);Text(b.age,string.format(entry.localClock and"%.1fs"or"~%.1fs",entry.age))
     end
     for lane=1,lanes do local right=832
         for i=#visible,1,-1 do local b=frame.castMarkers[i];if b.lane==lane then b.iconX=math.min(b.iconX,right);right=b.iconX-58 end end
@@ -942,7 +950,7 @@ local function RenderCastMarkers(page,shelfExtra,rail,revision)
         frame.textExclusions[#frame.textExclusions+1]={left=b.iconX-27,right=b.iconX+27,top=y-2,bottom=y+44}
         b:SetScript("OnEnter",function(self)
             if current~=page or revision~=renderRevision or IsExample()or(share and share:IsShown())then return end
-            Tooltip(self,{entry.row.name or"Recorded cast",string.format("~%.1fs before death; aligned to death notification.",entry.age),R:GetRecordedUseRole(entry.row)=="utility"and"Recorded utility cast · Timing is approximate"or"Recorded successful cast · Timing is approximate"},entry.row.spellID,nil,lavender)
+            Tooltip(self,{entry.row.name or"Recorded cast",string.format(entry.localClock and"%.1fs before the death notice"or"~%.1fs before death; aligned to death notification.",entry.age),entry.localClock and"Recorded successful cast"or R:GetRecordedUseRole(entry.row)=="utility"and"Recorded utility cast · Timing is approximate"or"Recorded successful cast · Timing is approximate"},entry.row.spellID,nil,lavender)
         end)
         b:SetScript("OnLeave",HideTooltip)
     end
@@ -1009,7 +1017,8 @@ local function RenderSupports(page,example,shelfExtra,rail,revision)
         supportCount=supportCount+1
     end
     frame.usesLabel=frame.usesLabel or Label(frame,"Used before death",10,48,-58,400,C.muted)
-    Place(frame.usesLabel,"TOPLEFT",frame,"TOPLEFT",48,-58);frame.usesLabel:SetShown(not example and supportCount>0)
+    Text(frame.usesLabel,frame.feedMode=="history"and"Earlier uses"or"Used before death")
+    Place(frame.usesLabel,"TOPLEFT",frame,"TOPLEFT",48,-58-(frame.feedExtra or 0));frame.usesLabel:SetShown(not example and supportCount>0)
     local nextX=48
     for i=1,supportCount do local more=overflow and i==supportCount;local group=support[i];local row=example and group or group.rows[#group.rows];local b=supportPool[i]or Icon(frame,30);supportPool[i]=b
         b.useGroup=not example and not more and group or nil;b.useOverflow=more and overflow or nil;b.detailMember=0
@@ -1017,7 +1026,7 @@ local function RenderSupports(page,example,shelfExtra,rail,revision)
         b:EnableMouseWheel(detailCount>1);b:SetScript("OnMouseWheel",nil)
         local x=example and X(math.max(domain.first,row.offset))or nextX+15
         local width=example and 30 or more and 36 or chipWidths[i]
-        Size(b,width,30);Place(b,"TOPLEFT",frame,"TOPLEFT",x-15,-(example and 104+shelfExtra or 76));nextX=nextX+width+8
+        Size(b,width,30);Place(b,"TOPLEFT",frame,"TOPLEFT",x-15,-(example and 104+shelfExtra or 76+(frame.feedExtra or 0)));nextX=nextX+width+8
         b.icon:ClearAllPoints();Point(b.icon,example and"CENTER"or"LEFT",b,example and"CENTER"or"LEFT",example and 0 or 2,0)
         if b.useLabel then b.useLabel:Hide();b.useMeta:Hide()end
         b.icon:Show();if b.overflowLabel then b.overflowLabel:Hide()end
@@ -1123,14 +1132,30 @@ function UI:Render()
     for _,pool in ipairs({damagePool,supportPool,shelfPool})do HidePool(pool)end
     for _,b in ipairs(damagePool)do if b.span then b.span:Hide()end;if b.amountTarget then b.amountTarget:Hide()end;if b.brackets then HidePool(b.brackets)end;if b.stems then HidePool(b.stems)end end
     for _,b in ipairs(supportPool)do if b.lines then HidePool(b.lines)end;if b.activationStems then HidePool(b.activationStems)end end
+    self:HideIncoming(frame)
+    local incoming=not example and M:Incoming(page)or{available=false}
+    frame.incomingHistory=incoming
+    frame.feedMode=incoming.available and(frame.feedMode or"history")or"named"
+    local historyMode=frame.feedMode=="history"
+    frame.feedExtra=incoming.available and 32 or 0
+    self:UpdateIncomingSelector(frame,incoming,frame.feedMode,function(mode)
+        if current==page and revision==renderRevision and not(share and share:IsShown())and mode~=frame.feedMode then
+            frame.feedMode=mode;self:Render()
+        end
+    end)
+    frame.healthPanel:SetShown(not historyMode);frame.percent:SetShown(not historyMode);frame.hp:SetShown(not historyMode);frame.healthContext:SetShown(not historyMode)
     local rows=page.native and page.native.rows or{}
     local referenceMax=example and Number(page.maxHealth,true)or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
-    local alignment=not example and M:AlignUses(page)or nil
-    local viewport=M:Viewport(rows,referenceMax,alignment);frame.viewport=viewport
+    local alignment=not example and(historyMode and M:AlignLocalUses(page)or M:AlignUses(page))or nil
+    local viewport=historyMode and{rows={},first=-8,last=0,span=8,omitted=0,retainedCount=0}or M:Viewport(rows,referenceMax,alignment);frame.viewport=viewport
     model=M:Group(viewport.rows,example and page.transitions or{},{items=16});domain={first=viewport.first,last=viewport.last}
     frame.timeDomain=domain
     local castExtra=PrepareCastMarkers(page,example,alignment);frame.castExtra=castExtra
-    local supportExtra=PrepareSupportMarkers(page,example);frame.supportExtra=supportExtra
+    local supportExtra
+    if historyMode then
+        HidePool(frame.supportMarkers or{});for _,b in ipairs(frame.supportMarkers or{})do HidePool(b.stems or{});HidePool(b.brackets or{})end
+        frame.supportMarkerCount=0;frame.healTargets={};supportExtra=70
+    else supportExtra=PrepareSupportMarkers(page,example)end;frame.supportExtra=supportExtra
     local elapsed=page.encounter and page.encounter.startedAt and page.diedAt-page.encounter.startedAt
     Text(frame.fight,elapsed and string.format("Fight %d:%02d",math.floor(elapsed/60),math.floor(elapsed%60))or"")
     local deathX=832;for _,row in ipairs(model.rows)do if row.nativeIndex==1 then deathX=X(row.nativeOffset);break end end
@@ -1157,7 +1182,7 @@ function UI:Render()
     frame.contextText=(page.specID==62 and"Arcane Mage"or page.class or"Personal")..(page.encounter and page.encounter.name and" · "..page.encounter.name or"")..(page.encounter and page.encounter.difficulty==16 and" · Mythic"or"")
     RefreshReminderSwitch()
     frame.share:SetEnabled(true);frame.share:SetAlpha(1)
-    local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38;frame.shelfShift=shelfExtra
+    local roster=Roster(page,example,selected and selected.nativeOffset or 0);local shelfExtra=math.max(0,math.ceil(#roster/7)-1)*38+frame.feedExtra;frame.shelfShift=shelfExtra
     local tierTotal=math.max(1,math.ceil(#model.items/8));local tierEnd,tierCount={},{}
     for tier=1,tierTotal do tierEnd[tier],tierCount[tier]=-100,0 end
     for _,item in ipairs(model.items)do
@@ -1178,7 +1203,7 @@ function UI:Render()
     contentShift=shelfExtra;extraHeight=shelfExtra+castExtra+supportExtra+fightExtra+(tierTotal-1)*TIER_GAP;Size(frame,880,BASE_HEIGHT+extraHeight);RestorePosition()
     local viewWidth,viewHeight=UIParent:GetWidth(),UIParent:GetHeight()
     if viewWidth and viewHeight and viewWidth>40 and viewHeight>80 then frame:SetScale(math.min(1,(viewWidth-40)/880,(viewHeight-80)/(BASE_HEIGHT+extraHeight)))end
-    local hasTimeline=example or #model.rows>0
+    local hasTimeline=historyMode or example or #model.rows>0
     local rail=168+shelfExtra+castExtra+supportExtra+fightExtra;Place(frame.rail,"TOPLEFT",frame,"TOPLEFT",48,-rail);Size(frame.rail,784,1);frame.rail:SetShown(hasTimeline)
     for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;local x=X(time)
         Place(frame.ticks[i],"TOP",frame,"TOPLEFT",x,-rail-10);frame.tickLabels[i]=hasTimeline and(time==0 and"0s"or string.format(time%1==0 and"%s%.0fs"or"%s%.1fs",time<0 and"−"or"",math.abs(time)))or"";Text(frame.ticks[i],frame.tickLabels[i]);frame.ticks[i]:SetShown(hasTimeline)
@@ -1186,6 +1211,7 @@ function UI:Render()
     end
     Place(frame.fight,"TOPRIGHT",frame,"TOPRIGHT",-20,-rail+25);frame.fight:SetShown(hasTimeline)
     frame.death:Hide();frame.deathX=nil
+    if historyMode then frame.deathX=832;Place(frame.death,"TOP",frame,"TOPLEFT",832,-rail-10);Text(frame.death,"Death");frame.death:Show();Text(frame.ticks[6],"");frame.tickLabels[6]=""end
     for _,row in ipairs(model.rows)do if row.nativeIndex==1 then
         local x=X(row.nativeOffset);frame.deathX=x;Place(frame.death,"TOP",frame,"TOPLEFT",x,-rail-10);Text(frame.death,"Death");frame.death:Show()
         for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;if math.abs(X(time)-x)<32 then Text(frame.ticks[i],"");frame.tickLabels[i]=""end end
@@ -1195,7 +1221,7 @@ function UI:Render()
     Place(frame.percent,"TOPLEFT",frame,"TOPLEFT",48,-(HEALTH_TOP-30)-extraHeight)
     Place(frame.hp,"TOPLEFT",frame,"TOPLEFT",552,-(HEALTH_TOP-23)-extraHeight)
     Place(frame.healthContext,"TOPLEFT",frame,"TOPLEFT",116,-(HEALTH_TOP-23)-extraHeight)
-    frame.guide:Hide();frame.interval:Hide();frame.empty:SetShown(#model.rows==0)
+    frame.guide:Hide();frame.interval:Hide();frame.empty:SetShown(not historyMode and #model.rows==0)
     Text(frame.empty,page.restored and not page.native and"Saved death: hit details were not captured"or not example and not page.native and(page.nativeAttempts and page.nativeAttempts<R.LIMITS.attempts and"Hit details are loading"or"Hit details unavailable")or viewport.retainedCount>0 and"No recorded events in this window · Full report has older events"or"No hit details recorded")
     for index,item in ipairs(model.items)do
         local b=damagePool[index]or Icon(frame,46);damagePool[index]=b;b.group=item
@@ -1291,6 +1317,13 @@ function UI:Render()
         frame.textExclusions[#frame.textExclusions+1]={left=b.timeX-b.visualWidth/2,right=b.timeX+b.visualWidth/2,top=y-10,bottom=y+10}
     end
     for i=1,#model.items do local b=damagePool[i];b.stems=b.stems or{};Stem(b.stems,(X(b.group.first)+X(b.group.last))/2,rail,b.spanY,pink,.55,frame.textExclusions)end
+    if historyMode then
+        frame.selected=nil;frame.selectedItem=nil;frame.healthPanel.selectedHP=nil;frame.healthPanel.selectedMax=nil
+        self:RenderIncoming(frame,page,incoming,{rail=rail,healthTop=HEALTH_TOP+extraHeight,tooltip=Tooltip,hideTooltip=HideTooltip,exclusions=frame.textExclusions,
+            active=function()return current==page and revision==renderRevision and frame:IsShown()and not(share and share:IsShown())end})
+        RenderCastMarkers(page,shelfExtra,rail,revision);RenderSupports(page,example,shelfExtra,rail,revision)
+        Shelf(page,false,0);return
+    end
     RenderCastMarkers(page,shelfExtra,rail,revision)
     RenderSupports(page,example,shelfExtra,rail,revision)
     local choice;for _,row in ipairs(model.rows)do if row==selected then choice=row;break end end
@@ -1300,7 +1333,7 @@ function UI:Render()
 end
 function UI:ShowPage(page)
     if not R:SelectHistoryPage(page)then return false end
-    self:Hide();Ensure();current,sample=page,false;self:Render();frame:Show();PositionDemand(true);RA:FireCallback("DEATH_RECAP_VISIBILITY",true,page);return true
+    self:Hide();Ensure();frame.feedMode=nil;current,sample=page,false;self:Render();frame:Show();PositionDemand(true);RA:FireCallback("DEATH_RECAP_VISIBILITY",true,page);return true
 end
 function UI:ShowLast()
     local page=R:GetPage()or R:GetHistory()[1];if not page then RA:Print("No recorded death available");return false end
@@ -1513,12 +1546,12 @@ function UI:OpenShare()
     if not ActionPage(current,IsExample())then return end
     if share and share:IsShown()then return end
     if not share then Share.Create()end
-    local sameSubmitted=share.page==current and share.preview==IsExample()and(share.submitted or 0)>0
+    local sameSubmitted=share.page==current and share.preview==IsExample()and share.feedMode==frame.feedMode and(share.submitted or 0)>0
     share.generation=(share.generation or 0)+1;share.expanded=false
     if not sameSubmitted then
-        R:CancelShare("Report replaced");share.page,share.preview=current,IsExample()
+        R:CancelShare("Report replaced");share.page,share.preview,share.feedMode=current,IsExample(),frame.feedMode
         share.jobStatus=nil;share.submitted=0;share.total=0;share.manual=false;share.progress:Hide()
-        local report,reason=R:BuildShareReport(current,share.preview)
+        local report,reason=R:BuildShareReport(current,share.preview,share.feedMode)
         if not report then RA:Print(reason or"Report unavailable");return end
         Share.ShowReport(report);Text(share.close.label,"CLOSE")
         Text(share.status,share.messageError or"Choose a destination to post. Say sends one line per click.")

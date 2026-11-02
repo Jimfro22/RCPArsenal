@@ -110,6 +110,55 @@ local function Number(value)
     value=Public(value)
     if type(value)=="number"and value==value and value>-math.huge and value<math.huge then return value end
 end
+-- Incoming receipts have their own clock and no spell/source/health identity.
+-- Keep this projection separate from native rows; never join by amount/time.
+function Model:Incoming(input)
+    local result={available=false,rows={},buckets={},first=-8,last=0,span=8,damageTotal=0,healingTotal=0,damageCount=0,healingCount=0,absorbedCount=0,rejected=0}
+    local page=Table(input);local live=page and Table(page.liveIncoming)
+    local died=page and Number(page.diedAt);local started=live and Number(live.startedAt)
+    if not live or not died or died<0 or not started or started<0 or started>died or Number(live.endedAt)~=died
+        or Public(live.source)~="UNIT_COMBAT:player"or Public(live.clock)~="GetTime"then return result end
+    local rows=Table(live.rows);if not rows then return result end
+    result.truncated=#rows>256;result.combatEntryObserved=Public(live.combatEntryObserved)==true
+    for i=1,math.min(#rows,256)do
+        local row=Table(rows[i]);local at=row and Number(row.observedAt);local amount=row and Number(row.amount)
+        local sequence=row and Number(row.sequence);local kind=row and Public(row.kind)
+        if at and at>=started and at<=died and died-at<=8 and amount and amount>=0 and amount<=1e15
+            and sequence and sequence>=1 and sequence<=1e12 and sequence==math.floor(sequence)and(kind=="damage"or kind=="healing")then
+            local flag=Public(row.flag)
+            local school=Number(row.school)
+            if not school or school<0 or school>127 or school~=math.floor(school)then school=nil end
+            local entry={receipt=row,offset=at-died,observedAt=at,amount=amount,sequence=sequence,index=i,kind=kind,school=school,critical=flag=="CRITICAL"}
+            if kind=="damage"and amount==0 and flag=="ABSORB"then entry.kind="absorbed"end
+            result.rows[#result.rows+1]=entry
+        else result.rejected=result.rejected+1 end
+    end
+    table.sort(result.rows,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;if a.sequence~=b.sequence then return a.sequence<b.sequence end;return a.index<b.index end)
+    for _,entry in ipairs(result.rows)do
+        local index=math.min(16,math.floor((entry.offset+8)*2)+1)
+        local bucket=result.buckets[index]
+        if not bucket then bucket={index=index,first=-8+(index-1)*.5,last=-8+index*.5,damage={rows={},amount=0},healing={rows={},amount=0}};result.buckets[index]=bucket end
+        local group=entry.kind=="healing"and bucket.healing or bucket.damage
+        group.rows[#group.rows+1]=entry;group.amount=group.amount+entry.amount
+        if entry.kind=="healing"then result.healingCount=result.healingCount+1;result.healingTotal=result.healingTotal+entry.amount
+        elseif entry.kind=="damage"then result.damageCount=result.damageCount+1;result.damageTotal=result.damageTotal+entry.amount
+        else result.absorbedCount=result.absorbedCount+1 end
+    end
+    result.available=#result.rows>0;return result
+end
+function Model:AlignLocalUses(input)
+    local page=Table(input);local died=page and Number(page.diedAt);local started=page and Number(page.localSessionStartedAt)
+    local result={aligned={},unaligned={},anchorValid=died~=nil and died>=0 and started~=nil and started>=0 and started<=died,approximate=false,localClock=true}
+    local casts=page and Table(page.casts)
+    for i=math.max(1,casts and #casts-63 or 1),casts and #casts or 0 do
+        local row=Table(casts[i]);local at=row and Number(row.observedAt);local id=row and Number(row.spellID)
+        if result.anchorValid and at and at>=started and at<=died and died-at<=30 and id and id>=1 and id<=2147483647 and id==math.floor(id)
+            and Public(row.source)=="UNIT_SPELLCAST_SUCCEEDED"then
+            result.aligned[#result.aligned+1]={row=row,index=i,offset=at-died,age=died-at,approximate=false,localClock=true}
+        else result.unaligned[#result.unaligned+1]={row=row,index=i,reason="unverified-local-use"}end
+    end
+    return result
+end
 -- Viewport selection is a new presentation list, never a crop of the recorded
 -- page or share report. Importance only changes presentation: an earlier hit
 -- must reach 20% of the public reference max or half the largest known nonfatal

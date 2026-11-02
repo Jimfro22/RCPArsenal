@@ -112,10 +112,12 @@ local function RetainedRows(input)
 end
 -- A report is a snapshot of retained facts, not an aggregation of rendered
 -- groups. Interleaved groups and equal-time hits keep every original row.
-function R:BuildShareReport(page,preview)
+function R:BuildShareReport(page,preview,feedMode)
     if type(page)~="table"or(preview~=true and not self:IsRetainedPage(page))then return nil,"No recorded personal recap"end
     preview=preview==true
-    local report={preview=preview,lines={},entries={},sections={}}
+    local incoming=not preview and feedMode=="history"and RA.DeathLogModel:Incoming(page)or nil
+    if feedMode=="history"and not preview and not incoming.available then return nil,"No live history was recorded for this death"end
+    local report={preview=preview,feedMode=incoming and"history"or"named",lines={},entries={},sections={}}
     local tokens={lines={},links={}};reportTokens[report]=tokens
     local Name=ShareNames()
     local function Line(text,parts)
@@ -126,7 +128,7 @@ function R:BuildShareReport(page,preview)
         context[#context+1]=Plain(page.encounter.name)
         if page.encounter.difficulty==16 then context[#context+1]="Mythic"end
     end
-    Line((preview and"RCP Preview — fictional sample"or"RCP Death Log — partial capture").." · "..table.concat(context," / "))
+    Line((preview and"RCP Preview — fictional sample"or incoming and"RCP Death Log — 8-second history"or"RCP Death Log — partial capture").." · "..table.concat(context," / "))
     local died,started=Number(page.diedAt),page.encounter and Number(page.encounter.startedAt)
     local fight=died and started and died>=started and died-started or nil
     local native,localEvents={},{}
@@ -138,7 +140,7 @@ function R:BuildShareReport(page,preview)
     end
     local rows=page.native and page.native.rows or{}
     local retained,truncated=RetainedRows(rows)
-    for _,row in ipairs(retained)do
+    for _,row in ipairs(incoming and{}or retained)do
         local amount=Amount(row.amount)
         local name,link=Name(row)
         local text=name..": "..(row.kind=="damage"and(amount and amount.." damage"or"damage amount unavailable")or(amount and amount.." (event type unknown)"or"event type unknown"))
@@ -174,6 +176,11 @@ function R:BuildShareReport(page,preview)
             Add(localEvents,"use",observed,i,name..(item[row.spellID]and": item use"or self:GetRecordedUseRole(row)=="utility"and": utility use"or": defensive use"),name,link)
         end
         Add(localEvents,"death",died,math.huge,"Death")
+        if incoming then for _,entry in ipairs(incoming.rows)do
+            local text=entry.kind=="absorbed"and"Fully absorbed hit"or(entry.kind=="healing"and"Healing: "or"Damage: ")..Amount(entry.amount)
+            if entry.critical then text=text.."; critical"end
+            Add(localEvents,entry.kind,entry.observedAt,64+entry.index,text)
+        end end
     end
     local function Section(title,events,clock)
         Line(title);report.sections[#report.sections+1]={title=title,clock=clock,events=events}
@@ -190,6 +197,9 @@ function R:BuildShareReport(page,preview)
         end
     end
     if preview then Section("Fight timeline",native,"preview")
+    elseif incoming then
+        Section(fight and"Recorded history · fight time"or"Recorded history · times before death",localEvents,"local")
+        Line("Damage and healing: last 8 seconds. Uses: up to 30 seconds. Spell names and attackers are not supplied for these damage/healing events.")
     else
         local damageOnly=true;for _,event in ipairs(native)do if event.kind~="damage"then damageOnly=false;break end end
         Section(damageOnly and"Damage · times before final recorded hit"or"Recorded events · times before final record",native,"native")
@@ -197,12 +207,12 @@ function R:BuildShareReport(page,preview)
         Section(fight and"Abilities used · fight time"or"Abilities used · times before death",localEvents,"local")
         Line("Separate timelines. Uses cover up to 30 seconds; missing uses are unknown. Healing and effect durations were not recorded.")
     end
-    if truncated or(page.native and page.native.truncated)then Line("Record is truncated; all retained events are included.")end
+    if incoming and incoming.truncated or not incoming and(truncated or(page.native and page.native.truncated))then Line("Record is truncated; all retained events are included.")end
     report.text=table.concat(report.lines,"\n")
     return report
 end
-function R:BuildShareText(page,preview)
-    local report,reason=self:BuildShareReport(page,preview)
+function R:BuildShareText(page,preview,feedMode)
+    local report,reason=self:BuildShareReport(page,preview,feedMode)
     return report and report.text or nil,reason
 end
 -- Our conservative 255-raw-byte budget includes markup; it is not a claim
