@@ -7,8 +7,8 @@ for larger hits or eligible cast markers. It could therefore hide small or
 absorbed **already supplied** named hits between five and eight seconds. Real
 Named hits now always spans the full eight seconds. Every retained native row
 inside that range reaches grouping, regardless of damage magnitude or max-HP
-availability. Earlier-than-eight-second records remain in the full report;
-their timestamps are never clamped onto the chart. The approved fictional
+availability. Earlier-than-eight-second records remain in the saved/debug capture;
+their timestamps are never clamped onto the chart. Chat sharing is separately bounded to the last six named hits inside six seconds. The approved fictional
 example retains its existing composition. Saved deaths benefit immediately.
 
 The runtime catalog also now applies its reviewed spell replacement relationships

@@ -242,7 +242,7 @@ do
  end
  check(seenReceipt[2]and seenReceipt[3]and not seenReceipt[1]and not seenReceipt[4],'Cast markers deduplicated repeats or exposed an unaligned receipt')
  check(firstMarker.iconX~=popup.castMarkers[2].iconX and firstMarker.timeX==popup.castMarkers[2].timeX,'Equal-time cast packing moved their actual-time connector positions')
- local report=assert(R:BuildShareText(page));check(report:find('Old retained Barrier',1,true)and report:find('Derived Mirror',1,true),'Cast viewport filtering cropped the full original-use report')
+ local report=assert(R:BuildShareText(page));check(not report:find('Old retained Barrier',1,true)and not report:find('Derived Mirror',1,true),'Sharing dumped retained uses instead of concise named hits')
  local stale=firstMarker:GetScript('OnEnter');U:Render();stale(firstMarker);check(not popup.tooltipRecap:IsShown(),'Old cast-marker callback survived redraw')
  U:OpenShare();firstMarker:Fire('OnEnter');check(not popup.tooltipRecap:IsShown()and popup.selected==beforeSelected,'Cast-marker hover bypassed the report modal');popup.shareChooser.close:Fire('OnClick')
  for i=1,13 do page.casts[i]={spellID=235450,name='Repeated Barrier',observedAt=99,source='UNIT_SPELLCAST_SUCCEEDED'}end

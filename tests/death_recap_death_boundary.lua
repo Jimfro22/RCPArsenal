@@ -32,7 +32,7 @@ local cases={
  check(model.available and #model.rows==1 and model.damageTotal==125,'Delivery audit changed chart damage totals')
  assert(loadfile('RCPArsenal/DeathRecapActions.lua'))('RCPArsenal',RA)
  local text=assert(R:BuildShareText(page,false,'history'))
- check(text:find('125',1,true)and text:find('Damage reported: 777',1,true)and text:find('Late reports · receipt times after death',1,true),'Late reports lost their separately labeled chat section or history feed selection was lost')
+ check(not text:find('Damage reported:',1,true)and not text:find('777',1,true)and not text:find('Late reports',1,true),'Post-death audit receipts entered the compact report')
  local saved=RA.DeathRecapHistory:Snapshot(page);local copy=saved.liveIncoming.deathBoundary
  check(copy.noticeAt==11 and copy.deadline==12 and copy.endedAt==12 and #copy.rows==4 and not copy.active,'Bounded delivery evidence did not survive saving')
  check(R:GetDiagnostics().spellQueries==before and bagReads==bags and R:GetDiagnostics().nativeReads==nativeReads,'Delivery receipts or close timer queried character/native state')
