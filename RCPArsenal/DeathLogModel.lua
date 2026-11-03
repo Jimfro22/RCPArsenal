@@ -146,6 +146,35 @@ function Model:Incoming(input)
     end
     result.available=#result.rows>0;return result
 end
+-- Reports delivered after the death notice have no verified hit timestamp.
+-- Project them separately; never backdate or merge them with either timeline.
+function Model:LateIncoming(input)
+    local result={valid=false,available=false,rows={},pending=false,partial=false,rejected=0}
+    local page=Table(input);local died=page and Number(page.diedAt)
+    local live=page and Table(page.liveIncoming);local packet=live and Table(live.deathBoundary)
+    local notice=packet and Number(packet.noticeAt);local deadline=packet and Number(packet.deadline)
+    if not packet or not died or died<0 or notice~=died or not deadline or deadline<died or deadline>died+1
+        or Public(packet.source)~="UNIT_COMBAT:player"or Public(packet.clock)~="GetTime"then return result end
+    result.valid=true
+    result.pending=Public(packet.active)==true and Public(page.restored)~=true
+    local rows=Table(packet.rows)or{}
+    result.partial=Public(packet.truncated)==true or #rows>32 or Public(packet.active)==true and Public(page.restored)==true
+    for i=1,math.min(#rows,32)do
+        local row=Table(rows[i]);local at=row and Number(row.observedAt);local amount=row and Number(row.amount)
+        local sequence=row and Number(row.sequence);local kind=row and Public(row.kind)
+        if at and at>=died and at<=deadline and amount and amount>=0 and amount<=1e15
+            and sequence and sequence>=1 and sequence<=1e12 and sequence==math.floor(sequence)and(kind=="damage"or kind=="healing")then
+            local school=Number(row.school)
+            if not school or school<0 or school>127 or school~=math.floor(school)then school=nil end
+            local flag=Public(row.flag)
+            result.rows[#result.rows+1]={receipt=row,observedAt=at,deliveryOffset=at-died,amount=amount,sequence=sequence,index=i,
+                kind=kind=="damage"and amount==0 and flag=="ABSORB"and"absorbed"or kind,school=school,critical=flag=="CRITICAL"}
+        else result.rejected=result.rejected+1 end
+    end
+    table.sort(result.rows,function(a,b)if a.observedAt~=b.observedAt then return a.observedAt<b.observedAt end;return a.sequence<b.sequence end)
+    result.available=#result.rows>0
+    return result
+end
 function Model:AlignLocalUses(input)
     local page=Table(input);local died=page and Number(page.diedAt);local started=page and Number(page.localSessionStartedAt)
     local result={aligned={},unaligned={},anchorValid=died~=nil and died>=0 and started~=nil and started>=0 and started<=died,approximate=false,localClock=true}

@@ -1586,7 +1586,7 @@ end
 RA:RegisterCallback("DEATH_RECAP_CHANGED",function(kind)
     if kind=="death"then UI:Hide();if R:GetState().autoOpen then UI:ShowLast()end
     elseif kind=="life"or(kind=="settings"and not R:GetState().enabled)then UI:Hide()
-    elseif kind=="native"and frame and frame:IsShown()and not sample and R:IsRetainedPage(current)then UI:Render()end
+    elseif(kind=="native"or kind=="delivery")and frame and frame:IsShown()and not sample and R:IsRetainedPage(current)then UI:Render()end
 end)
 RA:RegisterCallback("ACCENT_THEME_CHANGED",function()if frame and frame:IsShown()then UI:Render()end end)
 

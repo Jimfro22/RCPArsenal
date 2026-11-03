@@ -116,6 +116,7 @@ function R:BuildShareReport(page,preview,feedMode)
     if type(page)~="table"or(preview~=true and not self:IsRetainedPage(page))then return nil,"No recorded personal recap"end
     preview=preview==true
     local incoming=not preview and feedMode=="history"and RA.DeathLogModel:Incoming(page)or nil
+    local late=incoming and RA.DeathLogModel:LateIncoming(page)or nil
     if feedMode=="history"and not preview and not incoming.available then return nil,"No live history was recorded for this death"end
     local report={preview=preview,feedMode=incoming and"history"or"named",lines={},entries={},sections={}}
     local tokens={lines={},links={}};reportTokens[report]=tokens
@@ -188,6 +189,7 @@ function R:BuildShareReport(page,preview,feedMode)
         for _,event in ipairs(events)do
             local stamp
             if clock=="preview"then stamp=fight and event.time and FightTime(fight+event.time)or Relative(event.time)
+            elseif clock=="delivery"then stamp=string.format("+%.2fs received",event.time-died)
             elseif clock=="local"then stamp=fight and FightTime(event.time and event.time-started)or Relative(event.time and died and event.time-died)
             else stamp=Relative(event.time)end
             event.clock=clock;event.line="- ["..stamp.."] "..event.text
@@ -200,6 +202,18 @@ function R:BuildShareReport(page,preview,feedMode)
     elseif incoming then
         Section(fight and"Recorded history · fight time"or"Recorded history · times before death",localEvents,"local")
         Line("Damage and healing: last 8 seconds. Uses: up to 30 seconds. Spell names and attackers are not supplied for these damage/healing events.")
+        Line("Combat feedback uses receipt times, not exact hit times, and can arrive late.")
+        if late.available then
+            local deliveries={}
+            for _,entry in ipairs(late.rows)do
+                local text=entry.kind=="absorbed"and"Absorb reported"or(entry.kind=="healing"and"Healing reported: "or"Damage reported: ")..Amount(entry.amount)
+                if entry.critical then text=text.."; critical"end
+                Add(deliveries,entry.kind,entry.observedAt,entry.index,text)
+            end
+            Section("Late reports · receipt times after death",deliveries,"delivery")
+            Line("Late reports are separate from chart totals; no spell identity or hit timestamp is inferred.")
+        end
+        if late.pending then Line("Late reports are still being collected.")elseif late.partial then Line("Late report collection is incomplete.")end
     else
         local damageOnly=true;for _,event in ipairs(native)do if event.kind~="damage"then damageOnly=false;break end end
         Section(damageOnly and"Damage · times before final recorded hit"or"Recorded events · times before final record",native,"native")

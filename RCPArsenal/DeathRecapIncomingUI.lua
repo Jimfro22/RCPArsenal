@@ -42,6 +42,7 @@ function U:HideIncoming(parent)
     local chart=parent.incomingChart;if not chart then return end
     chart:Hide();chart.guide:Hide();chart.selection=nil
     for _,b in ipairs(chart.bars)do b:SetScript("OnEnter",nil);b:SetScript("OnMouseWheel",nil);b:Hide()end
+    if chart.lateHelp then chart.lateHelp:SetScript("OnEnter",nil);chart.lateHelp:SetScript("OnMouseWheel",nil);chart.lateHelp:Hide()end
 end
 function U:RenderIncoming(parent,page,history,ctx)
     local chart=parent.incomingChart
@@ -55,20 +56,47 @@ function U:RenderIncoming(parent,page,history,ctx)
         RA:ApplyFont(chart.damageTotal,22,"BOLD",false);RA:ApplyFont(chart.healTotal,22,"BOLD",false)
         chart.note=Font(chart,10,C.muted);chart.note:SetJustifyH("RIGHT")
         chart.help=CreateFrame("Button",nil,chart);T.SetSize(chart.help,214,20)
+        chart.lateHelp=CreateFrame("Button",nil,chart);T.SetSize(chart.lateHelp,214,18)
+        chart.lateHelp.label=Font(chart.lateHelp,11,C.textSoft);chart.lateHelp.label:SetJustifyH("RIGHT");chart.lateHelp.label:SetAllPoints(chart.lateHelp)
     end
     chart:Show();chart.guide:Hide()
     Place(chart.healLegend,"TOPLEFT",chart,"TOPLEFT",48,-ctx.rail+84)
     Place(chart.damageLegend,"TOPLEFT",chart,"TOPLEFT",144,-ctx.rail+84)
     local baseline=ctx.healthTop-36
-    Place(chart.damageTitle,"TOPLEFT",chart,"TOPLEFT",48,-baseline);Text(chart.damageTitle,history.damageCount.." damage events"..(history.absorbedCount>0 and(" · "..history.absorbedCount.." absorbed")or""))
+    Place(chart.damageTitle,"TOPLEFT",chart,"TOPLEFT",48,-baseline);Text(chart.damageTitle,history.damageCount..(history.damageCount==1 and" damage event"or" damage events")..(history.absorbedCount>0 and(" · "..history.absorbedCount.." absorbed")or""))
     Place(chart.damageTotal,"TOPLEFT",chart,"TOPLEFT",48,-baseline-14);Text(chart.damageTotal,Amount(history.damageTotal))
-    Place(chart.healTitle,"TOPLEFT",chart,"TOPLEFT",280,-baseline);Text(chart.healTitle,history.healingCount.." healing events")
+    Place(chart.healTitle,"TOPLEFT",chart,"TOPLEFT",280,-baseline);Text(chart.healTitle,history.healingCount..(history.healingCount==1 and" healing event"or" healing events"))
     Place(chart.healTotal,"TOPLEFT",chart,"TOPLEFT",280,-baseline-14);Text(chart.healTotal,Amount(history.healingTotal))
-    Place(chart.note,"TOPRIGHT",chart,"TOPRIGHT",-48,-baseline-24);Text(chart.note,"Live history · Times before death")
+    Place(chart.note,"TOPRIGHT",chart,"TOPRIGHT",-48,-baseline-24);Text(chart.note,"Receipt times before death")
     Place(chart.help,"TOPRIGHT",chart,"TOPRIGHT",-48,-baseline-18)
     chart.help:SetScript("OnEnter",function(self)
-        if ctx.active()then ctx.tooltip(self,{"Recorded history","Damage and healing amounts as reported by the live combat feed.","Spell names, attackers and health snapshots are not supplied.","Named hits shows Blizzard's separate spell records. These totals are not added together."})end
+        if ctx.active()then ctx.tooltip(self,{"Recorded history","Times are callback delivery times, not exact hit times. Combat feedback can arrive late.","Spell names, attackers and health snapshots are not supplied.","Named hits shows Blizzard's separate spell records. Late reports stay separate from these chart totals."})end
     end);chart.help:SetScript("OnLeave",ctx.hideTooltip)
+    local late=RA.DeathLogModel:LateIncoming(page);local lateHelp=chart.lateHelp
+    chart.lateHistory=late;lateHelp.member=1
+    lateHelp:SetShown(late.available or late.pending or late.partial)
+    Place(lateHelp,"TOPRIGHT",chart,"TOPRIGHT",-48,-baseline)
+    Text(lateHelp.label,late.pending and"Collecting late reports"or("Late reports · "..#late.rows..(late.partial and" · incomplete"or"")))
+    local function ShowLate(self)
+        if not ctx.active()or not(late.available or late.pending or late.partial)then return end
+        if not late.available then
+            ctx.tooltip(self,{"Late reports",late.pending and"Waiting for delayed combat feedback."or"Saved before collection finished.","These reports remain separate from chart totals."});return
+        end
+        local lines={damageEvents={},compactRows=true,totalText="Received after death",countText=#late.rows..(#late.rows==1 and" report"or" reports"),
+            originText="Receipt times only; separate from chart totals.",selectedIndex=self.member}
+        for _,row in ipairs(late.rows)do
+            lines.damageEvents[#lines.damageEvents+1]={text=row.kind=="absorbed"and"Absorb reported"or row.kind=="healing"and"Healing reported"or(schools[row.school]or"Mixed-school").." damage",
+                timeText=string.format("+%.2fs",row.deliveryOffset),amountText=row.kind=="absorbed"and"—"or Exact(row.amount),
+                amountColor=row.kind=="healing"and C.success or row.kind=="absorbed"and{.36,.70,1}or C.danger}
+        end
+        ctx.tooltip(self,lines)
+    end
+    lateHelp:SetScript("OnEnter",ShowLate);lateHelp:SetScript("OnLeave",ctx.hideTooltip)
+    lateHelp:EnableMouseWheel(#late.rows>1)
+    lateHelp:SetScript("OnMouseWheel",function(self,delta)
+        if not ctx.active()or #late.rows==0 then return end
+        self.member=self.member+(delta<0 and 1 or -1);if self.member>#late.rows then self.member=1 elseif self.member<1 then self.member=#late.rows end;ShowLate(self)
+    end)
     local peak=1
     for i=1,16 do local bucket=history.buckets[i];if bucket then peak=math.max(peak,bucket.damage.amount,bucket.healing.amount)end end
     local used=0

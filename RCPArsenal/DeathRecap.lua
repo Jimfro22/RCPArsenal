@@ -1,7 +1,7 @@
 local _, RA = ...
 local Recap = {}
 RA.DeathRecap = Recap
-Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5, incoming=256, incomingSeconds=8, deathBoundary=16, deathBoundarySeconds=.25 }
+Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5, incoming=256, incomingSeconds=8, deathBoundary=32, deathBoundarySeconds=1 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
@@ -127,7 +127,7 @@ local function StopDeathBoundary(reason)
     deathBoundary=nil
     if owner.timer then owner.timer:Cancel()end
     owner.packet.active=false;owner.packet.endedAt=Now();owner.packet.stopReason=reason
-    if Recap:IsRetainedPage(owner.page)then SaveHistory()end
+    if Recap:IsRetainedPage(owner.page)then SaveHistory();Notify("delivery")end
 end
 local function StartDeathBoundary(page)
     StopDeathBoundary("replaced")
