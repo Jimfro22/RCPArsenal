@@ -91,6 +91,18 @@ function RA:CreateGeneralPane(parent,kit)
             rows[#rows+1]={frame=row,entry=d,name=name.label,priority=priority,status=status}
         end
     end
+    local performanceBottom,performanceReports
+    if RA.Performance then
+        local y=190+#rows*44+24
+        Text(kit,body,"Diagnostics",13,0,-y,918)
+        local toggle=kit.Toggle(body,"Performance recording","",function()return RA.Performance:IsEnabled()end,
+            function(value)Result(RA.Performance:SetEnabled(value))end)
+        toggle:SetCompact(false);T.SetWidth(toggle,678);T.SetPoint(toggle,"TOPLEFT",body,"TOPLEFT",0,-y-28)
+        Help(toggle,"Performance recording","Optional Arsenal CPU snapshots at fight start/end. Shows an on-screen indicator when ON. Always starts OFF after reload. Keeps the last five reports; no per-frame sampling.")
+        performanceReports=kit.Button(body,"REPORTS",224,44,function()Result(RA.Performance:ShowReport())end)
+        T.SetPoint(performanceReports,"TOPLEFT",body,"TOPLEFT",694,-y-28)
+        performanceBottom=y+88
+    end
     Refresh=function()
         local report=RA.AddonCatalog:GetLocalReport()
         for _,row in ipairs(rows) do
@@ -108,8 +120,10 @@ function RA:CreateGeneralPane(parent,kit)
             row.name:SetTextColor(unpack(color));row.status:SetTextColor(unpack(color))
             row.priority:SetTextColor(unpack(active and C.textSoft or C.muted))
         end
-        Resize(190+#rows*44+14)
+        if performanceReports then performanceReports:SetEnabled(#RA.Performance:GetReports()>0)end
+        Resize(performanceBottom or(190+#rows*44+14))
     end
+    if RA.Performance then RA:RegisterCallback("PERFORMANCE_CHANGED",Refresh)end
     parent:HookScript("OnShow",function()RA.AddonCatalog:RefreshLocal();Refresh()end)
     return Refresh
 end
