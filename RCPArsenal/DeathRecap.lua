@@ -1121,6 +1121,10 @@ for _,event in ipairs({"PLAYER_SPECIALIZATION_CHANGED","TRAIT_CONFIG_UPDATED","S
 end
 Passive("ENCOUNTER_START",function(_,id,name,difficulty)
     encounterSerial=encounterSerial+1;encounterContext={auditEpoch=encounterSerial,encounterID=ID(id),name=String(name,96),difficulty=ID(difficulty),startedAt=Now()}
+    if type(GetInstanceInfo)=="function"then
+        local ok,_,_,_,_,_,_,_,gameMapID=pcall(GetInstanceInfo)
+        if ok then encounterContext.gameMapID=ID(gameMapID)end
+    end
     if session then session.encounter=Copy(encounterContext)end
 end)
 Passive("ENCOUNTER_END",function(_,id)

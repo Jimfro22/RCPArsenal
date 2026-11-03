@@ -1142,6 +1142,16 @@ function UI:Render()
         if current==page and revision==renderRevision and not(share and share:IsShown())and mode~=frame.feedMode then
             frame.feedMode=mode;self:Render()
         end
+    end,function(owner,mode)
+        if not owner then HideTooltip();return end
+        if current~=page or revision~=renderRevision or(share and share:IsShown())then return end
+        if mode=="history"then
+            Tooltip(owner,{"8-second history","Damage and healing, timed when received.","This feed does not supply spell names or attackers."})
+        else
+            local coverage=M:NamedCoverage(page)
+            Tooltip(owner,{"Named hits",coverage.count>0 and string.format("Blizzard supplied %d %s spanning %.1fs.",coverage.count,coverage.count==1 and"record"or"records",coverage.span)or"Blizzard has not supplied named records for this death.",
+                "Blue + amounts are absorbed damage.","Healing is in 8-second history; its timing is recorded separately."})
+        end
     end)
     frame.healthPanel:SetShown(not historyMode);frame.percent:SetShown(not historyMode);frame.hp:SetShown(not historyMode);frame.healthContext:SetShown(not historyMode)
     local rows=page.native and page.native.rows or{}
