@@ -89,7 +89,7 @@ function H:Snapshot(input)
         local boundary=Plain(live.deathBoundary)
         if boundary then
             out.liveIncoming.deathBoundary=Fields(boundary,'source clock noticeAt deadline endedAt active capacity callbacks total rejected restricted unitRejected actionRejected truncated stopReason')
-            out.liveIncoming.deathBoundary.rows=Array(boundary.rows,16,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
+            out.liveIncoming.deathBoundary.rows=Array(boundary.rows,32,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
         end
         local probe=Plain(live.probe)
         if probe then

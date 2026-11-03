@@ -5,7 +5,7 @@ prefix=prefix:sub(1,assert(prefix:find('check(optionalCount()==0',1,true))-1)
 local helpers=[=[
 local function windowTimer()
  local found,n=nil,0
- for _,t in ipairs(timers)do if not t.cancelled and not t.repeating and t.delay==.25 then found=t;n=n+1 end end
+ for _,t in ipairs(timers)do if not t.cancelled and not t.repeating and t.delay==1 then found=t;n=n+1 end end
  check(n<=1,'More than one delivery-window timer pending');return found
 end
 local function die()
@@ -23,8 +23,8 @@ local cases={
  time=11.05;event('UNIT_COMBAT','player','HEAL','',5,2)
  -- A combat-end notification may precede a queued player callback.
  event('PLAYER_REGEN_ENABLED');time=11.1;event('UNIT_COMBAT','player','WOUND','ABSORB',0,4)
- time=11.25;event('UNIT_COMBAT','player','WOUND','',225,1);fire(t)
- check(boundary.total==4 and #boundary.rows==4 and boundary.rows[1].observedAt==11 and boundary.rows[4].observedAt==11.25,'Boundary lost same-tick/last-tick callbacks or changed their clocks')
+ time=12;event('UNIT_COMBAT','player','WOUND','',225,1);fire(t)
+ check(boundary.total==4 and #boundary.rows==4 and boundary.rows[1].observedAt==11 and boundary.rows[4].observedAt==12,'Boundary lost same-tick/last-tick callbacks or changed their clocks')
  check(not boundary.active and boundary.stopReason=='window-ended'and t.cancelled,'Window did not close/cancel cleanly')
  check(page.liveIncoming.total==1 and #page.liveIncoming.rows==1 and page.liveIncoming.rows[1].amount==125,'Post-notice receipt entered frozen pre-death feed')
  assert(loadfile('RCPArsenal/DeathLogModel.lua'))('RCPArsenal',RA)
@@ -32,14 +32,14 @@ local cases={
  check(model.available and #model.rows==1 and model.damageTotal==125,'Delivery audit changed chart damage totals')
  assert(loadfile('RCPArsenal/DeathRecapActions.lua'))('RCPArsenal',RA)
  local text=assert(R:BuildShareText(page,false,'history'))
- check(text:find('125',1,true)and not text:find('777',1,true)and not text:find('225',1,true),'Delivery audit entered player chat report or history feed selection was lost')
+ check(text:find('125',1,true)and text:find('Damage reported: 777',1,true)and text:find('Late reports · receipt times after death',1,true),'Late reports lost their separately labeled chat section or history feed selection was lost')
  local saved=RA.DeathRecapHistory:Snapshot(page);local copy=saved.liveIncoming.deathBoundary
- check(copy.noticeAt==11 and copy.deadline==11.25 and copy.endedAt==11.25 and #copy.rows==4 and not copy.active,'Bounded delivery evidence did not survive saving')
+ check(copy.noticeAt==11 and copy.deadline==12 and copy.endedAt==12 and #copy.rows==4 and not copy.active,'Bounded delivery evidence did not survive saving')
  check(R:GetDiagnostics().spellQueries==before and bagReads==bags and R:GetDiagnostics().nativeReads==nativeReads,'Delivery receipts or close timer queried character/native state')
  assert(loadfile('RCPArsenal/DeathRecapDebug.lua'))('RCPArsenal',RA)
  local debug=assert(R:BuildLiveHistoryText(true))
- check(debug:find('DEATH-NOTICE DELIVERY CHECK',1,true)and debug:find('excluded from charts and totals',1,true)and debug:find('afterNoticeReceipt=1',1,true)and debug:find('amount=777',1,true),'Debug lost separated raw delivery evidence')
- time=11.26;event('UNIT_COMBAT','player','WOUND','',999,1);fire(t,true)
+ check(debug:find('DEATH-NOTICE DELIVERY CHECK',1,true)and debug:find('excluded from pre-notice chart totals',1,true)and debug:find('afterNoticeReceipt=1',1,true)and debug:find('amount=777',1,true),'Debug lost separated raw delivery evidence')
+ time=12.01;event('UNIT_COMBAT','player','WOUND','',999,1);fire(t,true)
  check(boundary.total==4 and #boundary.rows==4,'Closed callback/timer mutated frozen delivery packet')
  ]=]},
  {name='filters_capacity_and_secret_serialization',body=[=[
@@ -50,10 +50,10 @@ local cases={
  event('UNIT_COMBAT','player','WOUND','',secret,1);event('UNIT_COMBAT','player','WOUND','',-1,1)
  for i=1,40 do event('UNIT_COMBAT','player','WOUND',secret,i,secret)end
  check(boundary.callbacks==46 and boundary.unitRejected==2 and boundary.actionRejected==2 and boundary.restricted==1 and boundary.rejected==1,'Diagnostic filters lost a stage or exposed a protected payload')
- check(boundary.total==40 and #boundary.rows==16 and boundary.truncated and boundary.rows[16].amount==16,'Diagnostic capacity was unbounded or rewrote receipt order')
- time=11.25;fire(t)
+ check(boundary.total==40 and #boundary.rows==32 and boundary.truncated and boundary.rows[32].amount==32,'Diagnostic capacity was unbounded or rewrote receipt order')
+ time=12;fire(t)
  local saved=RA.DeathRecapHistory:Snapshot(page).liveIncoming.deathBoundary
- check(#saved.rows==16 and saved.rows[1].flag==nil and saved.rows[1].school==nil,'Protected metadata entered saved diagnostic evidence')
+ check(#saved.rows==32 and saved.rows[1].flag==nil and saved.rows[1].school==nil,'Protected metadata entered saved diagnostic evidence')
  ]=]},
 }
 for _,transition in ipairs({'disabled','alive','world','new-session'})do
@@ -68,13 +68,13 @@ for _,transition in ipairs({'disabled','alive','world','new-session'})do
  ]=]):format(transition=='disabled'and"R:SetOption('enabled',false)"or transition=='alive'and"dead=false;event('PLAYER_ALIVE')"or transition=='world'and"event('PLAYER_ENTERING_WORLD')"or"dead=false;event('PLAYER_REGEN_DISABLED')")}
 end
 cases[#cases+1]={name='expired_clock_and_missing_timer',body=[=[
- local page,boundary,t=die();time=11.251;event('UNIT_COMBAT','player','WOUND','',444,1)
+ local page,boundary,t=die();time=121;event('UNIT_COMBAT','player','WOUND','',444,1)
  check(boundary.total==0 and not boundary.active and boundary.stopReason=='window-ended','Late dispatch exceeded the diagnostic window')
  dead=false;time=20;event('PLAYER_ALIVE');time=21;dead=true;event('PLAYER_DEAD');page=R:GetPage();boundary=page.liveIncoming.deathBoundary
  time=20.99;event('UNIT_COMBAT','player','WOUND','',444,1)
  check(boundary.total==0 and boundary.stopReason=='clock-unavailable','Backwards clock entered after-notice evidence')
  R:SetOption('enabled',false);dead=false;time=30;R:SetOption('enabled',true)
- local original=C_Timer.NewTimer;C_Timer.NewTimer=function(delay,fn)if delay==.25 then return nil end;return original(delay,fn)end
+ local original=C_Timer.NewTimer;C_Timer.NewTimer=function(delay,fn)if delay==1 then return nil end;return original(delay,fn)end
  time=31;dead=true;event('PLAYER_DEAD');page=R:GetPage();boundary=page.liveIncoming.deathBoundary
  check(not boundary.active and boundary.stopReason=='timer-error'and #boundary.rows==0,'Unavailable timer left an open diagnostic window')
  ]=]}

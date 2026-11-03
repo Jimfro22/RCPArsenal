@@ -20,11 +20,14 @@ check(live.rows[1].sequence==145 and live.rows[256].sequence==400 and live.rows[
 check(live.rows[255].kind=='damage'and live.rows[255].flag=='CRITICAL'and live.rows[256].kind=='healing','Damage/heal classification changed')
 check(not live.rows[1].spellID and not live.rows[1].sourceName and not live.rows[1].recordedHP,'Anonymous incoming receipts acquired fabricated spell/source/HP')
 time=15;event('UNIT_COMBAT','player','WOUND','',999,1);check(live.total==400,'Dead stream changed a frozen death')
+check(#live.rows==256 and live.rows[256].amount==400 and live.deathBoundary.rows[1].amount==999,'Late delivery was discarded or entered the pre-notice ring')
+time=15.1;for _,timer in ipairs(timers)do if not timer.cancelled and timer.delay==1 then fire(timer)end end
 local saved=RA.DeathRecapHistory:Snapshot(page)
 check(saved.liveIncoming.total==400 and #saved.liveIncoming.rows==256 and saved.liveIncoming.rows[1].sequence==145,'Allowlisted history lost bounded live receipts')
 assert(loadfile('RCPArsenal/DeathRecapDebug.lua'))('RCPArsenal',RA)
 local text=assert(R:BuildLiveHistoryText())
-check(text:find('capacity 256',1,true)and text:find('Capacity reached',1,true)and text:find('DAMAGE  399',1,true)and not text:find('999',1,true),'Live diagnostic lost bounds, public amounts or frozen identity')
+local preNotice=text:match('^(.-)DEATH%-NOTICE DELIVERY CHECK')or text
+check(text:find('capacity 256',1,true)and text:find('Capacity reached',1,true)and text:find('DAMAGE  399',1,true)and not preNotice:find('999',1,true),'Live diagnostic lost bounds, public amounts or frozen pre-notice identity')
 -- A subsequent combat has no prior-life receipts, and elapsed time prunes only at death.
 dead=false;combat=false;event('PLAYER_ALIVE');event('PLAYER_REGEN_ENABLED')
 event('UNIT_COMBAT','player','WOUND','',1234,1)

@@ -303,12 +303,12 @@ function R:BuildLiveHistoryText(includeRaw)
     local boundary=Table(live.deathBoundary)
     if boundary then
         Add("")
-        Add("DEATH-NOTICE DELIVERY CHECK - diagnostic only; excluded from charts and totals")
-        Add("Callbacks delivered in the quarter-second after the death notice. Delivery time does not prove damage time or killing-blow identity.")
+        Add("DEATH-NOTICE DELIVERY CHECK - excluded from pre-notice chart totals")
+        Add("Callbacks delivered after the death notice, within the recorded deadline (up to one second). Delivery time does not prove damage time or killing-blow identity.")
         local keys={"source","clock","noticeAt","deadline","endedAt","active","capacity","callbacks","total","restricted","rejected","unitRejected","actionRejected","truncated","stopReason"}
         Add("  window "..FieldText(Fields(boundary,keys),keys))
         if page.restored and Scalar(boundary.active)==true then Add("Saved before this diagnostic window completed; completion was not recorded.")end
-        for index=1,math.min(#(Table(boundary.rows)or{}),16)do
+        for index=1,math.min(#(Table(boundary.rows)or{}),32)do
             local row=Fields(boundary.rows[index],{"sequence","observedAt","kind","amount","flag","school"})
             if includeRaw==true then Add("  afterNoticeReceipt="..index.." "..FieldText(row,{"sequence","observedAt","kind","amount","flag","school"}))
             elseif type(died)=="number"and type(row.observedAt)=="number"and row.observedAt>=died and type(row.amount)=="number"then
