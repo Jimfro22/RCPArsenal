@@ -2031,6 +2031,7 @@ local function SetTab(tabKey)
     if not panes[tabKey] then tabKey = "GENERAL" end
     if tabKey == "GENERAL" then RA.Setup:PresentIntroduction() end
     if RA.HideHubTransientDialogs then RA:HideHubTransientDialogs() end
+    if RA.UpdateLogUI then RA.UpdateLogUI:Hide() end
     activeTab = tabKey
     navigation.lastTab = tabKey
     if PaneContext(tabKey) == "COOLDOWNS" then navigation.cooldownTab = tabKey end
@@ -2237,6 +2238,8 @@ local function CreateConfig()
     local version = Font(sidebar, 9.4, TC.magenta, "BOLD")
     RA:SetVisualText(version, "v" .. RA.VERSION)
     SetPoint(version, "TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+
+    RA.UpdateLogUI:Attach(sidebar, {Font = Font, Button = CreateButton, Backdrop = Backdrop})
 
     local navTop, navGroup = -88, nil
     for i = 1, #TAB_DEFS do

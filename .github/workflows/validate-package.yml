@@ -24,6 +24,7 @@ jobs:
       - name: Validate Lua and addon behavior
         run: |
           luac5.1 -p RCPArsenal/*.lua
+          lua5.1 tools/export_release_notes.lua --check
           for harness in tests/*.lua; do lua5.1 "$harness"; done
       - name: Build install ZIP and provenance
         run: python3 tools/package.py --output-dir dist --label ci

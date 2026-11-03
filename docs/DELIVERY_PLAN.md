@@ -1,5 +1,7 @@
 # RCP Arsenal delivery plan
 
+For the current build, feature queue and acceptance order, use [Consolidation and validation](VALIDATION.md). The kickoff checkpoints below are historical, not the current release status.
+
 Historical kickoff proposal prepared October 18, 2026 for Jimfro and the project lead. Build the Morning Brew player hub in small Windows-testable releases, starting with a quiet first run and a local addon catalog. Run the health reminder feasibility spike early because current secret-value restrictions could affect its core interaction.
 
 The owner’s [canonical checklist and idea bank](https://chatgpt.com/space/page_272f4aa590a48191a68658910f507fa1) remains the product planning authority. This engineering plan proposes sequencing and acceptance criteria. The coordinator owns Page edits during kickoff; this checkout does not modify that Page.

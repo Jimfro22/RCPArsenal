@@ -1,3 +1,7 @@
+# Current updates
+
+Current build: **0.15.3-alpha.57**. Open **What's new** beneath the settings logo for recent changes. The same notes are maintained from one source in [recent updates](../docs/RECENT_UPDATES.md) in the source repository. [Consolidation and validation](../docs/VALIDATION.md) tracks accepted results and outstanding client tests. The dated notes below are historical.
+
 # 0.15.3-alpha.36 live Death Log and manual death entry
 
 Death Log now defaults to manual opening, with an addon-owned logo button beside the visible Blizzard death dialog for the current captured death. The entry hides while the log is open, after release/resurrection/reset, and when its native host disappears. Its subtle border pulse stops while hidden and after first viewing. Legacy unmarked auto-open settings migrate OFF once; later explicit choices persist. Recording remains independently opt-in.
