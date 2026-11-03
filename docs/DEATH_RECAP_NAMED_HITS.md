@@ -1,6 +1,27 @@
-# Alpha.54: Journal links and named-hit investigation
+# Alpha.55: complete display window and Journal links
 
-## What changed
+## Alpha.55 correction
+
+The previous real-record viewport started at five seconds and expanded only
+for larger hits or eligible cast markers. It could therefore hide small or
+absorbed **already supplied** named hits between five and eight seconds. Real
+Named hits now always spans the full eight seconds. Every retained native row
+inside that range reaches grouping, regardless of damage magnitude or max-HP
+availability. Earlier-than-eight-second records remain in the full report;
+their timestamps are never clamped onto the chart. The approved fictional
+example retains its existing composition. Saved deaths benefit immediately.
+
+The runtime catalog also now applies its reviewed spell replacement relationships
+after live eligibility checks. If Ice Cold is positively learned, active and
+supported, an independently reported known Ice Block no longer becomes a second
+defensive choice. An absent/ineligible replacement cannot suppress a valid base.
+These eligibility changes affect new captures. Saved availability remains the
+original frozen evidence and is not rechecked against the current character.
+
+This fixes a display omission; it does not remove the data-access limitations
+below. A short source history and a clipped display are separate problems.
+
+## Alpha.54 Journal lookup
 
 Real recorded boss deaths no longer require a manually populated Journal map.
 Clicking a retained damage icon outside combat loads the native Journal and

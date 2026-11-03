@@ -26,6 +26,26 @@ check(R:GetRecordedUseRole(setmetatable({},{__index=function()error('Role indexe
 R:SetOption('enabled',false);dead=false;learned[45438]=nil;learned[414658]=true;R:SetOption('enabled',true);dead=true;event('PLAYER_DEAD');ids={}
 for _,row in ipairs(R:GetAvailabilityAudit().spells)do ids[row.spellID]=true end
 check(ids[414658]and not ids[45438]and R:GetDiagnostics().trackedSpells==5,'Ice Cold replacement omitted or doubled family')
+-- A learned replacement can coexist with a still-known/self-resolving base.
+-- All specs must keep only the positively eligible replacement, regardless of
+-- catalog order; an ineligible replacement must not suppress a valid base.
+for _,spec in ipairs({62,63,64})do
+ R:SetOption('enabled',false);dead=false;selectedSpec=spec;learned[45438]=true;learned[414658]=true
+ R:SetOption('enabled',true);dead=true;event('PLAYER_DEAD');ids={}
+ for _,entry in ipairs(R:GetPage().knownEntries)do ids[entry.spellID]=true end
+ check(ids[414658]and not ids[45438],'Both base and replacement became independent defensive choices')
+end
+R:SetOption('enabled',false);dead=false;selectedSpec=62;learned[414658]=false
+R:SetOption('enabled',true);dead=true;event('PLAYER_DEAD');ids={}
+for _,entry in ipairs(R:GetPage().knownEntries)do ids[entry.spellID]=true end
+check(ids[45438]and not ids[414658],'Unlearned replacement suppressed the usable base')
+R:SetOption('enabled',false);dead=false;learned[414658]=true;local nativePassive=C_Spell.IsSpellPassive
+C_Spell.IsSpellPassive=function(id)return id==414658 end
+R:SetOption('enabled',true);dead=true;event('PLAYER_DEAD');ids={}
+for _,entry in ipairs(R:GetPage().knownEntries)do ids[entry.spellID]=true end
+check(ids[45438]and not ids[414658],'Passive/ineligible replacement suppressed the usable base')
+C_Spell.IsSpellPassive=nativePassive
+R:SetOption('enabled',false);dead=false;learned[45438]=nil;learned[414658]=true
 R:SetOption('enabled',false);dead=false;learned[55342]=nil;learned[110959]=nil;R:SetOption('enabled',true)
 check(R:GetDiagnostics().trackedSpells==3,'Unlearned Mage talents treated as available')
 R:SetOption('enabled',false);learned[66]=true;R:SetOption('enabled',true)
