@@ -408,23 +408,140 @@ RA:RegisterCallback("PROFILE_RESET",function()R:CancelShare("Profile changed")en
 RA:RegisterCallback("DEATH_RECAP_CHANGED",function(kind)
     if kind=="death"or kind=="life"or(kind=="settings"and not R:GetState().enabled)then R:CancelShare("Recap context changed")end
 end)
+local journalMappings=setmetatable({},{__mode="k"})
+local function JournalContext(self,page,row)
+    page,row=Public(page),Public(row)
+    if type(page)~="table"or type(row)~="table"or not self:IsRetainedPage(page)then return end
+    local encounter=Public(page.encounter);local native=Public(page.native)
+    local rows=type(native)=="table"and Public(native.rows)
+    if type(encounter)~="table"or type(rows)~="table"then return end
+    local retained=false;for i=1,math.min(#rows,64)do if rows[i]==row then retained=true;break end end
+    local boss,difficulty,spell=SpellID(encounter.encounterID),SpellID(encounter.difficulty),SpellID(row.spellID)
+    if retained and boss and difficulty and spell then return boss,difficulty,spell end
+end
 function R:GetJournalMapping(page,row)
-    if type(page)~="table"or type(row)~="table"or not self:IsRetainedPage(page)or not page.encounter or not row.spellID then return nil end
+    local boss,difficulty,spell=JournalContext(self,page,row);if not boss then return end
+    local cached=journalMappings[page]and journalMappings[page][spell]
+    if cached then return cached end
     for _,map in ipairs((RA.DeathRecapCatalog or {}).journal or {})do
-        if map.verified==true and map.encounterID==page.encounter.encounterID and map.difficulty==page.encounter.difficulty
-            and map.spellID==row.spellID then return map end
+        if map.verified==true and map.encounterID==boss and map.difficulty==difficulty and map.spellID==spell then return map end
     end
 end
-function R:OpenJournal(page,row)
-    local map=self:GetJournalMapping(page,row)
-    if not map then return false,"No verified Journal mapping"end
-    if not OpenAllowed()then return false,"Available after combat"end
-    local ok=pcall(function()
-        if type(EncounterJournal_LoadUI)=="function"then EncounterJournal_LoadUI()end
-        local info=Read(C_EncounterJournal and C_EncounterJournal.GetSectionInfo,map.sectionID)
-        if type(info)~="table"or Public(info.spellID)~=row.spellID or Public(info.filteredByDifficulty)~=false then error("section unverified")end
-        if type(EncounterJournal_OpenJournal)~="function"then error("journal unavailable")end
-        EncounterJournal_OpenJournal(map.difficulty,map.instanceID,map.journalEncounterID,map.sectionID)
+local function JournalEncounter(fn,...)
+    if type(fn)~="function"then return end
+    local ok,_,_,boss,root,_,instance,combatID=pcall(fn,...)
+    if ok then
+        boss,root,instance,combatID=SpellID(boss),SpellID(root),SpellID(instance),SpellID(combatID)
+        if boss and root and instance and combatID then return {journalEncounterID=boss,root=root,instanceID=instance,encounterID=combatID}end
+    end
+end
+-- On-click only. Native encounter IDs and the difficulty-filtered section tree
+-- establish the relationship; no global name search or guessed spell-ID table.
+local function ResolveJournal(page,row,boss,difficulty)
+    local journal=Public(EncounterJournal)
+    local priorTier,priorDifficulty=SpellID(Read(EJ_GetCurrentTier)),SpellID(Read(EJ_GetDifficulty))
+    if not priorTier or not priorDifficulty then return nil,"Dungeon Journal is unavailable"end
+    local priorInstance=type(journal)=="table"and SpellID(journal.instanceID)
+    local priorEncounter=type(journal)=="table"and SpellID(journal.encounterID)
+    local function Restore()
+        pcall(EJ_SelectTier,priorTier)
+        if priorInstance then pcall(EJ_SelectInstance,priorInstance)end
+        pcall(EJ_SetDifficulty,priorDifficulty)
+        if priorEncounter then pcall(EJ_SelectEncounter,priorEncounter)end
+    end
+    local ok,map,reason=pcall(function()
+        local found,calls,visited=nil,0,{}
+        local function Inspect(instance,tier)
+            if visited[instance]then return end;visited[instance]=true
+            EJ_SelectInstance(instance)
+            for index=1,64 do
+                calls=calls+1;if calls>4096 then error("lookup limit")end
+                local ok,_,_,journalID=pcall(EJ_GetEncounterInfoByIndex,index,instance)
+                journalID=ok and SpellID(journalID)
+                if not journalID then break end
+                local entry=JournalEncounter(EJ_GetEncounterInfo,journalID)
+                if entry and entry.instanceID==instance and entry.encounterID==boss then entry.tierIndex=tier;found=entry;return end
+            end
+        end
+        local cached=R:GetJournalMapping(page,row)
+        if cached then
+            local entry=JournalEncounter(EJ_GetEncounterInfo,cached.journalEncounterID)
+            if entry and entry.encounterID==boss and entry.instanceID==cached.instanceID then entry.tierIndex=cached.tierIndex;found=entry end
+        end
+        -- A captured game-map ID avoids enumerating other instances on new
+        -- deaths. Older retained pages can still resolve through native tiers.
+        local gameMap=SpellID(page.encounter.gameMapID)
+        local instance=gameMap and SpellID(Read(C_EncounterJournal and C_EncounterJournal.GetInstanceForGameMap,gameMap))
+        if not found and instance then Inspect(instance)end
+        if not found then
+            local tiers=SpellID(Read(EJ_GetNumTiers));if not tiers or tiers>32 then return nil,"Dungeon Journal is unavailable"end
+            local order={priorTier};for tier=tiers,1,-1 do if tier~=priorTier then order[#order+1]=tier end end
+            for _,tier in ipairs(order)do
+                EJ_SelectTier(tier)
+                for _,raid in ipairs({true,false})do
+                    for index=1,128 do
+                        local candidate=SpellID(Read(EJ_GetInstanceByIndex,index,raid));if not candidate then break end
+                        Inspect(candidate,tier);if found then break end
+                    end
+                    if found then break end
+                end
+                if found then break end
+            end
+        end
+        if not found then return nil,"Boss not found in the Dungeon Journal"end
+        if found.tierIndex then EJ_SelectTier(found.tierIndex)end
+        EJ_SelectInstance(found.instanceID);EJ_SetDifficulty(difficulty);EJ_SelectEncounter(found.journalEncounterID)
+        if Read(EJ_GetDifficulty)~=difficulty then return nil,"This Journal difficulty is unavailable"end
+        local verified=JournalEncounter(EJ_GetEncounterInfo,found.journalEncounterID)
+        if not verified or verified.encounterID~=boss or verified.instanceID~=found.instanceID or verified.root~=found.root then return nil,"Boss Journal entry is unavailable"end
+        local spell=SpellID(row.spellID);local name=Plain(row.rawSpellName)or Plain(row.name)or Plain(Read(C_Spell and C_Spell.GetSpellName,spell))
+        local queue,seen,index,exact,named={found.root},{},1,nil,{}
+        while index<=#queue do
+            if index>512 then return nil,"Boss Journal entry is too large to search"end
+            local id=queue[index];index=index+1
+            if not seen[id]then
+                seen[id]=true;local info=Read(C_EncounterJournal.GetSectionInfo,id)
+                if type(info)~="table"or getmetatable(info)~=nil then return nil,"Boss Journal entry is unavailable"end
+                local sibling,child=SpellID(info.siblingSectionID),SpellID(info.firstChildSectionID)
+                if sibling then queue[#queue+1]=sibling end
+                if Public(info.filteredByDifficulty)==false then
+                    local sectionSpell,title=SpellID(info.spellID),Plain(info.title)
+                    if sectionSpell==spell then exact=exact or id end
+                    if sectionSpell and name and title==name then named[#named+1]=id end
+                    if child then queue[#queue+1]=child end
+                end
+            end
+        end
+        -- Damage ticks can use a different spell ID from their parent ability.
+        -- A unique, exact native section title within this verified boss is a
+        -- fallback; repeated titles and fuzzy matches never select a section.
+        local section=exact or(#named==1 and named[1])
+        if not section then return nil,"Ability not listed separately in this boss's Journal"end
+        found.sectionID,found.spellID,found.difficulty=section,spell,difficulty
+        found.verified,found.match=true,exact and"spellID"or"exact-section-title"
+        return found
     end)
-    return ok,ok and "Journal opened"or"Journal entry unavailable"
+    Restore()
+    if not ok then return nil,"Dungeon Journal lookup is unavailable"end
+    return map,reason
+end
+function R:OpenJournal(page,row)
+    local boss,difficulty=JournalContext(self,page,row)
+    if not boss then return false,"This hit has no recorded boss encounter"end
+    if not OpenAllowed()then return false,"Available after combat"end
+    if type(EncounterJournal_LoadUI)=="function"then local ok=pcall(EncounterJournal_LoadUI);if not ok then return false,"Dungeon Journal is unavailable"end end
+    if not OpenAllowed()then return false,"Available after combat"end
+    for _,fn in ipairs({"EJ_GetEncounterInfo","EJ_GetEncounterInfoByIndex","EJ_SelectTier","EJ_SelectInstance","EJ_SetDifficulty","EJ_SelectEncounter","EncounterJournal_OpenJournal"})do
+        if type(_G[fn])~="function"then return false,"Dungeon Journal is unavailable"end
+    end
+    if not C_EncounterJournal or type(C_EncounterJournal.GetSectionInfo)~="function"then return false,"Dungeon Journal is unavailable"end
+    local map,reason=ResolveJournal(page,row,boss,difficulty)
+    if not map then return false,reason end
+    if not self:IsRetainedPage(page)or not OpenAllowed()then return false,"Available after combat"end
+    local ok=pcall(function()
+        if map.tierIndex then EJ_SelectTier(map.tierIndex)end
+        EncounterJournal_OpenJournal(map.difficulty,map.instanceID,map.journalEncounterID,map.sectionID,nil,nil,map.tierIndex)
+    end)
+    if ok then journalMappings[page]=journalMappings[page]or{};journalMappings[page][map.spellID]=map end
+    return ok,ok and"Journal opened"or"Journal entry unavailable"
 end

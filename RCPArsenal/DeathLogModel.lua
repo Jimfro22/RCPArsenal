@@ -110,6 +110,20 @@ local function Number(value)
     value=Public(value)
     if type(value)=="number"and value==value and value>-math.huge and value<math.huge then return value end
 end
+function Model:NamedCoverage(input)
+    local page=Table(input);local native=page and Table(page.native);local rows=native and Table(native.rows)
+    local result={count=0}
+    if not rows then return result end
+    for i=1,math.min(#rows,self.LIMITS.rows)do
+        local row=Table(rows[i]);local time=row and Number(row.nativeOffset)
+        if time then
+            result.count=result.count+1
+            result.first=math.min(result.first or time,time);result.last=math.max(result.last or time,time)
+        end
+    end
+    if result.first then result.span=result.last-result.first end
+    return result
+end
 -- Incoming receipts have their own clock and no spell/source/health identity.
 -- Keep this projection separate from native rows; never join by amount/time.
 function Model:Incoming(input)

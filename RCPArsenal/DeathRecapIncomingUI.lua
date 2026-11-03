@@ -15,7 +15,7 @@ local function Amount(n)
 end
 local function Exact(n)return(string.format("%.0f",n):reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,",""))end
 local schools={[1]="Physical",[2]="Holy",[4]="Fire",[8]="Nature",[16]="Frost",[32]="Shadow",[64]="Arcane"}
-function U:UpdateIncomingSelector(parent,incoming,mode,choose)
+function U:UpdateIncomingSelector(parent,incoming,mode,choose,help)
     local selector=parent.feedSelector
     if not selector and not incoming.available then return end
     if not selector then
@@ -26,8 +26,6 @@ function U:UpdateIncomingSelector(parent,incoming,mode,choose)
             Place(b,"TOPLEFT",selector,"TOPLEFT",(i-1)*148,0);T:ApplyRounded(b,C.surfaceRaised,6,"base")
             b.label=Font(b,11);Place(b.label,"CENTER",b,"CENTER",0,0)
             b.line=b:CreateTexture(nil,"OVERLAY");b.line:SetColorTexture(unpack(C.magenta));T.SetSize(b.line,120,2);Place(b.line,"BOTTOM",b,"BOTTOM",0,0)
-            b:SetScript("OnEnter",function(self)T:SetRoundedColor(self,C.surfaceHover,"base")end)
-            b:SetScript("OnLeave",function(self)T:SetRoundedColor(self,self.active and C.surfacePressed or C.surfaceRaised,"base")end)
         end
     end
     selector:SetShown(incoming.available)
@@ -36,6 +34,8 @@ function U:UpdateIncomingSelector(parent,incoming,mode,choose)
         Text(b.label,key=="history"and"8-second history"or"Named hits")
         T:SetRoundedColor(b,b.active and C.surfacePressed or C.surfaceRaised,"base")
         b:SetScript("OnClick",function()choose(key)end)
+        b:SetScript("OnEnter",function(self)T:SetRoundedColor(self,C.surfaceHover,"base");if help then help(self,key)end end)
+        b:SetScript("OnLeave",function(self)T:SetRoundedColor(self,self.active and C.surfacePressed or C.surfaceRaised,"base");if help then help()end end)
     end
 end
 function U:HideIncoming(parent)

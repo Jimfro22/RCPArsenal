@@ -18,6 +18,8 @@ local IDS=Set('spellID baseSpellID defensiveTalentSpellID itemID encounterID spe
 NUMERIC.localDeathNoticeAt=true
 NUMERIC.readBefore=true;NUMERIC.readAfter=true
 NUMERIC.noticeAt=true
+NUMERIC.gameMapID=true
+IDS.gameMapID=true
 NUMERIC.nativeCooldownAt=true;BOOLEAN.nativeCooldownActive=true
 local function Fields(input,keys,textOnly)
     input=Plain(input);if not input then return nil end
@@ -61,7 +63,7 @@ function H:Snapshot(input)
     if type(out.id)~='number'or out.id<1 or out.id>1e12 or out.id~=math.floor(out.id)or type(out.diedAt)~='number'or out.diedAt<0 then return nil end
     out.knownEntries=Array(input.knownEntries,32,function(v)return Fields(v,CHECK)end)
     out.lastAlive=Sample(input.lastAlive);out.deathObservation=Sample(input.deathObservation);out.precombatBaseline=Sample(input.precombatBaseline)
-    out.encounter=Fields(input.encounter,'auditEpoch encounterID name difficulty startedAt')
+    out.encounter=Fields(input.encounter,'auditEpoch encounterID gameMapID name difficulty startedAt')
     out.encounterEndObservation=Fields(input.encounterEndObservation,'encounterID observedAt auditEpoch')
     out.useCoverage=Fields(input.useCoverage,'startedAt combatEntryObserved reason endedAt rejectedReceipts lateReceipts')
     out.casts=Array(input.casts,64,function(v)return Fields(v,CAST)end)
