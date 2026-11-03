@@ -17,6 +17,7 @@ local BOOLEAN=Set('known isEnabled isActive isOnGCD chargesActive valid ownCoold
 local IDS=Set('spellID baseSpellID defensiveTalentSpellID itemID encounterID specID recapID rawSpellID school nativeIndex')
 NUMERIC.localDeathNoticeAt=true
 NUMERIC.readBefore=true;NUMERIC.readAfter=true
+NUMERIC.noticeAt=true
 local function Fields(input,keys,textOnly)
     input=Plain(input);if not input then return nil end
     local out={}
@@ -85,6 +86,11 @@ function H:Snapshot(input)
         out.liveIncoming=Fields(live,'source clock startedAt endedAt combatEntryObserved total rejected restricted capacity seconds callbacks inactive unitRejected actionRejected recording sessionPrecombat lockdownAtDeath nativeRegistered')
         out.liveIncoming.rows=Array(live.rows,256,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
         out.liveIncoming.trace=Array(live.trace,6,function(v)return Fields(v,'observedAt recording unit unitStatus action actionStatus')end)
+        local boundary=Plain(live.deathBoundary)
+        if boundary then
+            out.liveIncoming.deathBoundary=Fields(boundary,'source clock noticeAt deadline endedAt active capacity callbacks total rejected restricted unitRejected actionRejected truncated stopReason')
+            out.liveIncoming.deathBoundary.rows=Array(boundary.rows,16,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
+        end
         local probe=Plain(live.probe)
         if probe then
             out.liveIncoming.probe=Fields(probe,'active armedAt deadline endedAt stopReason nativeRegistered callbacks playerCallbacks otherCallbacks unreadableUnits textCallbacks textIncomingCallbacks')
