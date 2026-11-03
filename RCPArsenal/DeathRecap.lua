@@ -1,12 +1,13 @@
 local _, RA = ...
 local Recap = {}
 RA.DeathRecap = Recap
-Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5, incoming=256, incomingSeconds=8 }
+Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, attempts=3, interval=.5, incoming=256, incomingSeconds=8, deathBoundary=16, deathBoundarySeconds=.25 }
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
 local encounterContext;local encounterSerial=0
 local RefreshTicker,cooldownObserver,incomingObserver
+local deathBoundary
 local stats={samples=0,spellQueries=0,itemQueries=0,nativeReads=0,casts=0,rejectedNative=0}
 local clientBuild
 local opaqueChargeCounts=setmetatable({},{__mode="k"})
@@ -118,6 +119,46 @@ local function Notify(kind)RA:FireCallback("DEATH_RECAP_CHANGED",kind)end
 local function Diagnostic(method,...)
     local debug=RA.DeathRecapDebug
     if debug and type(debug[method])=="function"then pcall(debug[method],debug,...)end
+end
+-- A diagnostic window, separate from the frozen pre-death feed. A callback's
+-- delivery time does not establish when its damage happened or who caused it.
+local function StopDeathBoundary(reason)
+    local owner=deathBoundary;if not owner then return end
+    deathBoundary=nil
+    if owner.timer then owner.timer:Cancel()end
+    owner.packet.active=false;owner.packet.endedAt=Now();owner.packet.stopReason=reason
+    if Recap:IsRetainedPage(owner.page)then SaveHistory()end
+end
+local function StartDeathBoundary(page)
+    StopDeathBoundary("replaced")
+    local packet={source="UNIT_COMBAT:player",clock="GetTime",noticeAt=page.diedAt,deadline=page.diedAt+Recap.LIMITS.deathBoundarySeconds,
+        capacity=Recap.LIMITS.deathBoundary,active=true,callbacks=0,total=0,rejected=0,restricted=0,unitRejected=0,actionRejected=0,rows={}}
+    page.liveIncoming.deathBoundary=packet
+    local owner={page=page,session=session,packet=packet};deathBoundary=owner
+    if not C_Timer or type(C_Timer.NewTimer)~="function"then StopDeathBoundary("timer-unavailable");return end
+    local ok,timer=pcall(C_Timer.NewTimer,Recap.LIMITS.deathBoundarySeconds,function()
+        if deathBoundary==owner then StopDeathBoundary("window-ended")end
+    end)
+    if not ok or not timer then StopDeathBoundary("timer-error");return end
+    owner.timer=timer
+end
+local function CaptureDeathBoundary(unit,action,flag,amount,school)
+    local owner=deathBoundary
+    if not owner or owner.session~=session or not Enabled()then return end
+    local packet,time=owner.packet,Now()
+    if not time or time<packet.noticeAt then StopDeathBoundary("clock-unavailable");return end
+    if time>packet.deadline then StopDeathBoundary("window-ended");return end
+    packet.callbacks=packet.callbacks+1
+    if String(unit)~="player"then packet.unitRejected=packet.unitRejected+1;return end
+    action=String(action);if action~="WOUND"and action~="HEAL"then packet.actionRejected=packet.actionRejected+1;return end
+    local value=Number(amount,0,1e15)
+    if value==nil then
+        local key=FieldStatus(amount,"number")=="restricted"and"restricted"or"rejected"
+        packet[key]=packet[key]+1;return
+    end
+    packet.total=packet.total+1
+    if #packet.rows>=packet.capacity then packet.truncated=true;return end
+    packet.rows[#packet.rows+1]={sequence=packet.total,observedAt=time,kind=action=="WOUND"and"damage"or"healing",amount=value,flag=String(flag),school=Number(school,0,127)}
 end
 local function CancelFetch()
     generation=generation+1
@@ -453,6 +494,7 @@ local function CaptureBaseline(reason,domain,spellID,baseID)
 end
 local function NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()then return end
+    StopDeathBoundary("new-session")
     local previous=session
     Notify("reset")
     local entries,spec,class,overflow,unknown=BuildEntries()
@@ -597,6 +639,7 @@ local function OnDeath()
     session.dead=true;session.incomingRecording=false;last=page;table.insert(history,1,page)
     while #history>5 do table.remove(history)end
     if not explicitHistorySelection or not Recap:IsRetainedPage(selectedHistory)then selectedHistory=page;explicitHistorySelection=false end
+    StartDeathBoundary(page)
     Diagnostic("CapturePersonalNativeProbe",page)
     SaveHistory();Notify("death");FetchNative(page,generation)
 end
@@ -901,6 +944,7 @@ function Recap:GetState()
         recording=ticker~=nil,coverage=session and session.coverage or "No alive observations"}
 end
 function Recap:Refresh()
+    StopDeathBoundary("observer-reset")
     Diagnostic("StopCooldownCapture",Enabled()and"observer-reset"or"disabled")
     Diagnostic("StopIncomingProbe",Enabled()and"observer-reset"or"disabled")
     Notify("reset")
@@ -948,6 +992,7 @@ end
 Passive("PLAYER_DEAD",OnDeath)
 incomingObserver=Passive("UNIT_COMBAT",function(_,unit,action,flag,amount,school)
     if not session then return end
+    if session.dead then CaptureDeathBoundary(unit,action,flag,amount,school);return end
     session.incomingCallbacks=session.incomingCallbacks+1
     if #session.incomingTrace<6 then
         local function Token(value)local s=String(value,32);return s and s:match("^[%w_]+$")and s or nil end
@@ -994,6 +1039,7 @@ Passive("DAMAGE_METER_COMBAT_SESSION_UPDATED",function(_,kind,id)
 end)
 for _,event in ipairs({"PLAYER_ALIVE","PLAYER_UNGHOST","PLAYER_ENTERING_WORLD"})do
     Passive(event,function()
+        StopDeathBoundary(event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
         Diagnostic("StopCooldownCapture",event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
         StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil;baseline=nil end
         if Alive()then
