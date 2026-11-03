@@ -60,8 +60,8 @@ function U:RenderIncoming(parent,page,history,ctx)
         chart.lateHelp.label=Font(chart.lateHelp,11,C.textSoft);chart.lateHelp.label:SetJustifyH("RIGHT");chart.lateHelp.label:SetAllPoints(chart.lateHelp)
     end
     chart:Show();chart.guide:Hide()
-    Place(chart.healLegend,"TOPLEFT",chart,"TOPLEFT",48,-ctx.rail+84)
-    Place(chart.damageLegend,"TOPLEFT",chart,"TOPLEFT",144,-ctx.rail+84)
+    Place(chart.healLegend,"TOPLEFT",chart,"TOPLEFT",48,-ctx.headerTop)
+    Place(chart.damageLegend,"TOPLEFT",chart,"TOPLEFT",144,-ctx.headerTop)
     local baseline=ctx.healthTop-36
     Place(chart.damageTitle,"TOPLEFT",chart,"TOPLEFT",48,-baseline);Text(chart.damageTitle,history.damageCount..(history.damageCount==1 and" damage event"or" damage events")..(history.absorbedCount>0 and(" · "..history.absorbedCount.." absorbed")or""))
     Place(chart.damageTotal,"TOPLEFT",chart,"TOPLEFT",48,-baseline-14);Text(chart.damageTotal,Amount(history.damageTotal))

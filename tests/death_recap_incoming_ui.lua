@@ -58,6 +58,41 @@ local share=popup.shareChooser
 check(share.report.feedMode=='history'and share.payloadText:find('Healing: 300',1,true),'Post to chat ignores selected feed')
 share.close:Fire('OnClick');U:Hide()
 check(not chart:IsShown()and not popup.feedSelector:IsShown()and not chart.guide:IsShown(),'Closing log left incoming UI visible')
+-- Reproduce the endpoint-label collision through native-style anchor geometry,
+-- including the tallest healing bar and the outlier-flattened minimum bar.
+local originalLive,originalEncounter=page.liveIncoming,page.encounter
+local function Box(obj)
+ if obj==popup or obj==chart then return {left=0,top=0,right=popup.width,bottom=popup.height}end
+ local p=assert(obj.points and obj.points[1],'Missing geometry anchor')
+ local parent=Box(p[2]);local width=obj.width or obj:GetStringWidth();local height=obj.height or obj:GetStringHeight()
+ local function X(point)return point:find('LEFT',1,true)and 0 or point:find('RIGHT',1,true)and 1 or .5 end
+ local function Y(point)return point:find('TOP',1,true)and 0 or point:find('BOTTOM',1,true)and 1 or .5 end
+ local left=parent.left+(parent.right-parent.left)*X(p[3])+p[4]-width*X(p[1])
+ local top=parent.top+(parent.bottom-parent.top)*Y(p[3])-p[5]-height*Y(p[1])
+ return{left=left,top=top,right=left+width,bottom=top+height}
+end
+for _,pair in ipairs({{26000000,1},{1,26000000}})do
+ page.encounter={name='Synthetic encounter',startedAt=0}
+ page.liveIncoming={source='UNIT_COMBAT:player',clock='GetTime',startedAt=80,endedAt=100,rows={
+  {sequence=1,observedAt=99.9,kind='damage',amount=pair[1],school=1},
+  {sequence=2,observedAt=99.99,kind='healing',amount=pair[2],school=1}},deathBoundary=originalLive.deathBoundary}
+ U:ShowLast();popup.feedSelector.history:Fire('OnClick')
+ local heal
+ for _,b in ipairs(chart.bars)do if b:IsVisible()and b.feedKind=='healing'then heal=b end end
+ check(heal and heal.bucket==16,'Endpoint healing fixture did not reach the last bucket')
+ local timeBox,labelBox,legendBox=Box(popup.fight),Box(heal.amountLabel),Box(chart.healLegend)
+ check(popup.fight.text=='Fight 1:40'and timeBox.top==legendBox.top,'Fight time is not aligned with the history legend')
+ check(timeBox.bottom+8<=labelBox.top,'Fight time overlaps the final healing label or lacks vertical padding')
+ check(heal.group.amount==pair[2]and chart.healTotal.text==heal.amountLabel.text:sub(2),'Collision fix hid or rewrote the last healing amount')
+ local protected=false
+ for _,r in ipairs(popup.textExclusions)do
+  if r.right>=timeBox.right and r.left<=timeBox.right-popup.fight:GetStringWidth()and r.top<=timeBox.top and r.bottom>=timeBox.bottom then protected=true end
+ end
+ check(protected,'Cast connectors still use the old fight-time exclusion box')
+ popup.feedSelector.named:Fire('OnClick');check(popup.fight.points[1][1]=='BOTTOMRIGHT','History header position leaked into Named hits')
+ popup.feedSelector.history:Fire('OnClick');check(Box(popup.fight).bottom+8<=Box(heal.amountLabel).top,'Switching views restored the endpoint collision')
+end
+page.liveIncoming,page.encounter=originalLive,originalEncounter
 page.liveIncoming=nil;U:ShowLast()
 check(popup.feedMode=='named'and not popup.feedSelector:IsShown()and popup.healthPanel:IsShown(),'Older death without incoming receipts lost original view')
 io.write('PASS: '..checks..' actual-UI source separation, eight-second view, cast timing, inspection, sharing and lifecycle assertions\n')

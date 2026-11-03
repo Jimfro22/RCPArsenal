@@ -1228,7 +1228,11 @@ function UI:Render()
         local x=X(row.nativeOffset);frame.deathX=x;Place(frame.death,"TOP",frame,"TOPLEFT",x,-rail-10);Text(frame.death,"Death");frame.death:Show()
         for i=1,6 do local time=domain.first+(domain.last-domain.first)*(i-1)/5;if math.abs(X(time)-x)<32 then Text(frame.ticks[i],"");frame.tickLabels[i]=""end end
     end end
-    Place(frame.fight,"BOTTOMRIGHT",frame,"TOPLEFT",frame.deathX or 832,-rail+8)
+    -- The incoming view has endpoint healing labels immediately above the
+    -- axis. Keep encounter time in its legend row, clear of every bar height.
+    local historyHeaderTop=historyMode and rail-96 or nil
+    if historyMode then Place(frame.fight,"TOPRIGHT",frame,"TOPLEFT",832,-historyHeaderTop)
+    else Place(frame.fight,"BOTTOMRIGHT",frame,"TOPLEFT",frame.deathX or 832,-rail+8)end
     Place(frame.healthPanel,"TOPLEFT",frame,"TOPLEFT",48,-HEALTH_TOP-extraHeight)
     Place(frame.percent,"TOPLEFT",frame,"TOPLEFT",48,-(HEALTH_TOP-30)-extraHeight)
     Place(frame.hp,"TOPLEFT",frame,"TOPLEFT",552,-(HEALTH_TOP-23)-extraHeight)
@@ -1323,7 +1327,8 @@ function UI:Render()
     if frame.death:IsShown()then local x=frame.deathX or 832;local width=frame.death:GetStringWidth();frame.textExclusions[#frame.textExclusions+1]={left=x-width/2,right=x+width/2,top=rail+10,bottom=rail+23}end
     if frame.fight:IsShown()then
         local right=frame.deathX or 832;local width=math.min(170,frame.fight:GetStringWidth());local height=ReadMetric(frame.fight,"GetStringHeight")or 14
-        frame.textExclusions[#frame.textExclusions+1]={left=right-width,right=right,top=rail-8-height,bottom=rail-8}
+        local top=historyHeaderTop or rail-8-height
+        frame.textExclusions[#frame.textExclusions+1]={left=right-width,right=right,top=top,bottom=top+height}
     end
     for i=1,frame.supportMarkerCount do local b=frame.supportMarkers[i];local y=147+shelfExtra+(frame.castExtra or 0)+(b.lane-1)*20
         frame.textExclusions[#frame.textExclusions+1]={left=b.timeX-b.visualWidth/2,right=b.timeX+b.visualWidth/2,top=y-10,bottom=y+10}
@@ -1331,7 +1336,7 @@ function UI:Render()
     for i=1,#model.items do local b=damagePool[i];b.stems=b.stems or{};Stem(b.stems,(X(b.group.first)+X(b.group.last))/2,rail,b.spanY,pink,.55,frame.textExclusions)end
     if historyMode then
         frame.selected=nil;frame.selectedItem=nil;frame.healthPanel.selectedHP=nil;frame.healthPanel.selectedMax=nil
-        self:RenderIncoming(frame,page,incoming,{rail=rail,healthTop=HEALTH_TOP+extraHeight,tooltip=Tooltip,hideTooltip=HideTooltip,exclusions=frame.textExclusions,
+        self:RenderIncoming(frame,page,incoming,{rail=rail,headerTop=historyHeaderTop,healthTop=HEALTH_TOP+extraHeight,tooltip=Tooltip,hideTooltip=HideTooltip,exclusions=frame.textExclusions,
             active=function()return current==page and revision==renderRevision and frame:IsShown()and not(share and share:IsShown())end})
         RenderCastMarkers(page,shelfExtra,rail,revision);RenderSupports(page,example,shelfExtra,rail,revision)
         Shelf(page,false,0);return
