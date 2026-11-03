@@ -35,8 +35,8 @@ if DURATION_MODE=='held'then cooldown.isEnabled=false
 elseif DURATION_MODE=='charges'then charges={maxCharges=2,currentCharges=secret,isActive=true}
 elseif DURATION_MODE=='positive-charge'then charges={maxCharges=2,currentCharges=1,isActive=true}end
 time=11;event('SPELL_UPDATE_COOLDOWN',871)
-local expected=(DURATION_MODE=='held'or DURATION_MODE=='charges'or DURATION_MODE=='positive-charge')and 0 or 1
-check(calls==expected,'Fallback crossed held/charge boundary or missed eligible ambiguous query')
+local expected=(DURATION_MODE=='held'or DURATION_MODE=='positive-charge')and 0 or 1
+check(calls==expected,'Fallback queried a held/known charge or missed an eligible native snapshot')
 dead=true;time=11.01;event('PLAYER_DEAD');local row=R:GetPage().lastAlive.spells[1]
 if DURATION_MODE=='held'then check(R:ClassifyRecordedCheck(row)==false,'Held lost negative fact')
 elseif DURATION_MODE=='positive-charge'then check(R:ClassifyRecordedCheck(row)==true,'Fresh positive charge count lost')

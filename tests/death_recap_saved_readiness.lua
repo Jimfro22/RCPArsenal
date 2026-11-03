@@ -104,16 +104,16 @@ local cases={
  ]=]},
  {name='single_charge_duration_predicates',body=[=[
  charges={maxCharges=1,currentCharges=secret,isActive=false};cooldown={isEnabled=true,isActive=true}
- local queries=0
+ local queries,predicates=0,0
  C_Spell.GetSpellCooldownDuration=function(_,ignore)
   queries=queries+1;check(ignore==true,'Single-charge duration included GCD')
-  local value=newproxy(true);getmetatable(value).__index={IsActive=function()return true end,IsZero=function()return false end};return value
+  local value=newproxy(true);getmetatable(value).__index={IsActive=function()predicates=predicates+1;return true end,IsZero=function()predicates=predicates+1;return false end};return value
  end
  combat=true;R:SetOption('enabled',true);local page=freeze()
  check(queries>0 and find(page).recordedState==false and find(saved(page)).recordedState==false,'Readable single-charge own-duration result did not persist')
- R:SetOption('enabled',false);dead=false;time=20;charges={maxCharges=2,currentCharges=secret,isActive=true};local before=queries
+ R:SetOption('enabled',false);dead=false;time=20;charges={maxCharges=2,currentCharges=secret,isActive=true};local before,priorPredicates=queries,predicates
  R:SetOption('enabled',true);page=freeze()
- check(queries==before and find(page).recordedState==nil,'Multi-charge spell used normal duration predicates to guess its remaining charges')
+ check(queries>before and predicates==priorPredicates and find(page).recordedState==nil,'Multi-charge spell used ordinary predicates without a readable native availability witness')
  ]=]},
  {name='single_charge_private_predicates_do_not_become_public',body=[=[
  charges={maxCharges=1,currentCharges=secret,isActive=false};cooldown={isEnabled=true,isActive=true}
