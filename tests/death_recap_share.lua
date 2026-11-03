@@ -1,5 +1,4 @@
--- Frozen report facts only. Native rendering, delivery and clock synchronization
--- are separate acceptance concerns; this fixture performs no chat transmission.
+-- Compact sharing uses frozen named hits from either tab. No native delivery claim.
 local checks=0
 local function check(value,message)checks=checks+1;assert(value,message)end
 local secret=setmetatable({},{__tostring=function()error('Secret stringified')end})
@@ -7,7 +6,7 @@ function issecretvalue(value)return rawequal(value,secret)end
 local page
 local R={GetPage=function()return page end}
 function R:IsRetainedPage(value)return value==page end
-function R:GetRecordedUseRole(row)return row.role=='utility'and'utility'or'defensive'end
+function R:GetCooldownRows(value)return value.cooldownRows or{}end
 local RA={DeathRecap=R,DeathRecapCatalog={itemUseSpells={[6262]=true}}}
 local subscriptions,callbacks={},{}
 function RA:RegisterOptionalEvent(event,fn)
@@ -18,198 +17,74 @@ function RA:RegisterCallback(event,fn)callbacks[event]=fn end
 local function event(name)for _,s in ipairs(subscriptions)do if s.enabled and s.event==name then s.fn()end end end
 assert(loadfile('RCPArsenal/DeathLogModel.lua'))('RCPArsenal',RA)
 assert(loadfile('RCPArsenal/DeathRecapActions.lua'))('RCPArsenal',RA)
-local function build(preview)
- local report,reason=R:BuildShareReport(page,preview)
- check(report and not reason,'Report unavailable')
- check(R:BuildShareText(page,preview)==report.text,'Text diverges from report snapshot')
- return report
-end
 local function has(text,part)return text:find(part,1,true)~=nil end
 local function row(index,time,name,amount)
- return{nativeIndex=index,nativeOffset=time,spellID=123,name=name,kind='damage',amount=amount,sourceConfirmed=true,sourceKey='A'}
+ return{nativeIndex=index,nativeOffset=time,spellID=123,name=name,kind='damage',amount=amount}
 end
-page={id=1,diedAt=100,encounter={name='Test encounter',startedAt=0},casts={},native={rows={
- row(2,-5,'First',10),row(3,-4.7,'Third',20),row(4,-4.9,'Second',30),row(1,0,'Fatal',40)}}}
-local before={};for i,r in ipairs(page.native.rows)do before[i]=r end
-local report=build()
-check(#report.entries==5,'Original events or death omitted')
-for i,name in ipairs({'First','Second','Third','Fatal'})do check(has(report.entries[i].line,name),'Interleaved group reordered original hits')end
-for i,r in ipairs(before)do check(page.native.rows[i]==r,'Build mutated captured row order')end
-check(report.entries[1].clock=='native'and has(report.entries[1].line,'[-5.0s]'),'Native offset lost provenance')
-check(not has(report.entries[1].line,'1:35'),'Invented native fight timestamp')
-check(has(report.entries[5].line,'[1:40.0]')and report.entries[5].clock=='local','Local death missing fight time')
-check(has(report.text,'Separate timelines.'),'Independent clocks were silently combined')
-check(has(report.text,'Damage · times before final recorded hit')and has(report.text,'Abilities used · fight time'),'Friendly headings lost their separate time anchors')
-check(not has(report.text,'Native')and not has(report.text,'Local')and not has(report.text,'[recap')and not has(report.text,'[local'),'Technical clock labels remain in ordinary report')
-check(build().text==report.text,'Repeated builds differ')
-
--- Exact duplicate facts remain distinct, including native fatal before a later
--- unknown event. Native zero is not the local death observation.
-page.native.rows={row(3,-1,'Same',15),row(2,-1,'Same',15),row(1,-1,'Fatal',10),
- {nativeIndex=4,nativeOffset=0,spellID=99,name='Unclassified',kind='unknown',event='SPELL_HEAL',amount=8}}
-report=build()
-check(#report.entries==5,'Equal-time events were deduplicated')
-check(report.entries[1].index==1 and report.entries[2].index==2 and report.entries[3].index==3,'Native tie order changed')
-check(report.entries[4].kind=='unknown'and has(report.entries[4].line,'event type unknown'),'Unknown native event became healing')
-check(report.entries[4].clock=='native'and report.entries[5].kind=='death'and report.entries[5].clock=='local','Native maximum became death')
-check(has(report.text,'Recorded events · times before final record')and not has(report.text,'times before final recorded hit'),'Unknown final record was labelled as a hit')
-
--- Display rounding never changes raw order, precision or the fatal identity.
--- Encounter time remains one consistent signed clock, including early/unknown uses.
-page.native.rows={row(3,-.591,'Earlier',15),row(2,-.589,'Later',15),row(1,0,'Fatal',10)}
-page.encounter.startedAt=95
-page.casts={{spellID=123,name='Early use',observedAt=94.76},{spellID=123,name='Unknown use'}}
-report=build()
-check(report.entries[1].time==-.591 and report.entries[2].time==-.589 and report.entries[1].index==3 and report.entries[2].index==2,'Tenths changed exact order or stored precision')
-check(has(report.entries[1].line,'[-0.6s]')and has(report.entries[2].line,'[-0.6s]'),'Relative offsets were not rounded to tenths')
-check(has(report.text,'[-0:00.2] Early use: defensive use')and has(report.text,'[Time unknown] Unknown use: defensive use'),'Encounter use mixed clocks or hid unknown time')
-check(has(report.text,'[0:05.0] Death'),'Known encounter death time lost')
-page.encounter.startedAt=0;page.casts={}
-
--- Positive absorption belongs to its original hit. Unknown damage is not zero;
--- markup/secret values never enter plain text or trigger live decoration reads.
-page.native.rows={row(1,0,'|Hbad|hInjected|h',nil),row(2,-1,'Zero',0)}
-page.native.rows[1].absorbed=20000;page.native.rows[1].overkill=secret
-page.native.rows[2].sourceName='Hidden source';page.native.rows[2].hideCaster=true
-report=build()
-check(#report.entries==3 and has(report.entries[2].line,'spell 123: damage amount unavailable; 20,000 absorbed'),'Absorption duplicated or missing amount became zero')
-check(has(report.entries[1].line,'0 damage'),'Public zero lost')
-check(not has(report.text,'|')and not has(report.text,'Hidden source'),'Unsafe or hidden source text leaked')
-page.native.rows[2].hideCaster=false;page.native.rows[2].sourceName='Recorded attacker'
-report=build();check(has(report.text,'recorded source: Recorded attacker'),'Public incoming source omitted from complete report')
-for _,hidden in ipairs({true,secret})do
- page.native.rows[2].hideCaster=hidden
- report=build();check(not has(report.text,'Recorded attacker'),'Hidden or restricted caster identity leaked')
+page={id=1,playerName='Fro',diedAt=100,encounter={name='Test encounter',startedAt=0},casts={{spellID=235450,name='Do not dump cast history',observedAt=99}},
+ native={rows={}},cooldownRows={{spellID=414658,name='Ice Cold',recordedState=true},{spellID=235450,name='Barrier',recordedState=false},
+ {spellID=55342,name='Mirror Image',recordedState=nil},{kind='potion',recordedState=true}}}
+for i=1,12 do page.native.rows[i]=row(i,-(i-1)*.5,'Hit '..i,1000+i)end
+page.native.rows[1].overkill=500;page.native.rows[2].absorbed=250
+page.native.rows[13]=row(13,-6.01,'Too old',99999)
+page.native.rows[14]={nativeIndex=14,nativeOffset=-.2,spellID=55,kind='unknown',amount=99999,name='Not damage'}
+page.liveIncoming={source='UNIT_COMBAT:player',clock='GetTime',startedAt=80,endedAt=100,rows={
+ {kind='healing',observedAt=93.99,sequence=1,amount=900000},
+ {kind='healing',observedAt=94,sequence=2,amount=300},
+ {kind='damage',observedAt=99,sequence=3,amount=88888},
+ {kind='healing',observedAt=99,sequence=4,amount=700}}}
+local original=page.native.rows
+local report=assert(R:BuildShareReport(page,false,'history'))
+check(report.feedMode=='named'and #report.entries==6 and #report.sections==1,'Share did not cap to six named hits')
+check(report.text==R:BuildShareText(page,false,'named'),'Selected tab changes the shared report')
+check(page.native.rows==original and #original==14,'Sharing mutated stored data')
+check(report.entries[1].index==6 and report.entries[6].index==1,'Latest hits are not chronological with fatal last')
+check(not has(report.text,'Too old')and not has(report.text,'Not damage')and not has(report.text,'88.9k')and not has(report.text,'dump cast'),'History/older/unknown records leaked into chat')
+check(report.summary.damage==6021 and report.summary.absorbed==250 and report.summary.overkill==500,'Selected hit totals differ from members')
+check(report.summary.healing==1000 and report.summary.healingSpan==6 and has(report.text,'Healing / last 6.0s: 1.0k'),'Separate six-second healing total is wrong')
+check(has(report.text,'Available: Ice Cold, Healing potion')and not has(report.text,'Barrier')and not has(report.text,'Mirror Image'),'Unconfirmed/unavailable abilities called available')
+for _,entry in ipairs(report.entries)do
+ check(not has(entry.line,'absorbed')and not has(entry.line,'overkill')and not has(entry.line,'source'),'Per-hit line is not concise')
+ check(entry.clock=='native'and not has(entry.line,'1:3'),'Named hit was assigned an unproven fight time')
 end
-page.native.rows[2].hideCaster=nil
-report=build();check(not has(report.text,'Recorded attacker'),'Missing caster permission exposed identity')
-page.native.rows[2].hideCaster=false;page.native.rows[2].sourceName=secret
-report=build();check(not has(report.text,'recorded source:'),'Restricted source was formatted')
-page.native.rows[1].amount=secret;page.native.rows[1].name=secret
-report=build();check(has(report.text,'amount unavailable'),'Restricted scalar became amount')
+check(#report.lines==10 and has(report.text,'Fro')and has(report.text,'Killing blow'),'Compact report context or bounded lines missing')
+local missing={id=2};check(not R:BuildShareReport(missing),'Stale record accepted')
+page.native.rows={row(1,0,'Fatal',secret),row(2,-1,'Earlier',50),row(3,-1,'Same time',70)}
+report=assert(R:BuildShareReport(page));check(#report.entries==2 and report.entries[1].index==3,'Restricted amount used or equal-time native order lost')
+page.native=nil;page.cooldownRows={};page.liveIncoming=nil
+report=assert(R:BuildShareReport(page));check(#report.entries==0 and has(report.text,'No named hits recorded')and not has(report.text,'Healing /'),'Missing facts became zero or anonymous history dump')
+local preview={id=0,diedAt=132,native={rows={row(1,0,'Sample hit',45000)}},heals={{offset=-1,amount=9000}}}
+check(not R:BuildShareReport(preview),'Unmarked sample accepted')
+check(has(assert(R:BuildShareReport(preview,true)).text,'Preview — sample'),'Preview identification lost')
 
--- Retained uses can exceed the eight visible support icons. Aggregated history
--- never fabricates additional per-use events, healing or availability claims.
-page.native=nil;page.casts={};page.observedUses={[123]={observedCount=70,firstSuccessfulUseAt=1,lastSuccessfulUseAt=10}}
-for i=1,64 do page.casts[i]={spellID=i==32 and 6262 or 123,name=i~=32 and'Defensive'or nil,observedAt=70+i*.4}end
-page.heals={{offset=-1,name='Forged heal',amount=99999}};page.supports={{offset=-2,name='Forged aura',finish=0}}
-page.sample=true;page.origin='example'
-report=build()
-check(#report.entries==65,'Full retained cast ring was capped to visible icons or expanded from summary')
-check(has(report.entries[32].line,'spell 6262: item use'),'Item receipt misclassified or live name queried')
-check(has(report.text,'Damage records unavailable')and has(report.text,'up to 30 seconds'),'Missing native packet or receipt scope not disclosed')
-check(not has(report.text,'Forged')and not has(report.text,'ready')and not has(report.text,'unused defensive'),'Live page trusted fixture fields or invented readiness')
-check(not R:BuildShareReport({id=2}),'Stale page accepted')
-page.encounter=nil;report=build()
-check(has(report.entries[1].line,'[-29.6s]')and has(report.entries[65].line,'[0.0s]'),'Missing encounter invented fight time')
-check(has(report.text,'Abilities used · times before death'),'Relative use heading omitted death anchor')
-
--- Private fictional clock can interleave hits, heals, uses and death.
-local preview={id=0,diedAt=132,specID=62,class='MAGE',encounter={name='The Coiled Altar',difficulty=16,startedAt=0},
- native={rows={row(2,-4.8,'Axegrinder',15000),row(3,-4.6,'Axegrinder',15000),row(4,-4.4,'Axegrinder',15000),row(1,0,'Venomfang',45000)}},
- heals={{offset=-4.2,name='Flash Heal',spellID=2061,amount=9000,healer='Example healer'}},
- supports={{offset=-3.5,name='Prismatic Barrier',spellID=235450},{offset=-1.8,name='Healthstone',spellID=6262}}}
-check(not R:BuildShareReport(preview),'Unmarked sample accepted as recorded page')
-local real=page;page=preview;report=build(true);page=real
-check(#report.entries==8 and #report.sections==1,'Fictional common timeline is incomplete')
-check(has(report.text,'RCP Preview — fictional sample')and has(report.text,'Arcane Mage / The Coiled Altar / Mythic'),'Preview provenance/context missing')
-check(has(report.entries[1].line,'[2:07.2]')and has(report.entries[4].line,'[2:07.8]'),'Preview fight offsets wrong')
-check(has(report.entries[4].line,'9,000 healing from Example healer'),'Healing facts missing')
-check(has(report.entries[6].line,'Healthstone: item use'),'Preview item activation missing')
-check(report.entries[7].kind=='damage'and report.entries[8].kind=='death'and report.entries[8].time==0,'Death missing or preceding fatal hit')
-
--- Same bounded native row selection as the display; fatal/largest are retained.
-page.native={rows={},truncated=true};page.casts={}
-for i=1,80 do page.native.rows[i]=row(i+1,i-80,'Row '..i,i)end
-page.native.rows[80].nativeIndex=1;page.native.rows[79].amount=999999
-report=build()
-check(#report.entries==65 and has(report.text,'Record is truncated'),'Bounded capture scope hidden')
-check(has(report.text,'Row 80')and has(report.text,'999,999 damage'),'Displayed fatal/largest row missing')
-local long='- [-1.0s] '..string.rep('é界',80)..': 1 damage'
-local chunks=assert(R:BuildShareMessages({lines={'Header',long,'- [0.0s] Death'}}))
-local reconstructed=''
-for i=2,#chunks-1 do
- check(#chunks[i]<=255,'Chunk exceeds conservative byte budget')
- local chunk=i==2 and chunks[i]or chunks[i]:sub(5)
- check(chunk:byte(1)<128 or chunk:byte(1)>=192,'Chunk starts inside UTF-8 character')
- reconstructed=reconstructed..chunk
+-- Verified native links stay atomic and frozen; captured markup is never a link.
+local reads=0
+local nativeLink='|cff71d5ff|Hspell:123:0|h[Verified hit]|h|r'
+C_Spell={GetSpellLink=function(id)reads=reads+1;return id==123 and nativeLink end}
+page.native={rows={row(1,0,'Captured',100),row(2,-.2,'Captured',200)}}
+local linked=assert(R:BuildShareReport(page));check(reads==1 and not has(linked.text,'|'),'Metadata not cached or copy has markup')
+local output=table.concat(assert(R:BuildShareMessages(linked)),'\n')
+check(has(output,nativeLink),'Verified clickable spell link missing')
+linked.lines[1]='|Hunsafe|h';linked.chatLines={{nativeLink}}
+check(table.concat(assert(R:BuildShareMessages(linked)),'\n')==output,'Public report mutation changed frozen transport')
+check(not R:BuildShareMessages({lines={nativeLink}}),'Unverified native-looking markup accepted')
+for _,bad in ipairs({secret,'|Hspell:1|h[Wrong ID]|h','|Hitem:123|h[Item]|h','|Hspell:123|h[Name\n]|h'})do
+ C_Spell.GetSpellLink=function()return bad end;C_Spell.GetSpellName=function()return 'Verified fallback' end
+ local safe=assert(R:BuildShareReport(page));check(has(safe.text,'Verified fallback')and not has(table.concat(assert(R:BuildShareMessages(safe))),'|'),'Bad link not rejected')
 end
-check(reconstructed==long and chunks[#chunks]=='- [0.0s] Death','Chunking lost text or report tail')
-check(not R:BuildShareMessages({lines={'bad\nline'}})and not R:BuildShareMessages({lines={'|Hunsafe|h'}}),'Unsafe chat text accepted')
-local excessive={lines={}};for i=1,257 do excessive.lines[i]='Line '..i end
-check(not R:BuildShareMessages(excessive),'Oversized report silently truncated')
--- Only validated public native links are decorated, once per retained spell ID
--- per build. The copy report remains readable plain text and never needs chat.
-local linkReads,nameReads=0,0
-local nativeLink='|cff71d5ff|Hspell:6262:0|h[Healthstone]|h|r'
-C_Spell={GetSpellLink=function(id)linkReads=linkReads+1;return id==6262 and nativeLink or nil end,
- GetSpellName=function(id)nameReads=nameReads+1;return id==123 and 'Verified defensive' or nil end}
-page.native={rows={row(1,0,'Captured hit',100)}};page.casts={}
-for i=1,64 do page.casts[i]={spellID=6262,observedAt=80+i*.1}end
-local linked=assert(R:BuildShareReport(page))
-check(linkReads==2 and nameReads==1,'Metadata calls were not bounded per unique retained spell')
-check(has(linked.text,'Healthstone: item use')and has(linked.text,'Verified defensive: 100 damage'),'Readable native metadata name was not used')
-check(not has(linked.text,'|')and not has(linked.text,'spell 6262'),'Plain copy retained markup or numeric fallback despite verified name')
-local linkedMessages=assert(R:BuildShareMessages(linked));local lookups=linkReads+nameReads
-local linkCount=0
-for _,message in ipairs(linkedMessages)do
- check(#message<=255,'Linked message exceeds raw-byte budget')
- if has(message,'|')then check(has(message,nativeLink),'Native link was split or changed');linkCount=linkCount+1 end
-end
-check(linkCount==64 and linkReads+nameReads==lookups,'Links disappeared or chunking queried live metadata')
-local frozen=table.concat(linkedMessages,'\n');linked.lines[1]='|Hunsafe|h';linked.chatLines={{nativeLink}}
-check(table.concat(assert(R:BuildShareMessages(linked)),'\n')==frozen,'Public fields rewrote private frozen link payload')
-check(not R:BuildShareMessages({lines={nativeLink}}),'Native-looking captured markup bypassed provenance validation')
-
--- Bad or unavailable links keep a readable fallback; no constructed fake link,
--- captured markup, secret value or unrelated native spell ID can enter chat.
-local badLinks={secret,'|Hspell:1|h[Wrong ID]|h','|Hitem:6262|h[Item]|h',
- '|Hspell:6262|h[Name]|h|Hspell:1|h[Injection]|h','|czzzzzzzz|Hspell:6262|h[Name]|h|r',
- '|Hspell:6262|h[Name\n]|h','|Hspell:6262|h[Name|Tbad|t]|h','|Hspell:6262|h[Name'..string.char(255)..']|h'}
-page.native=nil;page.casts={{spellID=6262,name='|Hspell:6262|h[Captured]|h',observedAt=99}}
-for _,bad in ipairs(badLinks)do
- C_Spell.GetSpellLink=function()return bad end;C_Spell.GetSpellName=function()return 'Verified Healthstone' end
- local safe=assert(R:BuildShareReport(page));local output=table.concat(assert(R:BuildShareMessages(safe)),'\n')
- check(has(safe.text,'Verified Healthstone')and not has(output,'|'),'Invalid native link or captured markup survived validation')
-end
-C_Spell.GetSpellLink=function()error('Unavailable')end;C_Spell.GetSpellName=function()return secret end
-local unavailable=assert(R:BuildShareReport(page))
-check(has(unavailable.text,'spell 6262')and not has(unavailable.text,'Captured'),'Unavailable metadata fabricated a name')
-check(R:BuildShareMessages(unavailable)~=nil,'Unavailable metadata prevented plain-text report')
-
--- Long native tokens stay atomic when the event prefix leaves too little room;
--- multibyte labels, suffixes and continuation chunks retain every byte.
-local wideLabel=string.rep('界',40)
-local longLink='|cff71d5ff|Hspell:6262:'..string.rep('0:',42)..'0|h['..wideLabel..']|h|r'
-check(#longLink<=251 and #longLink>235,'Long-link fixture does not exercise prefix overflow')
-C_Spell.GetSpellLink=function()return longLink end;C_Spell.GetSpellName=function()error('Link name already available')end
-local wide=assert(R:BuildShareReport(page));local wideMessages=assert(R:BuildShareMessages(wide));local found=false
-for _,message in ipairs(wideMessages)do
- check(#message<=255,'Long-link chunk exceeds final budget')
- if has(message,'|')then check(has(message,longLink),'Atomic link was split');found=true end
-end
-check(found and has(wide.text,wideLabel),'Long multibyte native label missing')
-local tooLong='|cff71d5ff|Hspell:6262:'..string.rep('0:',60)..'0|h['..wideLabel..']|h|r'
-C_Spell.GetSpellLink=function()return tooLong end;C_Spell.GetSpellName=function()return 'Healthstone' end
-local oversizedLink=assert(R:BuildShareReport(page))
-check(not has(table.concat(assert(R:BuildShareMessages(oversizedLink))),'|')and has(oversizedLink.text,'Healthstone'),'Oversize link was cut instead of falling back')
-for _,invalid in ipairs({string.char(128),string.char(192,128),string.char(237,160,128),string.char(244,144,128,128),string.char(240,159)})do
- check(not R:BuildShareMessages({lines={'Invalid '..invalid}}),'Malformed UTF-8 accepted')
-end
-local plainCopy={text='Full report available for copy',lines={}};for i=1,257 do plainCopy.lines[i]='Line '..i end
-local failed,reason=R:BuildShareMessages(plainCopy)
-check(not failed and has(reason,'select text to copy')and plainCopy.text=='Full report available for copy','Chunk failure destroyed plain copy or hid reason')
--- Metadata work is bounded to retained unique IDs, never all catalog entries.
-local metadataCount=0
-C_Spell={GetSpellLink=function()metadataCount=metadataCount+1 end,GetSpellName=function()return 'Known spell' end}
-local bound={diedAt=100,native={rows={}},heals={},supports={}}
-for i=1,64 do bound.native.rows[i]=row(i,i-64,'Captured',1);bound.native.rows[i].spellID=i
- bound.heals[i]={spellID=64+i,offset=i-64,amount=1};bound.supports[i]={spellID=128+i,offset=i-64}end
-assert(R:BuildShareReport(bound,true));check(metadataCount==192,'Decoration exceeded retained unique-ID bound')
-metadataCount=0;page.native=nil;page.casts={}
-for i,id in ipairs({0,-1,.5,math.huge,secret})do page.casts[i]={spellID=id,name='Captured',observedAt=99}end
-assert(R:BuildShareReport(page));check(metadataCount==0,'Invalid or restricted spell ID reached metadata API')
+local label=string.rep('界',40);local longLink='|cff71d5ff|Hspell:123:'..string.rep('0:',42)..'0|h['..label..']|h|r'
+C_Spell.GetSpellLink=function()return longLink end
+local wide=assert(R:BuildShareReport(page));local found=false
+for _,message in ipairs(assert(R:BuildShareMessages(wide)))do check(#message<=255,'Message byte budget exceeded');if has(message,'|')then check(has(message,longLink),'Long link split');found=true end end
+check(found,'Long valid native link lost')
 C_Spell=nil
+for _,invalid in ipairs({'bad\nline','|Hunsafe|h',string.char(128),string.char(192,128),string.char(240,159)})do
+ check(not R:BuildShareMessages({lines={invalid}}),'Unsafe text or UTF-8 accepted')
+end
+local excessive={lines={}};for i=1,257 do excessive.lines[i]='Line '..i end
+check(not R:BuildShareMessages(excessive),'Oversized message count not bounded')
+
+local linkedMessages=assert(R:BuildShareMessages(linked))
 
 -- Namespaced ordinary-chat API; no addon transport, native messages or live
 -- input. Dispatch is explicit, paced, cancelable and reports submission only.
@@ -318,6 +193,6 @@ for i=2,#linkedMessages do nextTimer()end
 check(#calls==linkedCount+#linkedMessages and progress.status=='complete','Linked report lost tail')
 local receivedLinks=0
 for i=linkedCount+1,#calls do if has(calls[i].text,nativeLink)then receivedLinks=receivedLinks+1 end end
-check(receivedLinks==64,'Validated native links failed final dispatch guard')
+check(receivedLinks==2,'Validated native links failed final dispatch guard')
 check(activeSubscriptions()==0,'Idle queue left optional events active')
-print('PASS: '..checks..' full Death Log report assertions (offline)')
+print('PASS: '..checks..' compact Death Log report assertions (offline)')

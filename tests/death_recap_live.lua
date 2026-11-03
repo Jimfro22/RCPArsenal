@@ -48,7 +48,7 @@ check(not popup or not popup:IsShown(),'Default auto-open interrupted the death 
 check(U:ShowLast(),'Manual own-death view unavailable');popup=named.RCPArsenalDeathRecap
 check(popup and popup:IsShown()and not popup.coverage:IsShown()and popup.selected.nativeIndex==1 and popup.healthPanel.selectedHP==0,'Manual open did not show the captured native page')
 check(popup.contextText:find('Live integration fixture',1,true)and not popup.context and not popup.health,'Live context lost or approved labels returned')
-local report=R:BuildShareReport(page,false);check(report.text:find('61,000 damage',1,true)and report.text:find('Shield Wall',1,true)and not report.text:find('fictional',1,true),'Live report lost captured evidence or leaked Preview')
+local report=R:BuildShareReport(page,false);check(report.text:find('61.0k',1,true)and report.summary.damage==101000 and report.entries[#report.entries].index==1 and not report.text:find('fictional',1,true),'Live report lost captured evidence or leaked Preview')
 nativeRows[1].amount=1;check(page.native.rows[1].amount==61000,'Native input mutated the frozen page')
 local lastAlive=page.lastAlive.spells[1].cooldown;active=false;event('SPELL_UPDATE_COOLDOWN');check(page.lastAlive.spells[1].cooldown==lastAlive,'Post-death event changed the frozen living check')
 dead=false;event('PLAYER_ALIVE');check(not popup:IsShown()and R:GetPage()==page,'Resurrection reopened or discarded the retained page')

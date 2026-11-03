@@ -70,158 +70,108 @@ local function ShareNames()
         return name,metadata and metadata.link
     end
 end
-local function Amount(value)
-    value=Number(value)
-    if not value or value<0 then return nil end
-    local text=string.format("%.0f",value)
-    return text:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")
-end
 local function FightTime(value)
     if value==nil then return "Time unknown"end
-    local magnitude=math.abs(value)
-    local minutes,seconds=math.floor(magnitude/60),math.floor((magnitude%60)*10+.5)/10
-    if seconds==60 then minutes,seconds=minutes+1,0 end
-    return string.format("%s%.0f:%04.1f",value<0 and(minutes>0 or seconds>0)and"-"or"",minutes,seconds)
+    local magnitude=math.floor(math.abs(value))
+    return string.format("%s%.0f:%02.0f",value<0 and"-"or"",math.floor(magnitude/60),magnitude%60)
 end
 local function Relative(value)
     if value==nil then return "Time unknown"end
     local magnitude=string.format("%.1f",math.abs(value))
     return(magnitude~="0.0"and(value<0 and"-"or"+")or"")..magnitude.."s"
 end
-local function SortEvents(a,b)
-    if a.time~=b.time then return(a.time or math.huge)<(b.time or math.huge)end
-    if a.kind=="death"or b.kind=="death"then return a.kind~="death"and b.kind=="death"end
-    if a.index~=b.index then return a.index<b.index end
-    return a.order<b.order
+local function Compact(value)
+    value=Number(value)
+    if not value or value<0 then return nil end
+    if value>=1e6 then return string.format("%.1fm",value/1e6)end
+    if value>=1000 then return string.format("%.1fk",value/1000)end
+    return string.format("%.0f",value)
 end
-local function RetainedRows(input)
-    -- Match the display's bounded oversize retention without calculating group
-    -- totals or trusting an optional amount for arithmetic.
-    local rows,fatal,largest,maximum={},nil,nil,nil
-    for i=1,math.min(#input,256)do
-        local row=input[i];local amount=Number(row.amount)
-        if row.nativeIndex==1 then fatal=row end
-        if row.nativeIndex~=1 and row.kind=="damage"and amount and(not maximum or amount>maximum)then largest,maximum=row,amount end
-        if i<=64 then rows[#rows+1]=row end
-    end
-    for _,important in ipairs({fatal or false,largest or false})do if important then
-        local present=false;for _,row in ipairs(rows)do if row==important then present=true end end
-        if not present then for i=#rows,1,-1 do if rows[i]~=fatal and rows[i]~=largest then rows[i]=important;break end end end
-    end end
-    return rows,#input>64
-end
--- A report is a snapshot of retained facts, not an aggregation of rendered
--- groups. Interleaved groups and equal-time hits keep every original row.
+-- Sharing always uses a small native-hit summary, independent of the open tab.
+-- Local healing is a separate bounded receipt-window total; it is never paired
+-- with native hits or used to assign them a fight-clock timestamp.
 function R:BuildShareReport(page,preview,feedMode)
     if type(page)~="table"or(preview~=true and not self:IsRetainedPage(page))then return nil,"No recorded personal recap"end
     preview=preview==true
-    local incoming=not preview and feedMode=="history"and RA.DeathLogModel:Incoming(page)or nil
-    local late=incoming and RA.DeathLogModel:LateIncoming(page)or nil
-    if feedMode=="history"and not preview and not incoming.available then return nil,"No live history was recorded for this death"end
-    local report={preview=preview,feedMode=incoming and"history"or"named",lines={},entries={},sections={}}
+    local report={preview=preview,feedMode="named",lines={},entries={},sections={}}
     local tokens={lines={},links={}};reportTokens[report]=tokens
     local Name=ShareNames()
     local function Line(text,parts)
         report.lines[#report.lines+1]=text;tokens.lines[#tokens.lines+1]=parts or{text}
     end
-    local context={page.specID==62 and"Arcane Mage"or Plain(page.class)or"Personal"}
-    if page.encounter then
-        context[#context+1]=Plain(page.encounter.name)
-        if page.encounter.difficulty==16 then context[#context+1]="Mythic"end
-    end
-    Line((preview and"RCP Preview — fictional sample"or incoming and"RCP Death Log — 8-second history"or"RCP Death Log — partial capture").." · "..table.concat(context," / "))
     local died,started=Number(page.diedAt),page.encounter and Number(page.encounter.startedAt)
     local fight=died and started and died>=started and died-started or nil
-    local native,localEvents={},{}
-    local order=0
-    local eventLinks={}
-    local function Add(list,kind,time,index,text,name,link)
-        order=order+1;local entry={kind=kind,time=time,index=index or order,order=order,text=text};list[#list+1]=entry
-        if link then eventLinks[entry]={name=name,link=link};tokens.links[link]=true end
-    end
+    local player=Plain(page.playerName)
+    local encounter=page.encounter and Plain(page.encounter.name)
+    Line((preview and"RCP Preview — sample"or"RCP Death Log")..(player and" · "..player or"")..(encounter and" · "..encounter or"")..(fight and" · Fight "..FightTime(fight)or""))
+    local selected={}
     local rows=page.native and page.native.rows or{}
-    local retained,truncated=RetainedRows(rows)
-    for _,row in ipairs(incoming and{}or retained)do
-        local amount=Amount(row.amount)
-        local name,link=Name(row)
-        local text=name..": "..(row.kind=="damage"and(amount and amount.." damage"or"damage amount unavailable")or(amount and amount.." (event type unknown)"or"event type unknown"))
-        if row.kind=="damage"then
-            local absorbed,overkill=Amount(row.absorbed),Amount(row.overkill)
-            if absorbed and Number(row.absorbed)>0 then text=text.."; "..absorbed.." absorbed"end
-            if overkill and Number(row.overkill)>0 then text=text.."; "..overkill.." overkill"end
-        end
-        if row.nativeIndex==1 then text=text..(row.kind=="damage"and"; fatal hit"or"; death record")end
-        local source=Public(row.hideCaster)==false and Plain(row.sourceName)
-        if source then text=text.."; recorded source: "..source end
-        Add(native,row.kind=="damage"and"damage"or"unknown",Number(row.nativeOffset),Number(row.nativeIndex),text,name,link)
-    end
-    if preview then
-        local heals,supports=page.heals or{},page.supports or{}
-        for i=1,math.min(#heals,64)do local row=heals[i]
-            local amount=Amount(row.amount)
-            local healer=Plain(row.healer);local name,link=Name(row)
-            Add(native,"healing",Number(row.offset),Number(row.nativeIndex),name..": "..(amount and amount.." healing"or"healing amount unavailable")..(healer and" from "..healer or""),name,link)
-        end
-        for i=1,math.min(#supports,64)do local row=supports[i]
-            local item=(RA.DeathRecapCatalog or{}).itemUseSpells or{}
-            local name,link=Name(row)
-            Add(native,"use",Number(row.offset),Number(row.nativeIndex),name..(item[row.spellID]and": item use"or self:GetRecordedUseRole(row)=="utility"and": utility use"or": defensive use"),name,link)
-        end
-        Add(native,"death",0,math.huge,"Death")
-    else
-        local casts=page.casts or{}
-        for i=math.max(1,#casts-63),#casts do local row=casts[i]
-            local observed=Number(row.observedAt)
-            local item=(RA.DeathRecapCatalog or{}).itemUseSpells or{}
-            local name,link=Name(row)
-            Add(localEvents,"use",observed,i,name..(item[row.spellID]and": item use"or self:GetRecordedUseRole(row)=="utility"and": utility use"or": defensive use"),name,link)
-        end
-        Add(localEvents,"death",died,math.huge,"Death")
-        if incoming then for _,entry in ipairs(incoming.rows)do
-            local text=entry.kind=="absorbed"and"Fully absorbed hit"or(entry.kind=="healing"and"Healing: "or"Damage: ")..Amount(entry.amount)
-            if entry.critical then text=text.."; critical"end
-            Add(localEvents,entry.kind,entry.observedAt,64+entry.index,text)
-        end end
-    end
-    local function Section(title,events,clock)
-        Line(title);report.sections[#report.sections+1]={title=title,clock=clock,events=events}
-        table.sort(events,SortEvents)
-        for _,event in ipairs(events)do
-            local stamp
-            if clock=="preview"then stamp=fight and event.time and FightTime(fight+event.time)or Relative(event.time)
-            elseif clock=="delivery"then stamp=string.format("+%.2fs received",event.time-died)
-            elseif clock=="local"then stamp=fight and FightTime(event.time and event.time-started)or Relative(event.time and died and event.time-died)
-            else stamp=Relative(event.time)end
-            event.clock=clock;event.line="- ["..stamp.."] "..event.text
-            report.entries[#report.entries+1]=event
-            local decoration=eventLinks[event]
-            Line(event.line,decoration and{"- ["..stamp.."] ",{link=decoration.link},event.text:sub(#decoration.name+1)}or nil)
-        end
-    end
-    if preview then Section("Fight timeline",native,"preview")
-    elseif incoming then
-        Section(fight and"Recorded history · fight time"or"Recorded history · times before death",localEvents,"local")
-        Line("Damage and healing: last 8 seconds. Uses: up to 30 seconds. Spell names and attackers are not supplied for these damage/healing events.")
-        Line("Combat feedback uses receipt times, not exact hit times, and can arrive late.")
-        if late.available then
-            local deliveries={}
-            for _,entry in ipairs(late.rows)do
-                local text=entry.kind=="absorbed"and"Absorb reported"or(entry.kind=="healing"and"Healing reported: "or"Damage reported: ")..Amount(entry.amount)
-                if entry.critical then text=text.."; critical"end
-                Add(deliveries,entry.kind,entry.observedAt,entry.index,text)
+    for i=1,math.min(#rows,64)do
+        local row=Public(rows[i])
+        if type(row)=="table"then
+            local offset,amount=Number(row.nativeOffset),Number(row.amount)
+            if Public(row.kind)=="damage"and offset and offset>=-6 and offset<=0 and amount and amount>=0 and amount<=1e15 then
+                selected[#selected+1]={row=row,time=offset,index=Number(row.nativeIndex)or i,fatal=Number(row.nativeIndex)==1,amount=amount}
             end
-            Section("Late reports · receipt times after death",deliveries,"delivery")
-            Line("Late reports are separate from chart totals; no spell identity or hit timestamp is inferred.")
         end
-        if late.pending then Line("Late reports are still being collected.")elseif late.partial then Line("Late report collection is incomplete.")end
-    else
-        local damageOnly=true;for _,event in ipairs(native)do if event.kind~="damage"then damageOnly=false;break end end
-        Section(damageOnly and"Damage · times before final recorded hit"or"Recorded events · times before final record",native,"native")
-        if #native==0 then Line("Damage records unavailable.")end
-        Section(fight and"Abilities used · fight time"or"Abilities used · times before death",localEvents,"local")
-        Line("Separate timelines. Uses cover up to 30 seconds; missing uses are unknown. Healing and effect durations were not recorded.")
     end
-    if incoming and incoming.truncated or not incoming and(truncated or(page.native and page.native.truncated))then Line("Record is truncated; all retained events are included.")end
+    table.sort(selected,function(a,b)if a.time~=b.time then return a.time<b.time end;return a.index>b.index end)
+    while #selected>6 do table.remove(selected,1)end
+    local summary={hits=#selected,damage=0,absorbed=0,overkill=0}
+    report.summary=summary
+    for _,event in ipairs(selected)do
+        summary.damage=summary.damage+event.amount
+        summary.absorbed=summary.absorbed+math.max(0,Number(event.row.absorbed)or 0)
+        summary.overkill=summary.overkill+math.max(0,Number(event.row.overkill)or 0)
+    end
+    if #selected>0 then
+        summary.span=selected[#selected].time-selected[1].time
+        local text=string.format("%d hit%s / %.1fs: %s damage",#selected,#selected==1 and""or"s",summary.span,Compact(summary.damage))
+        if summary.absorbed>0 then text=text.." · "..Compact(summary.absorbed).." absorbed"end
+        if summary.overkill>0 then text=text.." · "..Compact(summary.overkill).." overkill"end
+        Line(text)
+    else Line("No named hits recorded in the final 6s.")end
+    local healing,healSpan
+    if preview then
+        for _,row in ipairs(page.heals or{})do
+            local offset,amount=Number(row.offset),Number(row.amount)
+            if offset and offset>=-6 and offset<=0 and amount and amount>=0 then healing=(healing or 0)+amount end
+        end
+        if healing then healSpan=6 end
+    elseif RA.DeathLogModel then
+        local incoming=RA.DeathLogModel:Incoming(page)
+        if incoming.available then
+            healing,healSpan=0,math.min(6,died-page.liveIncoming.startedAt)
+            for _,row in ipairs(incoming.rows)do
+                if row.kind=="healing"and row.offset>=-6 then healing=healing+row.amount end
+            end
+        end
+    end
+    if healing then
+        summary.healing,summary.healingSpan=healing,healSpan
+        Line(string.format("Healing / last %.1fs: %s",healSpan,Compact(healing)))
+    end
+    if type(self.GetCooldownRows)=="function"then
+        local available={}
+        for _,row in ipairs(self:GetCooldownRows(page,preview))do
+            if Public(row.recordedState)==true then
+                available[#available+1]=row.kind=="stone"and"Healthstone"or row.kind=="potion"and"Healing potion"or Name(row)
+            end
+        end
+        if #available>0 then Line("Available: "..table.concat(available,", "))end
+        report.available=available
+    end
+    for _,event in ipairs(selected)do
+        local name,link=Name(event.row)
+        local suffix=": "..Compact(event.amount)..(event.fatal and" · Killing blow"or"")
+        local prefix="- "..Relative(event.time).." "
+        event.kind,event.clock,event.text="damage","native",name..suffix
+        event.line=prefix..event.text
+        report.entries[#report.entries+1]=event
+        if link then tokens.links[link]=true end
+        Line(event.line,link and{prefix,{link=link},suffix}or nil)
+    end
+    report.sections[1]={title="Named hits",clock="native",events=report.entries}
     report.text=table.concat(report.lines,"\n")
     return report
 end
@@ -231,7 +181,7 @@ function R:BuildShareText(page,preview,feedMode)
 end
 -- Our conservative 255-raw-byte budget includes markup; it is not a claim
 -- about a native transport limit. Links are indivisible; only plain text wraps.
--- The plain full report stays available even if transport limits fail.
+-- The plain compact report stays available even if transport limits fail.
 local function ValidMessage(message,links)
     message=Public(message)
     if type(message)~="string"or #message>255 then return false end

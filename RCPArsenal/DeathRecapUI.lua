@@ -665,7 +665,7 @@ local function Ensure()
         if frame.capturedFullName then lines[#lines+1]="Player: "..frame.capturedFullName end
         if IsExample()then lines[#lines+1]="Fictional sample"end
         if current and current.native and current.native.truncated then lines[#lines+1]="Partial death record"end
-        if frame.viewport and frame.viewport.omitted>0 then lines[#lines+1]=frame.viewport.omitted.." retained events outside this timeline window; included in the full report"end
+        if frame.viewport and frame.viewport.omitted>0 then lines[#lines+1]=frame.viewport.omitted..(frame.viewport.omitted==1 and" older record saved; "or" older records saved; ").."chat shares up to six recent hits"end
         if current and not IsExample()and not current.native then
             lines[#lines+1]=current.nativeStatus or"Hit details unavailable"
         end
@@ -1501,7 +1501,7 @@ function Share.ShowReport(report)
     for i=#(report.lines or{})+1,#share.reportRows do share.reportRows[i]:Hide()end
     share.body:SetHeight(y+8);share.copy:SetHeight(y+8);share.copy:SetText(share.payloadText);share.copy:ClearFocus();share.copy:Hide()
     share.scrollPosition=0
-    Text(share.context,(share.preview and"Preview"or"Captured recap").." · "..#(report.entries or{}).." events"..(share.messages and" · "..#share.messages.." messages"or" · Copy available"))
+    Text(share.context,(share.preview and"Preview"or"Captured recap").." · "..#(report.entries or{}).." named hits"..(share.messages and" · "..#share.messages.." messages"or" · Copy available"))
 end
 function Share.Create()
     share=CreateFrame("Frame",nil,frame);share:SetFrameStrata("DIALOG");share:SetFrameLevel(frame:GetFrameLevel()+20);share:SetClampedToScreen(true);share:EnableMouse(true)
@@ -1563,10 +1563,10 @@ function UI:OpenShare()
     if not ActionPage(current,IsExample())then return end
     if share and share:IsShown()then return end
     if not share then Share.Create()end
-    local sameSubmitted=share.page==current and share.preview==IsExample()and share.feedMode==frame.feedMode and(share.submitted or 0)>0
+    local sameSubmitted=share.page==current and share.preview==IsExample()and(share.submitted or 0)>0
     share.generation=(share.generation or 0)+1;share.expanded=false
     if not sameSubmitted then
-        R:CancelShare("Report replaced");share.page,share.preview,share.feedMode=current,IsExample(),frame.feedMode
+        R:CancelShare("Report replaced");share.page,share.preview,share.feedMode=current,IsExample(),"named"
         share.jobStatus=nil;share.submitted=0;share.total=0;share.manual=false;share.progress:Hide()
         local report,reason=R:BuildShareReport(current,share.preview,share.feedMode)
         if not report then RA:Print(reason or"Report unavailable");return end

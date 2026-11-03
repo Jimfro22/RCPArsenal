@@ -343,14 +343,14 @@ do
  check(popup.timeDomain.first==-8 and popup.timeDomain.last==0 and popup.viewport.omitted==1,'Real view hid a retained hit inside eight seconds')
  check(page.native.rows==domainRows and #page.native.rows==5 and domainRows[1].nativeOffset==-20,'Viewport cropped or retimed retained page history')
  local report=assert(R:BuildShareText(page))
- for _,row in ipairs(domainRows)do check(report:find(row.name,1,true),'Full report omitted original history outside the viewport')end
+ check(not report:find('Historical tail',1,true),'Compact sharing included the old retained tail')
  U:OpenShare();check(popup.shareChooser.copy:GetText()==report,'Visible report chooser copied only viewport events');popup.shareChooser.close:Fire('OnClick')
- tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('1 retained events outside this timeline window; included in the full report',1,true),'Outside-eight-second history lost discoverable report disclosure');popup.info:Fire('OnLeave')
+ tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('1 older record saved; chat shares up to six recent hits',1,true),'Outside-eight-second history lost discoverable report disclosure');popup.info:Fire('OnLeave')
  page.native.recapMaxHealth=nil;U:ShowLast();check(popup.timeDomain.first==-8 and popup.viewport.omitted==1,'Unavailable max health hid known earlier damage')
  domainRows[3].amount=25000;U:ShowLast();check(popup.timeDomain.first==-8,'Changing hit magnitude changed real time coverage')
  domainRows[3].nativeOffset=-7.2;U:ShowLast();check(popup.timeDomain.first==-8,'Qualifying hit inside the last eight seconds did not extend to eight')
  domainRows[3].nativeOffset=-8.01;U:ShowLast();check(popup.timeDomain.first==-8 and popup.viewport.omitted==2,'Older-than-eight hit was clamped or changed the display span')
- check(#page.native.rows==5 and assert(R:BuildShareText(page)):find('Historical tail',1,true),'Repeated viewport updates lost full retained history')
+ check(#page.native.rows==5 and not assert(R:BuildShareText(page)):find('Historical tail',1,true),'Repeated viewport updates dumped full retained history')
 end
 page=copyPage;U:Preview()
 -- Alpha32 companion tooltip, fixed Preview endpoint and actual reminder switch.
@@ -438,13 +438,11 @@ check(#chatCalls==0,'Opening chooser submitted chat')
 check(not GameTooltip:IsShown()and not popup.tooltipRecap:IsShown(),'Opening share retained old tooltip')
 check(not shareForm.copy.template and not shareForm.recipient and not shareForm.send and shareForm.copy.textInsets[1]==10,'Typed recipient/separate Send/default editbox chrome remained')
 local fullReport=shareForm.report
-check(#fullReport.entries==16 and fullReport.entries[16].kind=='death','Full Preview events/death missing')
-check(fullReport.text:find('Arcane Mage',1,true)and fullReport.text:find('The Coiled Altar',1,true)and fullReport.text:find('Mythic',1,true),'Hidden popup context disappeared from the full report')
-local expectedTimes={-4.8,-4.6,-4.4,-4.2,-3.6,-3.5,-3.15,-3,-2.8,-2.3,-1.8,-1.3,-1.1,-.9,0,0}
-for i,time in ipairs(expectedTimes)do check(fullReport.entries[i].time==time,'Preview report chronology changed')end
-local axeCount=0;for _,item in ipairs(fullReport.entries)do if item.line:find('Axegrinder',1,true)then axeCount=axeCount+1 end end
-check(axeCount==6 and fullReport.entries[15].line:find('45,000 damage; 19,000 overkill; fatal hit',1,true),'Report collapsed hits or confused inspected hit with fatal')
-check(fullReport.entries[5].line:find('20,000 absorbed',1,true)and fullReport.entries[4].line:find('9,000 healing',1,true),'Full report lost support facts')
+check(#fullReport.entries==6 and fullReport.entries[6].fatal,'Preview sharing did not keep six recent hits and the killing blow')
+check(fullReport.text:find('The Coiled Altar',1,true)and fullReport.text:find('Fight 2:12',1,true),'Compact context lost the encounter or fight time')
+for i=2,#fullReport.entries do check(fullReport.entries[i].time>=fullReport.entries[i-1].time,'Compact preview hit order changed')end
+check(fullReport.entries[6].line:find('45.0k',1,true)and fullReport.entries[6].line:find('Killing blow',1,true),'Inspected hit replaced the killing blow')
+check(fullReport.summary.overkill==19000 and fullReport.summary.healing==20000,'Compact preview totals lost known support facts')
 check(shareForm.width==316 and not shareForm.expanded and not shareForm.reportScroll:IsShown()and not shareForm.scrollbar:IsShown(),'Default share is not a compact chooser')
 check(not shareForm.channels.WHISPER:IsEnabled()and not shareForm.channels.PARTY:IsEnabled()and not shareForm.channels.RAID:IsEnabled()and not shareForm.channels.INSTANCE_CHAT:IsShown(),'Unavailable destination looks ready')
 check(shareForm.channels.SAY:IsEnabled()and shareForm.channels.SAY.detail.text=='One line per click','SAY fallback is hidden or promises whole-report activation')
@@ -466,7 +464,7 @@ check(shareForm.channels.PARTY:IsEnabled()and shareForm.channels.RAID:IsEnabled(
 homeGroup=false;homeRaid=false;instanceGroup=false;event('GROUP_ROSTER_UPDATE')
 check(not shareForm.channels.PARTY:IsEnabled()and not shareForm.channels.INSTANCE_CHAT:IsShown(),'Group loss retained stale destinations')
 shareForm.copyButton:Fire('OnClick')
-check(shareForm.width==600 and shareForm.height==396 and shareForm.reportScroll.clips and shareForm.scrollMaximum>0 and shareForm.reportScroll:IsShown(),'Expanded full report lacks bounded scrolling viewport')
+check(shareForm.expanded and shareForm.width==600 and shareForm.reportScroll:IsShown()and shareForm.scrollMaximum>=0 and shareForm.scrollbar:IsShown()==(shareForm.scrollMaximum>0),'Compact report viewport is not bounded or scrollbar visibility is wrong')
 check(not shareForm.copy:IsShown()and not shareForm.copy:HasFocus(),'Copy expansion stole focus before selection')
 shareForm.reportScroll:Fire('OnMouseWheel',-10000);check(shareForm.reportScroll:GetVerticalScroll()==shareForm.scrollMaximum,'Wheel cannot reach last report line')
 shareForm.scrollbar:SetValue(0);check(shareForm.scrollPosition==0,'Scrollbar cannot return to report start')
@@ -572,10 +570,10 @@ U:ShowLast();U:OpenShare();local liveBeforePreview=popup.shareChooser
 local staleDestination=liveBeforePreview.channels.SAY:GetScript('OnClick')
 U:Preview();staleDestination(liveBeforePreview.channels.SAY);check(#chatCalls==0,'Stale destination callback acted in Preview')
 popup.share:Fire('OnClick');local previewForm=popup.shareChooser;local previewPage=previewForm.page
-check(previewForm.copy:GetText():find('fictional sample',1,true),'Preview copy report lost provenance')
+check(previewForm.copy:GetText():find('sample',1,true),'Preview copy report lost provenance')
 check(not R:BuildShareText(previewPage),'Unmarked sample accepted as recorded recap')
 local beforeChatTimers=#timers;choose(previewForm,'SAY')
-check(#chatCalls==1 and chatCalls[1].channel=='SAY'and chatCalls[1].text:find('RCP Preview — fictional sample',1,true)and #timers==beforeChatTimers,'Destination click did not synchronously submit first SAY line')
+check(#chatCalls==1 and chatCalls[1].channel=='SAY'and chatCalls[1].text:find('RCP Preview — sample',1,true)and #timers==beforeChatTimers,'Destination click did not synchronously submit first SAY line')
 check(previewForm.nextLine:IsShown()and previewForm.close.label.text=='CANCEL'and not previewForm.channels.WHISPER:IsEnabled(),'Posting state/control locks absent')
 check(not eventFrame.registered.PLAYER_TARGET_CHANGED,'Submission retained live target subscription')
 local lockedTarget=previewForm.target;setTarget('QueuedTarget','Player-1-AB00CD');check(previewForm.target==lockedTarget,'Posting chooser re-read target')
@@ -647,7 +645,7 @@ for _,b in ipairs(objects)do if b.parent==popup and b.useGroup and b:IsVisible()
 end end
 check(utilityChips==2,'Eligible utility receipts disappeared')
 local utilityReport=assert(R:BuildShareText(page))
-check(utilityReport:find('Greater Invisibility: utility use',1,true)and utilityReport:find('Mirror Image: utility use',1,true),'Full report reclassified legacy utility casts')
+check(not utilityReport:find('utility use',1,true),'Compact report dumped utility cast history')
 page.lastAlive.spells[2].role='defensive';page.lastAlive.spells[2].defensiveTalentSpellID=1309497
 U:ShowLast();check(#shelves()==3 and #RA.DeathRecapEntry:GetRows(page)==3,'Captured learned Refractive Images qualification lost defensive shelf/card')
 U:Preview()

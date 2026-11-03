@@ -2,6 +2,13 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.58 — Compact Death Log sharing
+
+### Changed
+
+- Post to chat shares up to six named hits from the final six seconds, from either view.
+- Reports summarize recorded damage, absorbs, overkill, healing and confirmed available abilities.
+
 ## 0.15.3-alpha.57 — Consolidation and testing
 
 ### Added
