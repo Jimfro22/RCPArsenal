@@ -22,6 +22,11 @@ def build():
     supplies=json.loads((path.parent/'consumables.json').read_text())
     fields=['key','spellID','name','category','role','class','specs','knownSpellIDs','verified','requiredTalentSpellIDs']
     entries=[{k:e[k] for k in fields if k in e} for e in data['entries'] if e['verified'] is True]
+    for source,entry in zip((e for e in data['entries'] if e['verified'] is True),entries):
+        replacements={o['replaces_spell_id'] for o in (source.get('eligibility',{}).get('overrides') or [])
+                      if isinstance(o,dict) and o.get('spell_id')==entry['spellID']
+                      and isinstance(o.get('replaces_spell_id'),int) and o['replaces_spell_id']>0}
+        if replacements:entry['replacesSpellIDs']=sorted(replacements)
     spells={i:True for e in supplies['entries'] if e['verified'] for i in e['useSpellIDs']}
     item_names={i:e['name'] for e in supplies['entries'] if e['verified'] for i in e['useSpellIDs']}
     item_kinds={i:e['category'] for e in supplies['entries'] if e['verified'] for i in e['useSpellIDs']}

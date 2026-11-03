@@ -1157,7 +1157,9 @@ function UI:Render()
     local rows=page.native and page.native.rows or{}
     local referenceMax=example and Number(page.maxHealth,true)or page.native and Number(page.native.recapID,true)and Number(page.native.recapMaxHealth,true)
     local alignment=not example and(historyMode and M:AlignLocalUses(page)or M:AlignUses(page))or nil
-    local viewport=historyMode and{rows={},first=-8,last=0,span=8,omitted=0,retainedCount=0}or M:Viewport(rows,referenceMax,alignment);frame.viewport=viewport
+    -- Real records always expose the whole retained eight-second window,
+    -- including small/fully absorbed hits. The example keeps its designed span.
+    local viewport=historyMode and{rows={},first=-8,last=0,span=8,omitted=0,retainedCount=0}or M:Viewport(rows,referenceMax,alignment,not example and 8 or nil);frame.viewport=viewport
     model=M:Group(viewport.rows,example and page.transitions or{},{items=16});domain={first=viewport.first,last=viewport.last}
     frame.timeDomain=domain
     local castExtra=PrepareCastMarkers(page,example,alignment);frame.castExtra=castExtra

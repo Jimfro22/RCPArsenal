@@ -218,7 +218,7 @@ do
  end
  U:ShowLast();local firstMarker=popup.castMarkers[1]
  check(popup.castAlignment.anchorValid and #popup.castAlignment.aligned==3 and #popup.castAlignment.unaligned==1 and popup.castMarkerCount==2,'Cast alignment lost repeated successes, included derived receipt or clamped an older cast into view')
- check(popup.castExtra==48 and #page.casts==4 and popup.timeDomain.first==-5,'Approximate markers changed the native time window or retained receipt list')
+ check(popup.castExtra==48 and #page.casts==4 and popup.timeDomain.first==-8,'Approximate markers changed the full real time window or retained receipt list')
  check(#popup.castFallback==2 and popup.castFallback[1]==page.casts[1]and popup.castFallback[2]==page.casts[4],'Fallback did not retain only the offscreen and unaligned receipts')
  local fallbackSeen={};local fallbackCount=0
  for _,chip in ipairs(UseChips())do
@@ -233,7 +233,7 @@ do
  for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i]
   seenReceipt[marker.entry.index]=true
   check(marker.entry.row==page.casts[marker.entry.index]and marker.entry.offset==-1.75 and marker.entry.age==1.5 and marker.age.text=='~1.5s','Approximate marker lost exact receipt or death-notice-relative age')
-  check(marker.timeX==48+3.25/5*784 and marker.iconX>=48 and marker.iconX<=832 and marker:IsShown(),'Packed cast marker retimed its connector or escaped the native axis')
+  check(marker.timeX==48+6.25/8*784 and marker.iconX>=48 and marker.iconX<=832 and marker:IsShown(),'Packed cast marker retimed its connector or escaped the native axis')
   tooltipLines={};tooltipSpell=nil;marker:Fire('OnEnter');local copy=table.concat(tooltipLines,' ')
   check(tooltipSpell==235450 and copy:find('~1.5s before death; aligned to death notification.',1,true)and copy:find('Recorded successful cast · Timing is approximate',1,true),'Approximate cast tooltip lost its explicit alignment disclosure')
   check(popup.selected==beforeSelected and popup.healthPanel.selectedHP==beforeHP and not popup.healing:IsShown(),'Cast marker changed raw selected HP or synthesized healing')
@@ -248,7 +248,7 @@ do
  for i=1,13 do page.casts[i]={spellID=235450,name='Repeated Barrier',observedAt=99,source='UNIT_SPELLCAST_SUCCEEDED'}end
  U:ShowLast();check(popup.castMarkerCount==13 and popup.castExtra==96,'Dense cast receipts were dropped or failed to reserve another marker lane')
  check(#popup.castFallback==0 and #popup.recordedUseGroups==0 and #UseChips()==0 and not popup.usesLabel:IsShown(),'Fully plotted receipts retained duplicate fallback chips or caption')
- local counts={};for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i];counts[marker.lane]=(counts[marker.lane]or 0)+1;check(marker.timeX==48+3.75/5*784,'Dense packing changed cast time')end
+ local counts={};for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i];counts[marker.lane]=(counts[marker.lane]or 0)+1;check(marker.timeX==48+6.75/8*784,'Dense packing changed cast time')end
  check(counts[1]<=12 and counts[2]<=12,'Cast marker lane exceeded its packing capacity')
  page.native.clockDiagnostic.localDeathNoticeAt=99;U:ShowLast();NoCastMarkers('Stale clock anchor')
  check(#page.casts==13 and #popup.recordedUseGroups[1].rows==13,'Unaligned marker cleanup discarded factual use receipts')
@@ -268,7 +268,7 @@ do
  local originalPage=page;local M=RA.DeathLogModel
  local align,viewport=M.AlignUses,M.Viewport;local calls,latestAlignment,viewportAlignment=0,nil,nil
  M.AlignUses=function(self,input)calls=calls+1;latestAlignment=align(self,input);return latestAlignment end
- M.Viewport=function(self,rows,maximum,alignment)viewportAlignment=alignment;return viewport(self,rows,maximum,alignment)end
+ M.Viewport=function(self,rows,maximum,alignment,minimumSpan)viewportAlignment=alignment;check(minimumSpan==8,'Real renderer did not request the complete window');return viewport(self,rows,maximum,alignment,minimumSpan)end
  local rows={
   {nativeIndex=5,nativeOffset=-8.3,timestamp=1991.7,kind='damage',name='Old report tail',amount=90000,recordedHP=90000},
   {nativeIndex=4,nativeOffset=-6.8,timestamp=1993.2,kind='damage',name='Newly visible small hit',amount=1000,recordedHP=89000},
@@ -280,36 +280,36 @@ do
   {spellID=414658,name='Ice Cold',observedAt=93.5,source='UNIT_SPELLCAST_SUCCEEDED'},
   {spellID=55342,name='Mirror Image',observedAt=95.4,source='UNIT_SPELLCAST_SUCCEEDED'}},native={recapID=52,recapMaxHealth=100000,rows=rows,
   clockDiagnostic={localClock='GetTime',localDeathNoticeAt=100,localSessionStartedAt=60,nativeFatalTimestamp=2000,nativeMaximumTimestamp=2000,nativeRowCount=5}}}
- local function RenderSpan(span)
+ local function RenderSpan()
   local before=calls;U:ShowLast()
   check(calls==before+1 and viewportAlignment==latestAlignment and popup.castAlignment==latestAlignment,'Render recomputed alignment or passed different projections to viewport and markers')
-  check(popup.timeDomain.first==-span and popup.timeDomain.last==0,'Projected-use viewport has the wrong whole-second span')
+  check(popup.timeDomain.first==-8 and popup.timeDomain.last==0,'Real records lost the full eight-second span')
  end
  local function Marker(index)for i=1,popup.castMarkerCount do local marker=popup.castMarkers[i];if marker.entry.index==index then return marker end end end
  local function Near(a,b)return type(a)=='number'and math.abs(a-b)<.00001 end
- local report=assert(R:BuildShareText(page));RenderSpan(7)
+ local report=assert(R:BuildShareText(page));RenderSpan()
  check(popup.castMarkerCount==3 and #popup.castFallback==0 and not popup.usesLabel:IsShown(),'The 5.6/6.5/4.6-second cast case omitted markers or retained duplicate fallback chips')
  for i,offset in ipairs({-5.6,-6.5,-4.6})do local marker=Marker(i)
-  check(marker and Near(marker.entry.offset,offset)and Near(marker.timeX,48+(offset+7)/7*784),'Cast-driven expansion changed the validated projected position')
+  check(marker and Near(marker.entry.offset,offset)and Near(marker.timeX,48+(offset+8)/8*784),'Full window changed the validated projected position')
  end
  local admitted=false;for _,row in ipairs(popup.viewport.rows)do if row==rows[2]then admitted=true end end
  check(admitted and popup.viewport.omitted==1 and popup.selected==rows[4]and popup.hp.text=='1000 / 100000','Expanded cast window lost newly admitted native damage or changed fatal HP')
  check(page.native.rows==rows and #rows==5 and R:BuildShareText(page)==report,'Cast-driven viewport changed original history or full report')
  local selectedRow=popup.selected;Marker(2):Fire('OnEnter');check(popup.selected==selectedRow and popup.hp.text=='1000 / 100000','Newly visible cast hover selected another health sample')
- rows[4].timestamp,rows[4].nativeOffset=1999.4,-.6;page.native.clockDiagnostic.nativeFatalTimestamp=1999.4;RenderSpan(8)
+ rows[4].timestamp,rows[4].nativeOffset=1999.4,-.6;page.native.clockDiagnostic.nativeFatalTimestamp=1999.4;RenderSpan()
  check(Near(Marker(2).entry.offset,-7.1)and Marker(2).age.text=='~6.5s','Shifted fatal/native maximum was replaced with the local age label')
  rows[4].timestamp,rows[4].nativeOffset=2000,0;page.native.clockDiagnostic.nativeFatalTimestamp=2000
- page.casts[1].observedAt=92;RenderSpan(8)
+ page.casts[1].observedAt=92;RenderSpan()
  check(Marker(1)and Marker(1).entry.offset==-8 and Marker(1).timeX==48,'Exactly eight-second projected use was clipped or moved inward')
- page.casts[1].observedAt=91.999;RenderSpan(7)
+ page.casts[1].observedAt=91.999;RenderSpan()
  check(not Marker(1)and popup.castMarkerCount==2 and #popup.castFallback==1 and popup.castFallback[1]==page.casts[1],'Older-than-eight use stretched/clamped the view or disappeared from fallback')
- page.native.clockDiagnostic.localDeathNoticeAt=99;RenderSpan(5)
+ page.native.clockDiagnostic.localDeathNoticeAt=99;RenderSpan()
  check(popup.castMarkerCount==0 and #popup.castFallback==3,'Stale alignment extended the viewport or discarded factual receipts')
- page.native.clockDiagnostic.localDeathNoticeAt=100;local clock=page.native.clockDiagnostic;page.native.clockDiagnostic=nil;RenderSpan(5)
+ page.native.clockDiagnostic.localDeathNoticeAt=100;local clock=page.native.clockDiagnostic;page.native.clockDiagnostic=nil;RenderSpan()
  check(popup.castMarkerCount==0 and #popup.castFallback==3,'Missing alignment anchor extended the viewport')
- page.native.clockDiagnostic=clock;page.casts[2].source='DERIVED_FROM_AGGREGATE_ENDPOINT';RenderSpan(5)
+ page.native.clockDiagnostic=clock;page.casts[2].source='DERIVED_FROM_AGGREGATE_ENDPOINT';RenderSpan()
  check(popup.castMarkerCount==1 and Marker(3)and #popup.castFallback==2,'Unverified receipt widened the viewport or a valid recent marker disappeared')
- rows[2].nativeOffset,rows[2].timestamp,rows[2].amount=-7.7,1992.3,25000;RenderSpan(8)
+ rows[2].nativeOffset,rows[2].timestamp,rows[2].amount=-7.7,1992.3,25000;RenderSpan()
  check(popup.viewport.omitted==1 and popup.selected==rows[4],'Existing damage-driven eight-second rule regressed after cast expansion')
  M.AlignUses,M.Viewport=align,viewport;page=originalPage;U:ShowLast()
 end

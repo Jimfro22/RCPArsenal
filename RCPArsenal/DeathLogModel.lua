@@ -208,7 +208,7 @@ end
 -- hit in the last 8 seconds. Unknown/fatal/out-of-window hits cannot set it.
 -- Valid approximate uses can extend this window using their aligned offsets,
 -- including the frozen fatal-to-maximum adjustment, never their local ages.
-function Model:Viewport(input,maxHealth,alignment)
+function Model:Viewport(input,maxHealth,alignment,minimumSpan)
     local retained,examined=Retain(input,self.LIMITS)
     local maximum=type(maxHealth)=="number"and maxHealth==maxHealth and maxHealth>0 and maxHealth<math.huge and maxHealth or nil
     local function Candidate(row)
@@ -228,7 +228,8 @@ function Model:Viewport(input,maxHealth,alignment)
             if offset and Public(entry.approximate)==true and offset>=-8 and offset<=0 then age=math.max(age,-offset)end
         end
     end
-    local span=math.max(5,math.min(8,math.ceil(age)))
+    local minimum=Number(minimumSpan)
+    local span=math.max(minimum and math.max(5,math.min(8,math.ceil(minimum)))or 5,math.min(8,math.ceil(age)))
     local rows={}
     for _,row in ipairs(retained)do if Time(row)>=-span and Time(row)<=0 then rows[#rows+1]=row end end
     return {rows=rows,first=-span,last=0,span=span,omitted=#retained-#rows,retainedCount=#retained,

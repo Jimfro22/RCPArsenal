@@ -329,8 +329,8 @@ do
  U:ShowLast();cluster=hits()[1];tooltipSpell=nil;cluster:Fire('OnEnter')
  check(popup.selected==clusterRows[3]and popup.hp.text=='1234 / 100000'and tooltipSpell==733 and cluster.icon.texture==art,'Reopening retained an earlier inspected member on first icon hover')
 end
--- The viewport is presentation-only. Important earlier hits extend it in whole
--- seconds, while outside-window receipts remain in the copy report unchanged.
+-- Real records retain every supplied hit in the full eight-second display;
+-- magnitude and unavailable max health cannot silently hide older small hits.
 do
  local domainRows={
   {nativeIndex=5,nativeOffset=-20,spellID=741,name='Historical tail',kind='damage',amount=90000,recordedHP=90000},
@@ -340,16 +340,16 @@ do
   {nativeIndex=1,nativeOffset=0,spellID=745,name='Fatal recent hit',kind='damage',amount=80000,recordedHP=1234}}
  page={id=15,diedAt=100,casts={},native={recapID=6,recapMaxHealth=100000,rows=domainRows}}
  U:ShowLast()
- check(popup.timeDomain.first==-7 and popup.timeDomain.last==0 and popup.viewport.omitted==2,'Eligible older native hit did not extend to the next whole second')
+ check(popup.timeDomain.first==-8 and popup.timeDomain.last==0 and popup.viewport.omitted==1,'Real view hid a retained hit inside eight seconds')
  check(page.native.rows==domainRows and #page.native.rows==5 and domainRows[1].nativeOffset==-20,'Viewport cropped or retimed retained page history')
  local report=assert(R:BuildShareText(page))
  for _,row in ipairs(domainRows)do check(report:find(row.name,1,true),'Full report omitted original history outside the viewport')end
  U:OpenShare();check(popup.shareChooser.copy:GetText()==report,'Visible report chooser copied only viewport events');popup.shareChooser.close:Fire('OnClick')
- tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('2 retained events outside this timeline window; included in the full report',1,true),'Window clipping lost discoverable report disclosure');popup.info:Fire('OnLeave')
- page.native.recapMaxHealth=nil;U:ShowLast();check(popup.timeDomain.first==-5 and popup.viewport.omitted==3,'Unavailable max health did not use the relative important-hit threshold')
- domainRows[3].amount=25000;U:ShowLast();check(popup.timeDomain.first==-7,'Half-largest earlier hit did not extend the window')
+ tooltipLines={};popup.info:Fire('OnEnter');check(table.concat(tooltipLines,' '):find('1 retained events outside this timeline window; included in the full report',1,true),'Outside-eight-second history lost discoverable report disclosure');popup.info:Fire('OnLeave')
+ page.native.recapMaxHealth=nil;U:ShowLast();check(popup.timeDomain.first==-8 and popup.viewport.omitted==1,'Unavailable max health hid known earlier damage')
+ domainRows[3].amount=25000;U:ShowLast();check(popup.timeDomain.first==-8,'Changing hit magnitude changed real time coverage')
  domainRows[3].nativeOffset=-7.2;U:ShowLast();check(popup.timeDomain.first==-8,'Qualifying hit inside the last eight seconds did not extend to eight')
- domainRows[3].nativeOffset=-8.01;U:ShowLast();check(popup.timeDomain.first==-5,'Older-than-eight hit or large fatal hit widened the window')
+ domainRows[3].nativeOffset=-8.01;U:ShowLast();check(popup.timeDomain.first==-8 and popup.viewport.omitted==2,'Older-than-eight hit was clamped or changed the display span')
  check(#page.native.rows==5 and assert(R:BuildShareText(page)):find('Historical tail',1,true),'Repeated viewport updates lost full retained history')
 end
 page=copyPage;U:Preview()

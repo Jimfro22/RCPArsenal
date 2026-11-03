@@ -245,11 +245,20 @@ local function BuildEntries()
                 local role=entry.role=="utility"and"utility"or"defensive"
                 local qualified=selected==55342 and spec==62 and role=="defensive"and defensiveTalent==1309497 and defensiveTalent or nil
                 if selected==55342 and not qualified then role="utility"end
-                entries[#entries+1]={key=entry.key,spellID=selected,baseSpellID=ID(Call(C_Spell and C_Spell.GetBaseSpell,selected)),name=entry.name,category=entry.category,role=role,defensiveTalentSpellID=qualified,known=true}
+                entries[#entries+1]={key=entry.key,spellID=selected,baseSpellID=ID(Call(C_Spell and C_Spell.GetBaseSpell,selected)),name=entry.name,category=entry.category,role=role,defensiveTalentSpellID=qualified,known=true,replacesSpellIDs=entry.replacesSpellIDs}
             elseif known==nil or (known==true and (not supported or passive==nil))then unknown=unknown+1 end
         elseif entry.verified==true and eligible and entry.class==class then
             overflow=true
         end
+    end
+    -- A learned, active replacement can leave its base reported as known and
+    -- self-resolving too. Apply reviewed replacement relationships only after
+    -- both entries pass the same live eligibility gates, independent of order.
+    local replaced={}
+    for _,entry in ipairs(entries)do for _,id in ipairs(entry.replacesSpellIDs or{})do replaced[id]=true end end
+    for i=#entries,1,-1 do
+        local entry=entries[i];entry.replacesSpellIDs=nil
+        if replaced[entry.spellID]then table.remove(entries,i)end
     end
     return entries,spec,class,overflow,unknown
 end
