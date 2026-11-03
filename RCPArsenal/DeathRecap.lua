@@ -960,7 +960,9 @@ function Recap:GetAvailabilityAudit()
         directSpellEvents=Copy(last.directSpellEvents),client=Copy(self:GetDiagnostics().client),catalogRevision=(RA.DeathRecapCatalog or{}).revision,encounter=Copy(last.encounter),coverage=Copy(last.useCoverage),spells={},consumableUses=self:GetRecordedConsumableUses(last)}
     audit.encounterEndObservation=Copy(last.encounterEndObservation)
     local fields={"role","defensiveTalentSpellID","observedAt","cooldownAt","chargesAt","source","cooldown","cooldownQuery","isEnabled","isActive","isOnGCD","cooldownEnabledStatus","cooldownActiveStatus",
-        "cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","directCooldown","genericCooldown"}
+        "cooldownGCDStatus","chargeQuery","chargeReason","chargeCountStatus","chargeActiveStatus","maxChargesStatus","currentCharges","maxCharges","chargesActive","pendingAt","pendingReason","chargesPendingAt","directCooldown","genericCooldown",
+        "ownCooldownQuery","ownCooldownAt","ownCooldownSource","ownCooldownActive","ownCooldownZero","ownCooldownActiveStatus","ownCooldownZeroStatus","ownCooldownState",
+        "nativeCooldownActive","nativeCooldownStatus","nativeCooldownAt","nativeCooldownSource"}
     local function Check(sample,id)
         for _,row in ipairs(sample and sample.spells or{})do if row.spellID==id then
             local out={};for _,key in ipairs(fields)do out[key]=Copy(row[key])end

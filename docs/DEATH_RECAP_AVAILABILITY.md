@@ -4,6 +4,13 @@ Alpha.51 adds a guarded native cooldown-widget observation to the existing
 Death Log recorder. Successful casts and availability remain separate facts.
 There is no layout change or new polling loop.
 
+Alpha.52 fixes the availability audit dropping the `nativeCooldown*` and
+`ownCooldown*` evidence when projecting a frozen check for the readable
+`/rcp recapfacts` report. The report now uses the same classification inputs
+as the badges, including for saved alpha.51 captures. Regression checks
+compare the shelf, audit, readable report and saved/reloaded report for both
+ready and unavailable results, while retaining unconfirmed failures.
+
 ## Problem and approach
 
 An ordinary spell can return a public active-cooldown flag without an
