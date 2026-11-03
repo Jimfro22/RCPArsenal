@@ -72,8 +72,30 @@ end
 local function OwnDeath()
     return Global(UnitIsDeadOrGhost, "player") == true and Global(UnitIsGhost, "player") == false
 end
+local function Root()
+    local root=Public(RaidArsenalDB)
+    return type(root)=="table"and not getmetatable(root)and root or nil
+end
+local function SaveResume(page,dismissed,viewed)
+    local root=Root();if not root then return end
+    local guid=Global(UnitGUID,"player")
+    if type(guid)~="string"or #guid>128 or not page or Public(page.playerGUID)~=guid
+        or not Number(page.id)then root.deathRecapEntryResume=nil;return end
+    root.deathRecapEntryResume={id=page.id,playerGUID=guid,dismissed=dismissed==true,viewed=viewed==true}
+end
+local function SavedCurrent()
+    if not Enabled()or not OwnDeath()then return end
+    local root=Root();local marker=root and Public(root.deathRecapEntryResume)
+    if type(marker)~="table"or getmetatable(marker)or Public(marker.dismissed)~=false then return end
+    local id=Number(marker.id);local guid=Global(UnitGUID,"player")
+    if not id or id<1 or id~=math.floor(id)or type(guid)~="string"or Public(marker.playerGUID)~=guid then return end
+    local history=Call(R,"GetHistory");local page=type(history)=="table"and Public(history[1])
+    if type(page)~="table"or Public(page.restored)~=true or Number(page.id)~=id or Public(page.playerGUID)~=guid then return end
+    return page,Public(marker.viewed)==true
+end
 local function Current()
     if not token or token.dismissed or not Enabled() or not OwnDeath() or button and not Mutable(button) then return false end
+    if token.restored then return R:GetPage()==nil and SavedCurrent()==token.page end
     local page = R:GetPage()
     return page == token.page and page.id == token.id and page.captureGeneration == token.generation
 end
@@ -102,8 +124,9 @@ local function Hide(clearPlacement)
         button:Hide()
     end
 end
-local function Clear()
+local function Clear(preserveResume)
     token, shownPage, previewPage = nil, nil, nil
+    local root=Root();if root and not preserveResume then root.deathRecapEntryResume=nil end
     SubscriptionDemand()
     Hide(true)
 end
@@ -281,8 +304,9 @@ local function RefreshNow()
     local function Open(self,mouseButton)
         if clickBinding ~= binding or clickToken ~= token or anchor ~= host or not Current()
             or Host() ~= host or Call(UI, "IsShown") ~= false or self and self~=button and not self:IsVisible() then return end
-        if mouseButton=="RightButton"then token.dismissed=true;Entry:Refresh();return end
-        if UI:ShowLast() == true and token == clickToken then token.viewed = true end
+        if mouseButton=="RightButton"then token.dismissed=true;SaveResume(token.page,true,token.viewed);Entry:Refresh();return end
+        if type(R.SelectHistoryPage)=="function"and not R:SelectHistoryPage(clickToken.page)then return end
+        if UI:ShowLast() == true and token == clickToken then token.viewed = true;SaveResume(token.page,false,true)end
         Entry:Refresh()
     end
     button:SetScript("OnClick",Open)
@@ -347,12 +371,20 @@ local function Settings()
     InstallHooks(); Entry:Refresh()
 end
 for _, event in ipairs({"PLAYER_ALIVE", "PLAYER_UNGHOST", "PLAYER_LEAVING_WORLD", "PLAYER_ENTERING_WORLD", "PLAYER_LOGOUT"}) do
-    subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event, function()
+    subscriptions[#subscriptions+1] = RA:RegisterOptionalEvent(event, function(_,initialLogin,reloadingUI)
         if event == "PLAYER_LEAVING_WORLD" or event == "PLAYER_LOGOUT" then
             local debug = RA.DeathRecapDebug
             if debug and type(debug.StopCooldownCapture) == "function" then pcall(debug.StopCooldownCapture, debug, "world-transition") end
         end
-        Clear()
+        local reload=event=="PLAYER_ENTERING_WORLD"and Public(initialLogin)==false and Public(reloadingUI)==true
+        Clear(event=="PLAYER_LOGOUT"or event=="PLAYER_LEAVING_WORLD"or reload)
+        if reload then
+            local page,viewed=SavedCurrent()
+            if page and R:GetPage()==nil then
+                token={page=page,id=page.id,restored=true,rows=Entry:GetRows(page),viewed=viewed}
+                Entry:Refresh()
+            end
+        end
     end)
 end
 for _, event in ipairs({"DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED"}) do
@@ -369,16 +401,19 @@ RA:RegisterCallback("DEATH_RECAP_CHANGED", function(kind)
                 Hide(true)
                 token = {page=page, id=page.id, generation=page.captureGeneration,
                     rows=Entry:GetRows(page),viewed=shownPage == page and Call(UI, "IsShown") == true}
+                SaveResume(page,false,token.viewed)
             end
         else Clear() end
-    elseif kind == "life" or kind == "reset" or kind == "unavailable" then Clear()
+    elseif kind == "life" then Clear(OwnDeath())
+    elseif kind == "reset" then Clear(RA.Initialized~=true)
+    elseif kind == "unavailable" then Clear()
     elseif kind == "settings" then Settings(); return end
     Entry:Refresh()
 end)
 RA:RegisterCallback("DEATH_RECAP_VISIBILITY", function(shown, page)
     local visible = Call(UI, "IsShown") == true
     shownPage = shown == true and visible and page or nil
-    if shown == true and visible and Current() and page == token.page then token.viewed = true end
+    if shown == true and visible and Current() and page == token.page then token.viewed = true;SaveResume(token.page,false,true)end
     Entry:Refresh()
 end)
 RA:RegisterCallback("PROFILE_RESET", function() Clear(); Settings() end)

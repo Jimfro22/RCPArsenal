@@ -539,7 +539,7 @@ do
     RA.RaidLeaderToolbox:Refresh();RA.RaidLeaderToolbox:ShowMissingPanel()
     local _,shownBuffs,shownDebuffs=RA.RaidLeaderToolbox:GetMissingCoverage();local names={}
     for _,section in ipairs({shownBuffs,shownDebuffs})do for _,item in ipairs(section)do names[#names+1]=item.name end end
-    local expected='RCP missing raid providers — Buffs: Druid, Evoker, Paladin, Mage, Priest, Shaman, Warrior; Debuffs: Hunter, Demon Hunter, Monk, Rogue.'
+    local expected='MISSING RAID BUFFS: Druid, Evoker, Paladin, Mage, Priest, Shaman, Warrior, Hunter, Demon Hunter, Monk, Rogue'
     check(#names==11 and #expected<=255,'Full catalog does not fit one bounded chat message')
     missingButton.scripts.OnEnter(missingButton);check(#posts==0,'Hover posted provider coverage')
     roster={{class='ROGUE',group=1,online=true}}
@@ -549,7 +549,7 @@ do
     check(reads==beforeReads and #timers==beforeTimers and scanCalls==scansBefore and forbidden==0,'Coverage click scanned or queued work')
     post();check(#posts==1,'Accidental double-click posted twice')
     clock=clock+2;RA.RaidLeaderToolbox:RefreshMissing();beforeReads=reads;post()
-    check(#posts==2 and posts[2].text==expected:gsub(', Rogue%.','.')and reads==beforeReads,'Refreshed class coverage or click read boundary wrong')
+    check(#posts==2 and posts[2].text==expected:gsub(', Rogue$','')and reads==beforeReads,'Refreshed class coverage or click read boundary wrong')
     -- Refresh() replaces the cache without the old explicit RefreshMissing
     -- panel relayout. The open rendered list must now track that replacement.
     roster={};RA.RaidLeaderToolbox:Refresh();local poisonShown=false
@@ -573,7 +573,7 @@ do
     roster={};RA.RaidLeaderToolbox:RefreshMissing();named.RCPArsenalMissingBadge.scripts.OnClick();check(#posts==2,'Inspection badge posted coverage')
     roster={};for _,class in ipairs({'DRUID','EVOKER','PALADIN','MAGE','PRIEST','SHAMAN','WARRIOR'})do roster[#roster+1]={class=class,group=1,online=true}end
     clock=clock+2;RA.RaidLeaderToolbox:RefreshMissing();beforeReads=reads;post()
-    check(#posts==3 and posts[3].text=='RCP missing raid providers — Debuffs: Hunter, Demon Hunter, Monk, Rogue.'and reads==beforeReads,'Empty section not omitted or friendly class label lost')
+    check(#posts==3 and posts[3].text=='MISSING RAID BUFFS: Hunter, Demon Hunter, Monk, Rogue'and reads==beforeReads,'Empty section not omitted or friendly class label lost')
     check(scanCalls==scansBefore and forbidden==0,'Coverage sharing added inspection/aura work')
 end
 print('PASS: ' .. checks .. ' asset/font/actual-frame assertions (offline Lua harness; no WoW runtime claim)')

@@ -67,6 +67,15 @@ check(UISpecialFrames[1]=='RCPArsenalDeathRecapDebug','Escape registry missing')
 U:ShowDebugText('replacement');check(created==count and dialog.payload=='replacement'and dialog.offset==0,'Reopen grew UI or retained old data/scroll')
 dialog.select:Fire('OnClick');dialog.close:Fire('OnClick');check(not dialog.shown and not dialog.box.focus,'Close retained focus')
 local slash=SlashCmdList.RCPARSENAL
+local recapOpens=0
+function U:ShowLast()recapOpens=recapOpens+1;return true end
+check(SLASH_RCPARSENALRECAP1=='/recap','Direct recap alias not registered')
+SlashCmdList.RCPARSENALRECAP('ignored');check(recapOpens==1,'Direct alias did not open the actual Death Log route')
+local perfValues,perfReports={},0
+RA.Performance={SetEnabled=function(_,value)perfValues[#perfValues+1]=value;return true,value and'ON'or'OFF'end,
+ ShowReport=function()perfReports=perfReports+1;return true end}
+slash('perf on');slash('perf off');slash('perf');slash('perf bad')
+check(#perfValues==2 and perfValues[1]==true and perfValues[2]==false and perfReports==1,'Performance commands changed activation or report routing')
 slash('recapdebug');check(calls.build==1 and calls.reread==0 and dialog.payload=='raw index 1\nnumber=100.00000000000001','Plain slash reread or routed incorrectly')
 slash('recapdebug reread');check(calls.build==2 and calls.reread==1,'Explicit reread route failed')
 local priorPayload=dialog.payload

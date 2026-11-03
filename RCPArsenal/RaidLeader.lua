@@ -691,17 +691,15 @@ local function PostMissingCoverage(button)
     -- Read the rendered provider list only. A click must not rescan the roster,
     -- inspect talents, query auras, or claim an active buff is missing.
     local snapshot=missingPanel and missingPanel:IsShown()and missingRenderedProviders or MissingProviderSnapshot()
-    local sections={}
+    local names,seen={},{}
     for _,section in ipairs({"buffs","debuffs"})do
-        local names,seen={},{}
         for _,class in ipairs(snapshot[section])do
             local name=providerClassNames[class];if not name then return false,"Coverage provider text is unavailable."end
             if not seen[class]then names[#names+1]=name;seen[class]=true end
         end
-        if #names>0 then sections[#sections+1]=(section=="buffs"and"Buffs: "or"Debuffs: ")..table.concat(names,", ")end
     end
-    if #sections==0 then return false,"All tracked major buff and debuff providers are covered."end
-    local text="RCP missing raid providers — "..table.concat(sections,"; ").."."
+    if #names==0 then return false,"All tracked major buff and debuff providers are covered."end
+    local text="MISSING RAID BUFFS: "..table.concat(names,", ")
     if #text>255 then return false,"Coverage report exceeds the chat message size."end
     local now=MissingChatRead(GetTime)
     if type(now)~="number"or now~=now or math.abs(now)==math.huge then return false,"Chat timing is unavailable."end

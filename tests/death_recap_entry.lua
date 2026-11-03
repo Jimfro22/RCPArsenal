@@ -434,6 +434,44 @@ dismissedClick(nil,'LeftButton');check(opens==previousOpens,'Dismissed click clo
 Death(191,{spells={Ready(40)},supplies={}});ShowHost(host);check(b:IsShown(),'Dismissal leaked into a later death')
 b:Fire('OnClick','LeftButton');check(opens==previousOpens+1 and opened,'Left-click stopped opening after right-click dismissal')
 Close();b:Fire('OnClick','RightButton');Hidden('Header right-click did not dismiss the summary')
+-- A reload-only marker may restore the latest saved death for this character.
+-- Normal login, another character, a newer saved death and dismissal reject it.
+local guid='Player-resume';UnitGUID=function()return guid end
+local restored,chosen
+local originalHistory,originalSelect=R.GetHistory,R.SelectHistoryPage
+R.GetHistory=function()return restored and{restored}or{}end
+R.SelectHistoryPage=function(_,value)chosen=value;return value==restored end
+local realShowLast=U.ShowLast
+U.ShowLast=function()
+ check(chosen==restored,'Restored summary opened an unrelated selected history page')
+ opens=opens+1;opened=true;RA:FireCallback('DEATH_RECAP_VISIBILITY',true,restored);return true
+end
+local function ResumeDeath(id)
+ opened=false;enabled=true;dead=true;ghost=false;chosen=nil
+ page={id=id,captureGeneration=id,diedAt=100,playerGUID='Player-resume',lastAlive={spells={Ready(40)},supplies={}}}
+ RA:FireCallback('DEATH_RECAP_CHANGED','death');ShowHost(host)
+ restored={id=id,restored=true,diedAt=100,playerGUID=page.playerGUID,lastAlive=page.lastAlive}
+end
+ResumeDeath(201);check(RaidArsenalDB.deathRecapEntryResume.id==201,'Witnessed death did not save reload identity')
+event('PLAYER_LOGOUT');page=nil;RA.Initialized=false;RA:FireCallback('DEATH_RECAP_CHANGED','reset')
+check(RaidArsenalDB.deathRecapEntryResume and RaidArsenalDB.deathRecapEntryResume.id==201,'Initial recorder refresh discarded reload identity')
+RA.Initialized=true;event('PLAYER_ENTERING_WORLD',false,true)
+check(b:IsShown()and Icons()[1].row.recordedState==true,'Reload did not restore the latest saved character death and frozen badges')
+local beforeRestore=opens;b:Fire('OnClick','LeftButton');check(opens==beforeRestore+1 and opened,'Restored summary did not open its bound saved log')
+Close();check(b:IsShown(),'Closing restored log lost summary')
+b:Fire('OnClick','RightButton');event('PLAYER_LOGOUT');event('PLAYER_ENTERING_WORLD',false,true)
+Hidden('Reload ignored explicit summary dismissal')
+ResumeDeath(202);event('PLAYER_LOGOUT');page=nil;event('PLAYER_ENTERING_WORLD',true,false)
+Hidden('Normal login restored old corpse UI');check(RaidArsenalDB.deathRecapEntryResume==nil,'Normal login retained reload marker')
+ResumeDeath(203);event('PLAYER_LOGOUT');page=nil;guid='Player-other';event('PLAYER_ENTERING_WORLD',false,true)
+Hidden('Reload restored another character death');guid='Player-resume'
+ResumeDeath(204);event('PLAYER_LOGOUT');page=nil;restored.id=205;event('PLAYER_ENTERING_WORLD',false,true)
+Hidden('Reload marker attached to a different saved death')
+ResumeDeath(206);event('PLAYER_LOGOUT');page=nil;ghost=true;event('PLAYER_ENTERING_WORLD',false,true)
+Hidden('Ghost restored corpse summary');ghost=false
+ResumeDeath(207);event('PLAYER_LOGOUT');page=nil;event('PLAYER_ENTERING_WORLD',false,secret)
+Hidden('Unverified reload flag restored saved summary')
+R.GetHistory,R.SelectHistoryPage=originalHistory,originalSelect;U.ShowLast=realShowLast
 check(nativeWrites==0,'Companion changed native frames')
 check(ownedSchedules==0,'Entry created a timer or ticker')
 for _,obj in ipairs(objects)do local owner=obj;while owner and owner~=b do owner=owner.parent end

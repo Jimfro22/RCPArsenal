@@ -10,7 +10,8 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp config|r or |cff3aa7ff/rcp addons|r - open Addons & Versions")
     print("  |cff3aa7ff/rcp nsrt|r - open Northern Sky notes, profiles, and local placement")
     print("  |cff3aa7ff/rcp markers|r - configure the normal marker sequence, optional hold wheel and keys")
-    print("  |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
+    print("  |cff3aa7ff/recap|r or |cff3aa7ff/rcp recap|r - view the last personal recap; enable recording in Personal Tools")
+    print("  |cff3aa7ff/rcp perf on|r, |cff3aa7ff/rcp perf off|r, |cff3aa7ff/rcp perf|r - optional performance recording and recent reports")
     print("  |cff3aa7ff/rcp recappreview|r - private tester; report and reminder controls work")
     print("  |cff3aa7ff/rcp recapentrypreview|r - preview the compact Death Summary")
     print("  |cff3aa7ff/rcp recapcheck|r - check your character before combat; recording must be enabled")
@@ -95,7 +96,13 @@ local function HandleSlash(raw)
     local command, rest = (raw or ""):match("^%s*(%S*)%s*(.-)%s*$")
     command = string.lower(command or "")
 
-    if command=="recap"then
+    if command=="perf"then
+        if rest=="on"or rest=="off"then
+            local ok,reason=RA.Performance:SetEnabled(rest=="on");RA:Print(reason)
+        elseif rest==""or rest=="report"then
+            local _,reason=RA.Performance:ShowReport();if reason then RA:Print(reason)end
+        else RA:Print("Usage: /rcp perf [on||off||report]")end
+    elseif command=="recap"then
         if not RA.DeathRecapUI:ShowLast()then RA:OpenConfig("MYTOOLS")end
     elseif command=="recapcheck"then
         local ok,why=RA.DeathRecapEntry:CheckCharacter();if not ok and why then RA:Print(why)end
@@ -330,3 +337,5 @@ SLASH_RCPARSENAL3 = "/rcpa"
 SLASH_RCPARSENAL4 = "/arsenal"
 SLASH_RCPARSENAL5 = "/raidarsenal"
 SlashCmdList["RCPARSENAL"] = HandleSlash
+SLASH_RCPARSENALRECAP1 = "/recap"
+SlashCmdList["RCPARSENALRECAP"] = function()HandleSlash("recap")end
