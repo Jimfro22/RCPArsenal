@@ -18,6 +18,7 @@ local IDS=Set('spellID baseSpellID defensiveTalentSpellID itemID encounterID spe
 NUMERIC.localDeathNoticeAt=true
 NUMERIC.readBefore=true;NUMERIC.readAfter=true
 NUMERIC.noticeAt=true
+NUMERIC.nativeCooldownAt=true;BOOLEAN.nativeCooldownActive=true
 local function Fields(input,keys,textOnly)
     input=Plain(input);if not input then return nil end
     local out={}
@@ -30,7 +31,7 @@ local function Fields(input,keys,textOnly)
     end
     return out
 end
-local CHECK='spellID baseSpellID key name category role defensiveTalentSpellID known observedAt cooldownAt chargesAt source cooldown cooldownQuery isEnabled isActive isOnGCD cooldownEnabledStatus cooldownActiveStatus cooldownGCDStatus chargeQuery chargeReason chargeCountStatus chargeActiveStatus maxChargesStatus currentCharges maxCharges chargesActive pendingAt pendingReason chargesPendingAt valid eventSequence invalidationGeneration invalidatedAt invalidatedBy ownCooldownQuery ownCooldownAt ownCooldownSource ownCooldownActive ownCooldownZero ownCooldownActiveStatus ownCooldownZeroStatus ownCooldownState'
+local CHECK='spellID baseSpellID key name category role defensiveTalentSpellID known observedAt cooldownAt chargesAt source cooldown cooldownQuery isEnabled isActive isOnGCD cooldownEnabledStatus cooldownActiveStatus cooldownGCDStatus chargeQuery chargeReason chargeCountStatus chargeActiveStatus maxChargesStatus currentCharges maxCharges chargesActive pendingAt pendingReason chargesPendingAt valid eventSequence invalidationGeneration invalidatedAt invalidatedBy ownCooldownQuery ownCooldownAt ownCooldownSource ownCooldownActive ownCooldownZero ownCooldownActiveStatus ownCooldownZeroStatus ownCooldownState nativeCooldownActive nativeCooldownStatus nativeCooldownAt nativeCooldownSource'
 local ITEM='kind category source inventorySource observedAt cooldown itemID icon carried carriedAt cacheGeneration partial familyAbsenceVerified physicalCount countStatus countAt remainingUses usesStatus usesAt cooldownQuery cooldownStartStatus cooldownDurationStatus enableCooldownTimer cooldownAt pendingAt pendingReason'
 local CAST='spellID name role defensiveTalentSpellID observedAt source'
 local CLOCK='localClock localSessionStartedAt localDeathNoticeAt nativeReadLocalBefore nativeReadLocalAfter nativeFirstTimestamp nativeMinimumTimestamp nativeMaximumTimestamp nativeFatalTimestamp nativeRowCount nativeTimestampStatus'

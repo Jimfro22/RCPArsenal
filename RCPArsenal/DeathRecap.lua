@@ -258,6 +258,53 @@ local function NormalCooldown(row)
     -- multi-charge spells need a remaining-charge count to separate 0 from 1+.
     return row.chargeQuery=="not_applicable"or row.chargeQuery=="public"and row.maxCharges==1
 end
+local cooldownWitness,witnessAttempted
+local function CooldownWitness()
+    if witnessAttempted then return cooldownWitness end
+    witnessAttempted=true
+    if type(CreateFrame)~="function"then return end
+    local ok,widget=pcall(function()
+        -- Private, unprotected frames only. The parent stays hidden; IsShown
+        -- reads the child's own state, not its parent's visibility. No hooks,
+        -- scripts, events, action buttons or ticking objects are retained.
+        local parent=CreateFrame("Frame");parent:Hide()
+        local child=CreateFrame("Cooldown",nil,parent)
+        child.noCooldownCount=true;child.noOCC=true
+        child:SetDrawSwipe(false);child:SetDrawEdge(false);child:SetHideCountdownNumbers(true)
+        for _,name in ipairs({"Clear","SetCooldown","SetCooldownFromDurationObject","IsShown"})do
+            if type(Public(child[name]))~="function"then return end
+        end
+        child:Clear();return child
+    end)
+    if ok then cooldownWitness=widget end
+    return cooldownWitness
+end
+local function ReadCooldownWitness(duration,time)
+    if type(duration)~="userdata"or not time or time<=0 then return nil,"unsupported"end
+    local widget=CooldownWitness();if not widget then return nil,"unsupported"end
+    local function Shown()
+        local value,status=Query(widget.IsShown,widget)
+        return Bool(value),status=="public"and FieldStatus(value,"boolean")or status
+    end
+    local function Apply()return pcall(widget.SetCooldownFromDurationObject,widget,duration,true)end
+    -- Read the duration from BOTH starting states. This rejects a no-op setter,
+    -- a widget stuck hidden/shown, protected readbacks, and expiration between
+    -- the two reads. Never inspect a secret or a widget's numeric cooldown.
+    local ok=pcall(widget.SetCooldown,widget,time,60)
+    local primed,primeStatus=Shown()
+    local first,second,firstStatus,secondStatus
+    if ok and primed==true and primeStatus=="public"and Apply()then first,firstStatus=Shown()end
+    local cleared=pcall(widget.Clear,widget)
+    local empty,emptyStatus=Shown()
+    if cleared and empty==false and emptyStatus=="public"and Apply()then second,secondStatus=Shown()end
+    local cleanup=pcall(widget.Clear,widget)
+    if not cleanup then return nil,"clear-failed"end
+    if not ok or primed~=true or primeStatus~="public"or not cleared or empty~=false or emptyStatus~="public"then return nil,"calibration-failed"end
+    if first==nil then return nil,firstStatus or"apply-failed"end
+    if second==nil then return nil,secondStatus or"apply-failed"end
+    if first~=second then return nil,"unstable"end
+    return first,"public"
+end
 local function SpellObservation(entry,time,reason)
     stats.spellQueries=stats.spellQueries+1
     local row={spellID=entry.spellID,key=entry.key,name=entry.name,category=entry.category,role=entry.role,defensiveTalentSpellID=entry.defensiveTalentSpellID,
@@ -302,9 +349,9 @@ local function SpellObservation(entry,time,reason)
             opaqueChargeCounts[row]={count=charges.currentCharges,observedAt=time}
         end
     end
-    -- Confirm the ordinary/single-charge case before querying its own cooldown.
-    -- Drop the userdata after guarded scalar reads; never apply this to 2+ charges.
-    if row.isEnabled==true and row.cooldown=="active-context-unknown"and NormalCooldown(row)then
+    local ordinary=NormalCooldown(row)
+    local chargeWitness=row.chargeQuery=="public"and row.maxCharges and row.maxCharges>1 and row.currentCharges==nil
+    if row.isEnabled==true and(ordinary and(row.cooldown=="active-context-unknown"or row.cooldown=="gcd-observed")or chargeWitness)then
         local duration,status=Query(C_Spell and C_Spell.GetSpellCooldownDuration,entry.spellID,true)
         row.ownCooldownQuery=status;row.ownCooldownAt=time;row.ownCooldownSource="ignoreGCD-duration"
         if type(duration)=="userdata"then
@@ -316,18 +363,22 @@ local function SpellObservation(entry,time,reason)
                 if not called then return nil,"API-error"end
                 return Bool(value),FieldStatus(value,"boolean"),value
             end
-            local rawActive,rawZero
-            row.ownCooldownActive,row.ownCooldownActiveStatus,rawActive=Boolean("IsActive")
-            row.ownCooldownZero,row.ownCooldownZeroStatus,rawZero=Boolean("IsZero")
-            local function Predicate(status)return status=="public"or status=="restricted"end
-            if Predicate(row.ownCooldownActiveStatus)and Predicate(row.ownCooldownZeroStatus)then
-                -- Freeze scalar predicates, not a duration object that keeps ticking.
-                -- Only native alpha setters may consume these opaque booleans.
-                opaqueCooldownStates[row]={active=rawActive,zero=rawZero}
+            if ordinary then
+                local rawActive,rawZero
+                row.ownCooldownActive,row.ownCooldownActiveStatus,rawActive=Boolean("IsActive")
+                row.ownCooldownZero,row.ownCooldownZeroStatus,rawZero=Boolean("IsZero")
+                local function Predicate(status)return status=="public"or status=="restricted"end
+                if Predicate(row.ownCooldownActiveStatus)and Predicate(row.ownCooldownZeroStatus)then
+                    opaqueCooldownStates[row]={active=rawActive,zero=rawZero}
+                end
+                if row.ownCooldownActive==false and row.ownCooldownZero==true then row.ownCooldownState="inactive"
+                elseif row.ownCooldownActive==true and row.ownCooldownZero==false then row.ownCooldownState="active"end
+                if row.ownCooldownState then row.cooldown=row.ownCooldownState end
             end
-            if row.ownCooldownActive==false and row.ownCooldownZero==true then row.ownCooldownState="inactive"
-            elseif row.ownCooldownActive==true and row.ownCooldownZero==false then row.ownCooldownState="active"end
-            if row.ownCooldownState then row.cooldown=row.ownCooldownState end
+            if not row.ownCooldownState then
+                row.nativeCooldownActive,row.nativeCooldownStatus=ReadCooldownWitness(duration,time)
+                row.nativeCooldownAt=time;row.nativeCooldownSource="ignoreGCD-widget"
+            end
         elseif status=="public"then row.ownCooldownQuery="malformed"end
         duration=nil
     end
@@ -664,6 +715,12 @@ function Recap:ClassifyRecordedCheck(row,coverageEnded,example)
     -- A one-charge API wrapper does not bypass its ordinary spell cooldown.
     if not NormalCooldown(row)and not row.chargesPendingAt and row.currentCharges and row.currentCharges>0 then return true,row.currentCharges..(row.currentCharges==1 and" charge"or" charges")..suffix end
     if not row.chargesPendingAt and row.currentCharges==0 then return false,"No charges"..suffix end
+    if not row.chargesPendingAt and row.isEnabled==true and row.nativeCooldownStatus=="public"
+        and row.nativeCooldownSource=="ignoreGCD-widget"and type(row.nativeCooldownAt)=="number"
+        and(NormalCooldown(row)or row.chargeQuery=="public"and row.maxCharges and row.maxCharges>1)
+        and type(row.nativeCooldownActive)=="boolean"then
+        return not row.nativeCooldownActive,row.nativeCooldownActive and"Cooldown active"..suffix or"Off cooldown"..suffix
+    end
     if row.chargeQuery=="public"and not NormalCooldown(row)and(row.maxCharges or row.chargesActive~=nil)then
         return nil,row.cooldown=="inactive"and"Normal cooldown was inactive; remaining charges were not established"or"Remaining charges were not established"
     end
@@ -684,6 +741,7 @@ function Recap:GetRecordedCheckTime(row)
     if row.family then return row.checkedAt end
     if row.kind and row.familyAbsenceVerified then return row.carriedAt or row.observedAt end
     if not row.kind and row.cooldown~="held"and not row.pendingAt and not row.chargesPendingAt and row.currentCharges~=nil then return row.chargesAt or row.observedAt end
+    if not row.kind and row.nativeCooldownStatus=="public"and row.nativeCooldownActive~=nil then return row.nativeCooldownAt end
     return row.cooldownAt or row.observedAt
 end
 function Recap:GetItemCheckSample(page)
