@@ -57,6 +57,7 @@ local function FieldText(row,keys,compact)
     return #out>0 and table.concat(out," ")or"<not-recorded>"
 end
 local HEADER={"id","specID","class","diedAt","localSessionStartedAt","nativeReason","nativeStatus"}
+local ASSOCIATION={"epoch","epochSource","baselineKnown","baselineReason","baselineSource","baselineObservedAt","baselineCount","ordinal"}
 local LOADED={"addonVersion","addonBuild","catalogBuild","catalogRevision"}
 local NATIVE={"nativeIndex","event","timestamp","nativeOffset","rawSpellID","spellID","rawSpellName","name","school","amount","recordedHP","absorbed","overkill","resisted","blocked","hideCaster","hideCasterStatus","sourceConfirmed","avoidable","deadly"}
 local SOURCE={"sourceName"}
@@ -156,7 +157,7 @@ function D:GetFrozenSnapshot()
     if not page then return nil,"No personal death recorded this session"end
     local catalog=Table(RA.DeathRecapCatalog)
     local snapshot={header=Fields(page,HEADER),native=Packet(page.native),lastAlive=Sample(page.lastAlive),deathNotice=Sample(page.deathObservation),precombat=Sample(page.precombatBaseline),
-        coverage=Fields(page.useCoverage,COVERAGE),directEvents={},uses={},casts=Casts(page.casts,page.diedAt),
+        coverage=Fields(page.useCoverage,COVERAGE),association=Fields(page.nativeAssociation,ASSOCIATION),directEvents={},uses={},casts=Casts(page.casts,page.diedAt),
         loaded=Fields({addonVersion=RA.VERSION,addonBuild=RA.BUILD,catalogBuild=catalog and catalog.build,catalogRevision=catalog and catalog.revision},LOADED)}
     local personal=Table(page.personalNativeProbe)
     if personal then snapshot.personalNative={packet=Packet(personal),metadata=Fields(personal,{"source","status","observedAt"})}end
@@ -460,6 +461,7 @@ function R:BuildDebugText(reread)
     Add("Incoming native sourceName is damage-source text, not a shield provider. Shield not identified; provider not recorded.")
     Add("Loaded metadata (not capture-time client metadata): "..FieldText(snapshot.loaded,LOADED))
     Add(FieldText(snapshot.header,HEADER));Add("coverage "..FieldText(snapshot.coverage,COVERAGE))
+    Add("NATIVE ASSOCIATION "..FieldText(snapshot.association,ASSOCIATION))
     WriteCasts(Add,snapshot.casts)
     WritePacket(Add,"FROZEN NATIVE",snapshot.native)
     WritePersonalNativeProbe(Add,snapshot.native,snapshot.personalNative)

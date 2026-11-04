@@ -686,6 +686,7 @@ local function OnDeath()
         casts={},precombatBaseline=Copy(session.precombatBaseline),observedUses=Copy(session.observedUses),directSpellEvents=Copy(session.directSpellEvents),useCoverage={startedAt=session.useCoverageStartedAt or session.startedAt,combatEntryObserved=session.combatEntryObserved,
             reason=session.coverage,endedAt=session.lastAlive and session.lastAlive.coverageEndedAt,rejectedReceipts=session.rejectedUseReceipts or 0,lateReceipts=session.lateUseReceipts or 0},deathObservation=Observe("death-notification",true),
         association=Association:Freeze(),nativeAttempts=0,nativeStatus="Waiting for a fresh personal native recap"}
+    page.nativeAssociation=Copy(page.association.audit)
     for _,cast in ipairs(session.casts)do if time-cast.observedAt<=Recap.LIMITS.seconds then page.casts[#page.casts+1]=Copy(cast)end end
     -- Separate clocks and identities: these are local UNIT_COMBAT receipts,
     -- never replacements for, or deduplicated guesses about, native spell rows.
@@ -1042,7 +1043,10 @@ function Recap:Refresh()
     Association:SetEnabled(enabled)
     RA.HealingSupplies:SetConsumer("recap",enabled)
     for _,subscription in ipairs(passive)do subscription:SetEnabled(enabled)end
-    if enabled then if Combat()then BeginCombat("Enabled/reloaded during combat; incomplete coverage")else NewSession("No combat observations yet")end end
+    if enabled then if Combat()then BeginCombat("Enabled/reloaded during combat; incomplete coverage")else
+        Association:PrepareAlive(Alive(),"enabled-out-of-combat")
+        NewSession("No combat observations yet")
+    end end
     Notify("settings")
 end
 function Recap:SetOption(key,value)
@@ -1112,14 +1116,17 @@ Passive("PLAYER_REGEN_ENABLED",function()
     if session and session.lastAlive then session.lastAlive.coverageEndedAt=Now();session.lastAlive.coverageEndReason="combat-ended"end
     if session then for _,row in ipairs(session.lastAlive and session.lastAlive.spells or{})do if row.directCooldown then row.directCooldown.valid=false;row.directCooldown.invalidatedBy="coverage-ended"end end end
     StopRecording()
-    if Alive()then CaptureBaseline("precombat-combat-ended");for _,subscription in ipairs(active)do subscription:SetEnabled(true)end end
+    if Alive()then
+        Association:PrepareAlive(true,"combat-ended-alive")
+        CaptureBaseline("precombat-combat-ended");for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
+    end
     if last and not last.native and last.nativeAttempts<Recap.LIMITS.attempts then
         if fetchTimer then fetchTimer:Cancel();fetchTimer=nil end
         FetchNative(last,generation)
     end
 end)
 for _,event in ipairs({"DAMAGE_METER_CURRENT_SESSION_UPDATED","DAMAGE_METER_RESET"})do
-    Passive(event,function()CancelFetch();Association:NewEpoch(Alive())end)
+    Passive(event,function()CancelFetch();Association:NewEpoch(Alive(),event)end)
 end
 Passive("DAMAGE_METER_COMBAT_SESSION_UPDATED",function(_,kind,id)
     local relevant=Association:Update(kind,id,Alive())
@@ -1135,7 +1142,7 @@ for _,event in ipairs({"PLAYER_ALIVE","PLAYER_UNGHOST","PLAYER_ENTERING_WORLD"})
         StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil;baseline=nil end
         if Alive()then
             if Combat()then BeginCombat("Resurrected/entered during combat; incomplete coverage")
-            else NewSession("Alive baseline; no combat observations yet")end
+            else Association:PrepareAlive(true,event);NewSession("Alive baseline; no combat observations yet")end
         end;Notify("life")
     end)
 end

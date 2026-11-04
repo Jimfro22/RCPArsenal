@@ -1,6 +1,6 @@
 # Consolidation and validation
 
-Current consolidation build: **0.15.3-alpha.63**, reviewed 2026-11-04. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
+Current consolidation build: **0.15.3-alpha.64**, reviewed 2026-11-04. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
 
 ## Release decision
 
@@ -16,7 +16,7 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 | Defensive uses and readiness | Separate successful-use records and frozen availability; learned replacement filtering | Owner verified Arcane/Frost charge depletion, Mirror Image use, and Ice Cold use. Fire test confirmed Ice Cold use, a remaining Blazing Barrier charge, unused Alter Time, and Mirror Image omitted as a defensive. |
 | Consumables | Healthstone/potion use, bag presence, cooldown readiness, dimmed unavailable icons | Owner verified empty Healthstone bags, a carried ready Healthstone, and used/on-cooldown potions and stones. Fire also confirmed the used Healthstone unavailable at death. Other item variants need pilot coverage. |
 | Named hits | Shows supplied native records through eight seconds; grouped damage/absorbs; native spell details and boss Journal lookup | Owner confirmed earlier hits, boss click behavior, and the saved 5:08 fight-time label clear of the chart. Native packets can cover less than eight seconds. |
-| Incoming history | Bounded eight-second public receipts plus a native-rendered protected path; recorded uses | Owner supplied public captures and a successful standalone protected-number display in a dungeon. Integrated native bars and hover labels confirmed in one owner dungeon capture. Delayed-event rendering, retention through reopening and performance need the alpha.63 check. These receipts have no spell names or attackers. |
+| Incoming history | Bounded eight-second public receipts plus a native-rendered protected path; recorded uses | Owner supplied public captures and a successful standalone protected-number display in a dungeon. Integrated native bars and hover labels confirmed in one owner dungeon capture. An alpha.63 owner screenshot confirmed five protected late amounts. Retention through reopening and performance remain open. These receipts have no spell names or attackers. |
 | Raid tools | Versions, supplies, Quick Bar, missing-class chat, draft/save/load/sort/import/apply raid groups | Implemented; a coordinated two-client regression remains. Raid composition statistics are still future work. |
 | Markers | Separate instant, radial, and clear/cancel controls | Stable separate-key direction adopted. Native combat/permission smoke remains; timed one-key experiments are shelved. |
 | Personal tools | Resurrection switches; optional potion reminder, combat filter, sizes/text, sound and glow controls | Implemented; final live reminder/offer acceptance checks remain. |
@@ -32,7 +32,7 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 
 ## Validation order
 
-### 1. Protected delayed events on alpha.63
+### 1. Named recap startup and protected delayed events
 
 One owner alpha.62 dungeon capture confirmed the integrated native bars and
 hover labels: 14 protected incoming receipts, including damage and healing,
@@ -46,8 +46,11 @@ native labels, stores protected values only in private session memory and
 adds no event listener or timer. Late callbacks are not backdated, assigned
 spell names, called killing blows or included in chart/chat totals.
 
-Check that separate hover panel after a new death if delayed receipts occur.
-Reopening/history switching and native CPU/RAM measurements remain pending.
+An alpha.63 owner screenshot confirmed all five protected late amounts in that separate panel. The later saved report correctly explained that reload cleared session-only amounts. Reopening/history switching and native CPU/RAM measurements remain pending.
+
+The same capture had no named packet because the alive baseline was unverified. Alpha.64 fixes a reproduced startup omission: enabling while alive/out of combat now checks the complete public Current personal set once, without waiting for a meter notification. Readable empty startup can also recover at existing alive/world/combat-end boundaries. Existing known baselines do no extra work; unresolved deaths, opaque parents and nonempty unverified sessions cannot be certified retroactively. Real Current changes still invalidate the epoch. No timer or additional event subscription was added.
+
+Native check for alpha.64: enable/reload while alive and out of combat, then inspect the next ordinary death before reloading. Compare Named hits with Blizzard and copy `/rcp recapdebug`; the saved NATIVE ASSOCIATION section records the baseline source, status and epoch cause. The startup regression passes offline, but native event order and any opaque combat-start reset still require this check. Do not infer a complete named history from the separate incoming stream.
 Facts now count public/protected inputs explicitly, with capacity and cleared
 session explanations. Old protected late amounts cannot be recovered.
 

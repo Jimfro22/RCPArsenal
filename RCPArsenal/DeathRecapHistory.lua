@@ -22,6 +22,7 @@ NUMERIC.gameMapID=true
 NUMERIC.retained=true;NUMERIC.protected=true
 IDS.gameMapID=true
 NUMERIC.nativeCooldownAt=true;BOOLEAN.nativeCooldownActive=true
+NUMERIC.epoch=true;NUMERIC.baselineObservedAt=true;NUMERIC.baselineCount=true;NUMERIC.ordinal=true;BOOLEAN.baselineKnown=true
 local function Fields(input,keys,textOnly)
     input=Plain(input);if not input then return nil end
     local out={}
@@ -67,6 +68,7 @@ function H:Snapshot(input)
     out.encounter=Fields(input.encounter,'auditEpoch encounterID gameMapID name difficulty startedAt')
     out.encounterEndObservation=Fields(input.encounterEndObservation,'encounterID observedAt auditEpoch')
     out.useCoverage=Fields(input.useCoverage,'startedAt combatEntryObserved reason endedAt rejectedReceipts lateReceipts')
+    out.nativeAssociation=Fields(input.nativeAssociation,'epoch epochSource baselineKnown baselineReason baselineSource baselineObservedAt baselineCount ordinal')
     out.casts=Array(input.casts,64,function(v)return Fields(v,CAST)end)
     out.directSpellEvents={};local events=Plain(input.directSpellEvents)
     if events then for _,name in ipairs({'SPELL_UPDATE_COOLDOWN','SPELL_UPDATE_CHARGES'})do out.directSpellEvents[name]=Context(events[name])end end

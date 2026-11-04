@@ -2,6 +2,7 @@ local _,RA=...
 local A={};RA.DeathRecapAssociation=A
 local enabled,epoch,witnessed,baseline,unmatched,blocked=false,0,false,nil,0,false
 local accepted,acceptedCount,latestHint={},0,nil
+local epochSource,baselineReason,baselineSource,baselineObservedAt,baselineCount="disabled","not-observed",nil,nil,nil
 A.MAX_ACCEPTED=256
 local stats={reads=0,rows=0}
 local function Public(value)
@@ -16,6 +17,11 @@ local function Table(value)
     value=Public(value);if type(value)=="table"and getmetatable(value)==nil then return value end
 end
 local function Copy(set)local out={};for key in pairs(set or{})do out[key]=true end;return out end
+local function Time()
+    if type(GetTime)~="function"then return nil end
+    local ok,value=pcall(GetTime);value=ok and Public(value)
+    if type(value)=="number"and value==value and value>=0 and value<math.huge then return value end
+end
 local function Scan()
     if not enabled or not C_DamageMeter or not Enum or not Enum.DamageMeterType or not Enum.DamageMeterSessionType then return nil,"meter_unavailable"end
     local fn=C_DamageMeter.GetCombatSessionFromType
@@ -43,14 +49,23 @@ end
 function A:SetEnabled(value)
     if enabled==(value==true)then return end
     enabled=value==true;epoch=epoch+1;witnessed=false;latestHint=nil;baseline=nil;unmatched=0;blocked=false;accepted={};acceptedCount=0
+    epochSource=enabled and"enabled"or"disabled";baselineReason="not-observed";baselineSource=nil;baselineObservedAt=nil;baselineCount=nil
 end
-function A:NewEpoch(alive)
+function A:PrepareAlive(alive,source)
+    -- Only a complete, public, empty personal set can establish an alive
+    -- baseline. Never repair a past/unresolved death with a later read.
+    if not enabled or not alive or witnessed or blocked or unmatched~=0 then return false end
+    local set,reason=Scan()
+    baselineSource=source or"alive-boundary";baselineObservedAt=Time();baselineCount=nil
+    if set then baselineCount=0;for _ in pairs(set)do baselineCount=baselineCount+1 end end
+    baselineReason=reason or(baselineCount==0 and"known-empty"or"personal-ids-already-present")
+    if set and baselineCount==0 then baseline=set;witnessed=true;return true end
+    return false
+end
+function A:NewEpoch(alive,source)
     epoch=epoch+1;witnessed=false;latestHint=nil;baseline=nil;unmatched=0;blocked=false
-    if not enabled or not alive then return end
-    local set=Scan()
-    -- A witnessed clean native epoch with a complete empty personal set is
-    -- required. Late enable/reload or a nonempty/opaque baseline stays unknown.
-    if set and next(set)==nil then baseline=set;witnessed=true end
+    epochSource=source or"meter-epoch";baselineReason=alive and"not-observed"or"not-alive";baselineSource=nil;baselineObservedAt=nil;baselineCount=nil
+    self:PrepareAlive(alive,epochSource)
 end
 function A:Update(kind,id,alive)
     if not enabled or not Enum or not Enum.DamageMeterType or Public(kind)~=Enum.DamageMeterType.Deaths then return false end
@@ -64,8 +79,10 @@ end
 function A:Freeze()
     unmatched=unmatched+1
     if unmatched~=1 then blocked=true end
-    return {epoch=epoch,source="Current",baseline=Copy(baseline),known=witnessed and baseline~=nil and not blocked,
-        ordinal=unmatched}
+    local known=witnessed and baseline~=nil and not blocked
+    return {epoch=epoch,source="Current",baseline=Copy(baseline),known=known,ordinal=unmatched,
+        audit={epoch=epoch,epochSource=epochSource,baselineKnown=known,baselineReason=baselineReason,
+            baselineSource=baselineSource,baselineObservedAt=baselineObservedAt,baselineCount=baselineCount,ordinal=unmatched}}
 end
 function A:Candidate(token)
     if not enabled or not token or token.epoch~=epoch then return nil,"meter_epoch_changed"end
@@ -83,7 +100,10 @@ function A:Candidate(token)
 end
 function A:Commit(token,id,set)
     if token.epoch~=epoch or unmatched~=1 or accepted[id]or acceptedCount>=self.MAX_ACCEPTED then return false end
-    accepted[id]=true;acceptedCount=acceptedCount+1;baseline=Copy(set);unmatched=0;return true
+    accepted[id]=true;acceptedCount=acceptedCount+1;baseline=Copy(set);unmatched=0
+    baselineCount=0;for _ in pairs(baseline)do baselineCount=baselineCount+1 end
+    baselineReason="accepted-personal-record";baselineSource="personal-recap-commit";baselineObservedAt=Time()
+    return true
 end
 function A:GetDiagnostics()
     return {reads=stats.reads,rows=stats.rows,epoch=epoch,baselineKnown=witnessed and baseline~=nil and not blocked,
