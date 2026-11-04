@@ -926,9 +926,14 @@ function Recap:GetCooldownDiagnosticIdentity()
     end
 end
 -- Only the manually armed transport probe may compare the default response.
-function Recap:ReadPersonalNativeForProbe(page)
+function Recap:ReadPersonalNativeForProbe(page,phase)
     local probe=page and Table(page.liveIncoming)and Table(page.liveIncoming.probe)
-    if not Enabled()or page~=last or page.restored or page.personalNativeProbe or not probe or probe.stopReason~="own-death"or probe.endedAt~=page.diedAt then
+    local late=phase=="late"
+    local existing
+    if page then if late then existing=page.personalNativeProbeLate else existing=page.personalNativeProbe end end
+    local now=late and Now()or nil
+    if not Enabled()or page~=last or page.restored or existing or not probe or probe.stopReason~="own-death"or probe.endedAt~=page.diedAt
+        or(late and(probe.mode~="native-comparison"or not now or now<page.diedAt or now-page.diedAt>3))then
         return nil,"No matching owner-armed death probe"
     end
     -- Blizzard's release dialog opens its own default recap without an ID.
@@ -940,6 +945,10 @@ function Recap:ReadPersonalNativeForProbe(page)
     local maximum=0;for _,row in ipairs(packet.rows)do maximum=math.max(maximum,row.timestamp)end
     for _,row in ipairs(packet.rows)do row.nativeOffset=row.timestamp-maximum end
     return packet
+end
+function Recap:SaveNativeDiagnostics(page)
+    if Enabled()and page==last and not page.restored then SaveHistory();return true end
+    return false
 end
 -- Explicit diagnostic action only: one sanitized read of the accepted frozen
 -- ID. No association, lifecycle timer, or replacement of the captured packet.

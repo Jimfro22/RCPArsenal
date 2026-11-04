@@ -96,13 +96,13 @@ function H:Snapshot(input)
         end
         local probe=Plain(live.probe)
         if probe then
-            out.liveIncoming.probe=Fields(probe,'active armedAt deadline endedAt stopReason nativeRegistered callbacks playerCallbacks otherCallbacks unreadableUnits textCallbacks textIncomingCallbacks')
+            out.liveIncoming.probe=Fields(probe,'active mode armedAt deadline endedAt stopReason nativeRegistered callbacks playerCallbacks otherCallbacks unreadableUnits textCallbacks textIncomingCallbacks')
             local keys='unit unitStatus action actionStatus amount amountStatus secondAmount secondAmountStatus school'
             out.liveIncoming.probe.samples=Array(probe.samples,6,function(v)return Fields(v,keys)end)
             out.liveIncoming.probe.textSamples=Array(probe.textSamples,6,function(v)return Fields(v,keys)end)
         end
     end
-    for _,key in ipairs({'native','personalNativeProbe'})do local native=Plain(input[key])
+    for _,key in ipairs({'native','personalNativeProbe','personalNativeProbeLate'})do local native=Plain(input[key])
     if native then
         out[key]=Fields(native,'recapID recapMaxHealth recapMaxHealthStatus truncated association clock source status observedAt readBefore readAfter')
         out[key].clockDiagnostic=Fields(native.clockDiagnostic,CLOCK)

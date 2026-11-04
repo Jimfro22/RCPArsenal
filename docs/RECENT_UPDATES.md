@@ -2,6 +2,13 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.59 — Save native recap comparisons
+
+### Added
+
+- A manual recap-source test saves Blizzard's own recap at death and again one second later.
+- Both comparison snapshots survive reload with the saved death. No Blizzard window is needed.
+
 ## 0.15.3-alpha.58 — Compact Death Log sharing
 
 ### Changed
