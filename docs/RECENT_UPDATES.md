@@ -2,6 +2,15 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.62 — Protected incoming events in Death Log
+
+### Added
+
+- Death Log's eight-second view can draw protected dungeon/raid damage and healing through native bars.
+- Each bar is one event. Hover and scroll to inspect exact amounts without guessing spell names.
+- Protected events remain available for five deaths this login. Reload retains named hits and public facts, with a note when live amounts have cleared.
+- Chat keeps its named-hit summary and omits a healing total when protected events prevent a complete calculation.
+
 ## 0.15.3-alpha.61 — Keep the display test recording
 
 ### Fixed

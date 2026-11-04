@@ -282,6 +282,11 @@ function R:BuildCoreFactsText()
     Add('DAMAGE: '..(rows and #rows..' retained records' or'No native recap attached'))
     local live=Table(page.liveIncoming)
     if live then Add('LIVE INCOMING: '..#(Table(live.rows)or{})..' receipts in the last 8 seconds; /rcp recapdebug live')end
+    if live and Table(live.nativeDisplay)then
+        local displayed=RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:Describe(page)
+        Add(displayed and('NATIVE DISPLAY: '..#displayed.rows..' events; '..displayed.protected..' protected amounts; kept until reload')
+            or'NATIVE DISPLAY: Session-only amounts cleared; named hits remain saved')
+    end
     Add('Coverage: '..(page.useCoverage and page.useCoverage.combatEntryObserved==true and'combat entry observed'or'incomplete combat entry'))
     if page.restored then Add('Saved death; this report does not query your current character.')end
     return Finish()

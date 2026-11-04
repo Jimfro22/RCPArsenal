@@ -4,6 +4,15 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.62", title = "Protected incoming events in Death Log",
+        groups = {{label = "Added", items = {
+            "Death Log's eight-second view can draw protected dungeon/raid damage and healing through native bars.",
+            "Each bar is one event. Hover and scroll to inspect exact amounts without guessing spell names.",
+            "Protected events remain available for five deaths this login. Reload retains named hits and public facts, with a note when live amounts have cleared.",
+            "Chat keeps its named-hit summary and omits a healing total when protected events prevent a complete calculation.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.61", title = "Keep the display test recording",
         groups = {{label = "Fixed", items = {
             "The manual protected-number test stays armed when combat starts instead of canceling itself.",
