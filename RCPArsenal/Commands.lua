@@ -19,6 +19,7 @@ local function PrintHelp()
     print("  |cff3aa7ff/rcp recapfacts|r - plain recorded defensive, consumable and death facts")
     print("  |cff3aa7ff/rcp recapdebug live start|r - arm a 30-second incoming-event comparison; after death use |cff3aa7ff/rcp recapdebug live|r")
     print("  |cff3aa7ff/rcp recapdebug native start|r - arm a two-minute recap-source comparison; after death wait two seconds, then use |cff3aa7ff/rcp recapdebug|r")
+    print("  |cff3aa7ff/rcp recapdebug display start|r - arm the protected-number display test; screenshot and COPY STATUS before reload")
     print("  |cff3aa7ff/rcp recapdebug [reread]|r or |cff3aa7ff/rcp recapdebug cooldowns [start||stop||show]|r - copy diagnostics or arm a bounded Mirror Image capture")
     print("  |cff3aa7ff/rcp recapblizzard|r - request Blizzard recap for the accepted frozen ID")
     print("  |cff3aa7ff/rcp show|r or |cff3aa7ff/rcp hide|r - enable or disable the HUD and talent scans")
@@ -114,6 +115,13 @@ local function HandleSlash(raw)
         if rest~=""then RA:Print("Usage: /rcp recapblizzard (accepted frozen ID only)");return end
         local _,reason=RA.DeathRecap:OpenBlizzardRecap();RA:Print(reason)
     elseif command=="recapdebug"then
+        if rest=="display start"then local _,why=RA.DeathRecapDisplayProbe:Start();RA:Print(why);return end
+        if rest=="display"or rest=="display show"then local _,why=RA.DeathRecapDisplayProbe:Show();RA:Print(why);return end
+        if rest=="display stop"then RA.DeathRecapDisplayProbe:Stop("explicit-stop");RA:Print("Display test stopped; protected values cleared");return end
+        if rest=="display report"then
+            local shown,why=RA.DeathRecapUI:ShowDebugText(RA.DeathRecapDisplayProbe:BuildReport());if not shown then RA:Print(why)end
+            return
+        end
         if rest=="native start"then local _,why=RA.DeathRecapDebug:StartIncomingProbe(true);RA:Print(why);return end
         if rest=="live start"then local _,why=RA.DeathRecapDebug:StartIncomingProbe();RA:Print(why);return end
         if rest=="live"then
@@ -124,7 +132,7 @@ local function HandleSlash(raw)
         end
         local mode=rest=="cooldowns"and"show"or rest:match("^cooldowns%s+(%S+)$")
         if mode=="start"then local _,reason=RA.DeathRecapDebug:StartCooldownCapture();RA:Print(reason);return end
-        if rest~=""and rest~="reread"and mode~="show"and mode~="stop"then RA:Print("Usage: /rcp recapdebug [reread], native start, or cooldowns [start||stop||show]");return end
+        if rest~=""and rest~="reread"and mode~="show"and mode~="stop"then RA:Print("Usage: /rcp recapdebug [reread], native start, display [start||stop||show||report], or cooldowns [start||stop||show]");return end
         local text,reason
         if mode then
             if mode=="stop"then RA.DeathRecapDebug:StopCooldownCapture("explicit-stop")end

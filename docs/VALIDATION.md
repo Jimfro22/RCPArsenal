@@ -1,6 +1,6 @@
 # Consolidation and validation
 
-Current consolidation build: **0.15.3-alpha.59**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
+Current consolidation build: **0.15.3-alpha.60**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
 
 ## Release decision
 
@@ -32,11 +32,22 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 
 ## Validation order
 
-### 1. Recap-source comparison on alpha.59
+### 1. Protected incoming display on alpha.60
 
-The latest owner export retained all three native hits inside its eight-second window, but that native packet ended before later attacks visible in the combat log. Blizzard's original recap is no longer available, so record selection versus an early native snapshot is unresolved.
+The explicitly armed source comparisons agree between the meter-linked recap,
+Blizzard's personal default at death, and its default one second later. They
+have not established another source for a full eight-second named history.
+A separate owner instance capture delivered protected incoming amounts, which
+the ordinary public-only recorder correctly excluded. Short native coverage
+alone does not establish a Cauterize-specific cutoff.
 
-Use the [recap-only comparison](DEATH_RECAP_NATIVE_COMPARISON.md): `/rcp recapdebug native start`, one Fire Mage death reproducing Cauterize when convenient, wait two seconds, then `/rcp recapdebug`. Both native responses survive reload with the saved death. This build collects the missing evidence; it does not change the named source or claim the missing-hit issue is fixed.
+Use the [protected display test](DEATH_RECAP_PROTECTED_DISPLAY.md) for one
+instance death. It passes retained amounts directly to documented native bars
+and formatted text, without inspecting them in Lua. Screenshot the frozen test
+and COPY STATUS before reload. Protected inputs must actually be present to
+validate that path. Offline sink/lifecycle checks are separate from native
+secret lifetime, visible pixels, combat acceptance and performance. The normal
+Death Log, association, availability and saved-history paths are unchanged.
 
 The saved 5:08 label and reported Fire Mage use/readiness results remain accepted. Compact sharing is implemented; coordinated native delivery acceptance remains below.
 

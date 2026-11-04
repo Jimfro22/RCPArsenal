@@ -4,6 +4,14 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.60", title = "Test protected incoming numbers",
+        groups = {{label = "Added", items = {
+            "A manual display test passes protected incoming amounts directly to Blizzard's bars and text.",
+            "Use /rcp recapdebug display start before combat. After death, screenshot the test and COPY STATUS before reload.",
+            "The test is off by default, retains eight seconds in memory, and stops after one death or two minutes.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.59", title = "Save native recap comparisons",
         groups = {{label = "Added", items = {
             "A manual recap-source test saves Blizzard's own recap at death and again one second later.",

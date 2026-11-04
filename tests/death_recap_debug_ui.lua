@@ -68,6 +68,12 @@ check(UISpecialFrames[1]=='RCPArsenalDeathRecapDebug','Escape registry missing')
 U:ShowDebugText('replacement');check(created==count and dialog.payload=='replacement'and dialog.offset==0,'Reopen grew UI or retained old data/scroll')
 dialog.select:Fire('OnClick');dialog.close:Fire('OnClick');check(not dialog.shown and not dialog.box.focus,'Close retained focus')
 local slash=SlashCmdList.RCPARSENAL
+local displayCalls={}
+RA.DeathRecapDisplayProbe={Start=function()displayCalls.start=(displayCalls.start or 0)+1;return true,'Display armed'end,
+ Show=function()displayCalls.show=(displayCalls.show or 0)+1;return true,'Display shown'end,
+ Stop=function(_,reason)displayCalls.stop=reason end,BuildReport=function()return 'public display counters'end}
+slash('recapdebug display start');slash('recapdebug display');slash('recapdebug display show');slash('recapdebug display report');slash('recapdebug display stop')
+check(displayCalls.start==1 and displayCalls.show==2 and displayCalls.stop=='explicit-stop'and dialog.payload=='public display counters','Protected display commands did not route independently')
 local recapOpens=0
 function U:ShowLast()recapOpens=recapOpens+1;return true end
 check(SLASH_RCPARSENALRECAP1=='/recap','Direct recap alias not registered')
@@ -84,7 +90,7 @@ slash('recapdebug cooldowns start');check(calls.start==1 and dialog.payload==pri
 slash('recapdebug cooldowns');slash('recapdebug cooldowns show');check(calls.show==2 and calls.start==1 and dialog.payload=='bounded cooldown capture','Show rearmed or failed to open immutable copy')
 slash('recapdebug cooldowns stop');check(calls.stop==1 and calls.show==3,'Stop did not finalize and show')
 slash('recapdebug capability');check(calls.start==1 and calls.build==2,'Removed capability command still queried')
-slash('recapdebug 17');check(calls.build==2 and messages[#messages]=='Usage: /rcp recapdebug [reread], native start, or cooldowns [start||stop||show]','Unexpected debug arg executed')
+slash('recapdebug 17');check(calls.build==2 and messages[#messages]=='Usage: /rcp recapdebug [reread], native start, display [start||stop||show||report], or cooldowns [start||stop||show]','Unexpected debug arg executed')
 slash('recapdebug native start');check(calls.native==1 and calls.build==2 and messages[#messages]=='Native comparison armed','Native arm queried/exported immediately or failed to select the light mode')
 slash('recapblizzard 17');check(calls.open==0,'Slash supplied ID allowed')
 slash('recapblizzard');check(calls.open==1 and messages[#messages]=='Requested Blizzard recap ID 17','Native request route failed')

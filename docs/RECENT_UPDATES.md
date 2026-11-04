@@ -2,6 +2,14 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.60 — Test protected incoming numbers
+
+### Added
+
+- A manual display test passes protected incoming amounts directly to Blizzard's bars and text.
+- Use /rcp recapdebug display start before combat. After death, screenshot the test and COPY STATUS before reload.
+- The test is off by default, retains eight seconds in memory, and stops after one death or two minutes.
+
 ## 0.15.3-alpha.59 — Save native recap comparisons
 
 ### Added
