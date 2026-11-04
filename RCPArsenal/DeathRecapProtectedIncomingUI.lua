@@ -40,6 +40,33 @@ local function Details(chart,parent)
     f.note=Font(f,10,C.muted);Place(f.note,"BOTTOMLEFT",f,"BOTTOMLEFT",12,10)
     return f
 end
+local function PaintDetails(chart,parent,page,history,member,title,note)
+    local f=Details(chart,parent);local count=#history.rows
+    local first=math.max(1,math.min(member-5,count-11));local last=math.min(count,first+11)
+    f:SetHeight(68+(last-first+1)*26);Place(f,"TOPLEFT",parent,"TOPRIGHT",12,-12)
+    Text(f.title,title);Text(f.note,note)
+    for i,ui in ipairs(f.rows)do
+        local item=history.rows[first+i-1]
+        if i<=last-first+1 and item then
+            local healing=item.kind=="healing";local color=healing and C.success or C.danger
+            Text(ui.time,string.format(history.late and"+%.1fs"or"%.1fs",item.offset))
+            Text(ui.kind,healing and(item.flag=="CRITICAL"and"Healing · Critical"or"Healing")or item.flag=="ABSORB"and"Absorb reported"or(schools[item.school]or"Mixed-school").." damage")
+            ui.amount:SetTextColor(unpack(color))
+            if history.late then I:PaintLate(page,item.sequence,ui.amount)else I:Paint(page,item.sequence,nil,ui.amount)end
+            ui.focus:SetShown(first+i-1==member);ui:Show()
+        else ui.amount:SetText("");ui:Hide()end
+    end
+    f:Show();return f
+end
+function U:ClearIncomingNativeDetails(chart)
+    if not chart.details then return end
+    chart.details:Hide();for _,row in ipairs(chart.details.rows)do row.amount:SetText("");row:Hide()end
+end
+function U:ShowProtectedIncomingLate(chart,page,late,ctx,member)
+    if not ctx.active()then return end
+    ctx.hideTooltip()
+    PaintDetails(chart,chart:GetParent(),page,late,member,"Received after death · "..#late.rows,"Delivery times only · Separate from timeline")
+end
 function U:RenderProtectedIncoming(parent,page,history,ctx)
     local chart=parent.protectedIncomingChart
     if not chart then
@@ -55,8 +82,8 @@ function U:RenderProtectedIncoming(parent,page,history,ctx)
     Place(chart.healLegend,"TOPLEFT",chart,"TOPLEFT",48,-ctx.headerTop)
     Place(chart.damageLegend,"TOPLEFT",chart,"TOPLEFT",144,-ctx.headerTop)
     local bottom=ctx.healthTop-30
-    Place(chart.damageCount,"TOPLEFT",chart,"TOPLEFT",48,-bottom);Text(chart.damageCount,history.damageCount.." damage events")
-    Place(chart.healingCount,"TOPLEFT",chart,"TOPLEFT",280,-bottom);Text(chart.healingCount,history.healingCount.." healing events")
+    Place(chart.damageCount,"TOPLEFT",chart,"TOPLEFT",48,-bottom);Text(chart.damageCount,history.damageCount..(history.damageCount==1 and" damage event"or" damage events"))
+    Place(chart.healingCount,"TOPLEFT",chart,"TOPLEFT",280,-bottom);Text(chart.healingCount,history.healingCount..(history.healingCount==1 and" healing event"or" healing events"))
     Place(chart.note,"TOPRIGHT",chart,"TOPRIGHT",-48,-bottom-24)
     Text(chart.note,history.partial and"Capacity reached · some events omitted"or"Individual events · Hover for amounts · Kept until reload")
     self:RenderIncomingLateReports(chart,page,ctx,bottom)
@@ -99,21 +126,10 @@ function U:RenderProtectedIncoming(parent,page,history,ctx)
             if healing and count>1 then ctx.exclusions[#ctx.exclusions+1]={left=x-24,right=x+24,top=ctx.rail-76,bottom=ctx.rail-62}end
             local function Show(self)
                 if not ctx.active()then return end
-                ctx.hideTooltip();local f=Details(chart,parent)
-                local first=math.max(1,math.min(self.member-5,count-11));local last=math.min(count,first+11)
-                f:SetHeight(68+(last-first+1)*26)
-                Place(f,"TOPLEFT",parent,"TOPRIGHT",12,-12)
-                Text(f.title,(healing and"Healing"or"Damage").." · "..count..(count==1 and" event"or" events"))
-                Text(f.note,(count>1 and"Scroll · "or"").."Receipt times · Bar limit "..string.format("%.0f",history.referenceMaximum))
-                for i,ui in ipairs(f.rows)do
-                    local item=group.rows[first+i-1]
-                    if i<=last-first+1 and item then
-                        Text(ui.time,string.format("%.1fs",item.offset))
-                        Text(ui.kind,healing and(item.flag=="CRITICAL"and"Healing · Critical"or"Healing")or item.flag=="ABSORB"and"Absorb reported"or(schools[item.school]or"Mixed-school").." damage")
-                        ui.amount:SetTextColor(unpack(color));I:Paint(page,item.sequence,nil,ui.amount)
-                        ui.focus:SetShown(first+i-1==self.member);ui:Show()
-                    else ui.amount:SetText("");ui:Hide()end
-                end
+                ctx.hideTooltip()
+                local f=PaintDetails(chart,parent,page,{rows=group.rows},self.member,
+                    (healing and"Healing"or"Damage").." · "..count..(count==1 and" event"or" events"),
+                    (count>1 and"Scroll · "or"").."Receipt times · Bar limit "..string.format("%.0f",history.referenceMaximum))
                 chart.selection={sequence=group.rows[self.member].sequence,offset=group.rows[self.member].offset}
                 T.SetSize(chart.guide,1,164);Place(chart.guide,"TOP",chart,"TOPLEFT",x,-ctx.rail+78);chart.guide:Show();f:Show()
             end

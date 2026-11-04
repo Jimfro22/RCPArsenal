@@ -25,9 +25,9 @@ check(not popup.healthPanel:IsShown()and not popup.percent:IsShown()and popup.he
 check(popup.castMarkerCount==1 and popup.castMarkers[1].age.text=='4.0s'and popup.usesLabel.text=='Earlier uses','Own cast used native alignment or older casts vanished')
 check(chart.lateHelp:IsShown()and chart.lateHelp.label.text=='Collecting late reports','Open delivery window appeared complete')
 page.liveIncoming.deathBoundary.active=false;RA:FireCallback('DEATH_RECAP_CHANGED','delivery')
-check(chart.lateHelp.label.text=='Late reports · 2'and chart.damageTotal.text=='310','Completed delivery callback did not refresh the late-report link or changed chart totals')
+check(chart.lateHelp.label.text=='Received after death · 2'and chart.damageTotal.text=='310','Completed delivery callback did not refresh the late-report link or changed chart totals')
 chart.lateHelp:Fire('OnEnter');local oldLate=chart.lateHelp.scripts.OnEnter
-check(popup.tooltipRecap:IsShown()and popup.tooltipRecap.eventHeading.text=='Received after death'and popup.tooltipRecap.eventRows[1].entry.timeText=='+0.40s','Late tooltip guessed hit time or omitted arrival label')
+check(popup.tooltipRecap:IsShown()and popup.tooltipRecap.eventHeading.text=='Received after death'and popup.tooltipRecap.eventRows[1].entry.timeText=='+0.4s','Late tooltip guessed hit time or omitted arrival label')
 chart.lateHelp:Fire('OnMouseWheel',-1)
 check(popup.tooltipRecap.eventRows[2].background:IsShown(),'Late report wheel could not focus the next receipt')
 chart.lateHelp:Fire('OnLeave')

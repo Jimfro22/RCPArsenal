@@ -39,12 +39,26 @@ now=109.9;event('UNIT_COMBAT','player','WOUND','',opaque,4)
 meterRows={{isLocalPlayer=true,deathRecapID=71}};now=110;dead=true;event('PLAYER_DEAD')
 local page=R:GetPage();check(page.liveIncoming.nativeDisplay.protected==3 and page.liveIncoming.nativeDisplay.retained==5,'Actual death did not freeze private incoming amounts')
 check(#page.liveIncoming.rows==2 and page.liveIncoming.rows[1].amount==120,'Protected input entered the public recorder')
+-- A protected hit arrives after PLAYER_DEAD; the same existing window owns it.
+now=110.2;event('UNIT_COMBAT','player','WOUND','',opaque,1)
+now=110.25;event('UNIT_COMBAT','player','HEAL','',7,1)
+event('UNIT_COMBAT','target','WOUND','',opaque,1);event('UNIT_COMBAT','player','BLOCK','',opaque,1)
+event('UNIT_COMBAT','player','WOUND','',-1,1)
+check(page.liveIncoming.nativeLateDisplay.retained==2,'Invalid late input cleared a prior native summary')
+local lateTimer;for _,timer in ipairs(timers)do if timer.delay==1 and not timer.cancelled then lateTimer=timer end end
+check(lateTimer~=nil,'Late capture added or lost the existing window timer')
+now=111;lateTimer.callback()
+now=111.2;event('UNIT_COMBAT','player','WOUND','',opaque,1)
+check(#I:DescribeLate(page).rows==2,'Closed native late window accepted another receipt')
+check(page.liveIncoming.nativeLateDisplay.retained==2 and page.liveIncoming.nativeLateDisplay.protected==1,'Real post-notice event lost its protected amount')
+check(#page.liveIncoming.rows==2 and #I:Describe(page).rows==5,'Late receipt changed pre-notice data')
 local function clean(value)
  check(not issecretvalue(value),'Opaque amount escaped into public data')
  if type(value)=='table'then for key,v in pairs(value)do clean(key);clean(v)end end
 end
 clean(page);clean(RA.DeathRecapHistory:Snapshot(page));clean(RaidArsenalDB)
-check(R:BuildCoreFactsText():find('NATIVE DISPLAY: 5 events; 3 protected amounts',1,true),'Facts report hid the native display behind public receipt counts')
+check(R:BuildCoreFactsText():find('INCOMING HISTORY: 5 events / last 8s (2 public amounts, 3 protected amounts)',1,true),'Facts report hid the native display behind public receipt counts')
+check(R:BuildCoreFactsText():find('AFTER DEATH NOTICE: 2 events delivered separately',1,true),'Facts report hid late native events')
 U:ShowLast();local popup=named.RCPArsenalDeathRecap;local chart=popup.protectedIncomingChart
 check(popup.feedMode=='history'and chart:IsShown()and chart.visibleBars==5 and chart.painted==5 and chart.blocked==0,'Protected death failed to select native-rendered history')
 check(popup.incomingHistory.damageTotal==nil and popup.incomingHistory.healingTotal==nil,'Protected view invented numeric totals')
@@ -60,10 +74,17 @@ local stale=healing.scripts.OnEnter
 U:OpenShare();check(not chart.details:IsShown(),'Protected tooltip covered the chat chooser')
 stale(healing);check(not chart.details:IsShown(),'Protected hover remained active above the chat chooser')
 popup.shareChooser.close:Fire('OnClick');healing:Fire('OnEnter')
+healing:Fire('OnLeave');chart.lateHelp:Fire('OnEnter')
+check(chart.lateHelp.label.text=='Received after death · 2'and chart.details:IsShown(),'Late native inspection link is missing')
+check(rawequal(chart.details.rows[1].amount.nativeInput,opaque)and chart.details.rows[2].amount.nativeInput==7,'Late tooltip lost protected or public amounts')
+check(chart.details.rows[1].time.text=='+0.2s'and chart.visibleBars==5 and not chart.guide:IsShown(),'Late tooltip backdated an event onto the timeline')
+local oldLate=chart.lateHelp.scripts.OnEnter
+chart.lateHelp:Fire('OnLeave');check(not chart.details:IsShown()and chart.details.rows[1].amount.nativeInput==nil,'Late tooltip left native values visible')
 healing:Fire('OnLeave');popup.feedSelector.named:Fire('OnClick')
 check(popup.feedMode=='named'and not chart:IsShown()and not chart.details:IsShown()and popup.healthPanel:IsShown(),'Named view retained protected chart or lost HP')
 for _,bar in ipairs(chart.bars)do check(bar.value==0,'Hidden chart retained native protected input')end
 stale(healing);check(not chart.details:IsShown(),'Stale hover reopened a protected tooltip')
+oldLate(chart.lateHelp);check(not chart.details:IsShown(),'Stale late hover leaked into named view')
 local report=assert(R:BuildShareReport(page,false,'history'))
 check(report.text:find('777 damage',1,true)and not report.text:find('Healing /',1,true),'Share invented or exported a protected healing total')
 clean(report)
@@ -90,13 +111,27 @@ check(target.member==256,'Tooltip wheel cannot browse every busy-window receipt'
 local maximumObjects=#objects
 for n=1,4 do U:ShowPage(page);U:ShowPage(busy);target:Fire('OnEnter')end
 check(#objects==maximumObjects and #chart.bars==256,'Repeated review grew the native widget pool')
+-- Public pre-notice amounts and protected late amounts can share a death.
+local publicPage={id=101,diedAt=220,lastAlive={spells={},supplies={}},native=page.native,
+ liveIncoming={source='UNIT_COMBAT:player',clock='GetTime',startedAt=210,endedAt=220,
+ rows={{sequence=1,observedAt=219,kind='damage',amount=12}},
+ deathBoundary={source='UNIT_COMBAT:player',clock='GetTime',noticeAt=220,deadline=221,active=false,restricted=1,rows={}}}}
+publicPage.liveIncoming.nativeLateDisplay=I:CaptureLate(publicPage,220.2,'WOUND','',opaque,1)
+R.GetHistory=function()return{publicPage,page}end;R.IsRetainedPage=function(_,p)return p==page or p==publicPage end
+U:ShowPage(publicPage);local publicChart=popup.incomingChart
+check(publicChart:IsShown()and not chart:IsShown(),'Protected late receipt replaced a valid public chart')
+publicChart.lateHelp:Fire('OnEnter')
+check(publicChart.details:IsShown()and rawequal(publicChart.details.rows[1].amount.nativeInput,opaque),'Public chart cannot inspect protected late data')
+publicPage.liveIncoming.rows={};U:ShowPage(publicPage)
+check(chart:IsShown()and chart.visibleBars==0,'Late-only capture invented pre-notice events or lost inspection access')
+chart.lateHelp:Fire('OnEnter');check(chart.details:IsShown(),'Late-only protected amount is inaccessible')
 -- Saved public metadata survives reload; private values cannot be persisted.
 local saved=RA.DeathRecapHistory:Snapshot(page);saved.restored=true;I:Clear()
 R.GetHistory=function()return{saved}end;R.GetPage=function()return saved end;R.IsRetainedPage=function(_,p)return p==saved end
 U:ShowLast()
 check(popup.feedMode=='named'and not chart:IsShown()and popup.incomingNotice:IsShown(),'Restored page pretended partial public receipts were full history')
 check(saved.liveIncoming.nativeDisplay.protected==3 and #saved.liveIncoming.rows==2,'Reload boundary lost its public explanation or public receipts')
-check(R:BuildCoreFactsText():find('Session-only amounts cleared',1,true),'Saved facts claimed cleared values were still in memory')
+check(R:BuildCoreFactsText():find('session-only amounts cleared',1,true),'Saved facts claimed cleared values were still in memory')
 clean(saved);U:Hide();check(not popup.incomingNotice:IsShown(),'Closing recap left the reload notice visible')
 cleanErrors()
 nativePrint('PASS: '..checks..' real-module protected history, native sinks, hover, switching, sharing and reload-boundary assertions')

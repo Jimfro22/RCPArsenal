@@ -46,6 +46,7 @@ end
 function U:HideIncoming(parent)
     if self.HideProtectedIncoming then self:HideProtectedIncoming(parent)end
     local chart=parent.incomingChart;if not chart then return end
+    if self.ClearIncomingNativeDetails then self:ClearIncomingNativeDetails(chart)end
     chart:Hide();chart.guide:Hide();chart.selection=nil
     for _,b in ipairs(chart.bars)do b:SetScript("OnEnter",nil);b:SetScript("OnMouseWheel",nil);b:Hide()end
     if chart.lateHelp then chart.lateHelp:SetScript("OnEnter",nil);chart.lateHelp:SetScript("OnMouseWheel",nil);chart.lateHelp:Hide()end
@@ -56,25 +57,32 @@ function U:RenderIncomingLateReports(chart,page,ctx,baseline)
         chart.lateHelp.label=Font(chart.lateHelp,11,C.textSoft);chart.lateHelp.label:SetJustifyH("RIGHT");chart.lateHelp.label:SetAllPoints(chart.lateHelp)
     end
     local late=RA.DeathLogModel:LateIncoming(page);local lateHelp=chart.lateHelp
+    local native=RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:DescribeLate(page)
+    if native then native.pending=late.pending;late=native
+    else late.notRetained=late.restricted or 0 end
+    local count=#late.rows+(late.notRetained or 0)
     chart.lateHistory=late;lateHelp.member=1
-    lateHelp:SetShown(late.available or late.pending or late.partial)
+    lateHelp:SetShown(late.available or late.pending or late.partial or count>0)
     Place(lateHelp,"TOPRIGHT",chart,"TOPRIGHT",-48,-baseline)
-    Text(lateHelp.label,late.pending and"Collecting late reports"or("Late reports · "..#late.rows..(late.partial and" · incomplete"or"")))
+    Text(lateHelp.label,late.pending and"Collecting late reports"or("Received after death · "..count..(late.partial and" · incomplete"or"")))
     local function ShowLate(self)
-        if not ctx.active()or not(late.available or late.pending or late.partial)then return end
+        if not ctx.active()or not(late.available or late.pending or late.partial or count>0)then return end
+        if late.nativeDisplay then U:ShowProtectedIncomingLate(chart,page,late,ctx,self.member);return end
         if not late.available then
-            ctx.tooltip(self,{"Late reports",late.pending and"Waiting for delayed combat feedback."or"Saved before collection finished.","These reports remain separate from chart totals."});return
+            ctx.tooltip(self,{"Received after death",(late.notRetained or 0)>0 and(late.notRetained.." protected amounts were not retained, or were cleared by reload.")or(late.pending and"Waiting for delayed combat feedback."or"Saved before collection finished."),"Delivery times only; separate from the timeline."});return
         end
         local lines={damageEvents={},compactRows=true,totalText="Received after death",countText=#late.rows..(#late.rows==1 and" report"or" reports"),
-            originText="Receipt times only; separate from chart totals.",selectedIndex=self.member}
+            originText=(late.notRetained or 0)>0 and(late.notRetained.." protected amounts not retained. Delivery times only.")or"Receipt times only; separate from chart totals.",selectedIndex=self.member}
         for _,row in ipairs(late.rows)do
             lines.damageEvents[#lines.damageEvents+1]={text=row.kind=="absorbed"and"Absorb reported"or row.kind=="healing"and"Healing reported"or(schools[row.school]or"Mixed-school").." damage",
-                timeText=string.format("+%.2fs",row.deliveryOffset),amountText=row.kind=="absorbed"and"—"or Exact(row.amount),
+                timeText=string.format("+%.1fs",row.deliveryOffset),amountText=row.kind=="absorbed"and"—"or Exact(row.amount),
                 amountColor=row.kind=="healing"and C.success or row.kind=="absorbed"and{.36,.70,1}or C.danger}
         end
         ctx.tooltip(self,lines)
     end
-    lateHelp:SetScript("OnEnter",ShowLate);lateHelp:SetScript("OnLeave",ctx.hideTooltip)
+    lateHelp:SetScript("OnEnter",ShowLate);lateHelp:SetScript("OnLeave",function(owner)
+        if late.nativeDisplay then self:ClearIncomingNativeDetails(chart)else ctx.hideTooltip(owner)end
+    end)
     lateHelp:EnableMouseWheel(#late.rows>1)
     lateHelp:SetScript("OnMouseWheel",function(self,delta)
         if not ctx.active()or #late.rows==0 then return end

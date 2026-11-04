@@ -152,6 +152,10 @@ local function CaptureDeathBoundary(unit,action,flag,amount,school)
     packet.callbacks=packet.callbacks+1
     if String(unit)~="player"then packet.unitRejected=packet.unitRejected+1;return end
     action=String(action);if action~="WOUND"and action~="HEAL"then packet.actionRejected=packet.actionRejected+1;return end
+    if ProtectedIncoming then
+        local summary=ProtectedIncoming:CaptureLate(owner.page,time,action,flag,amount,school)
+        if summary then owner.page.liveIncoming.nativeLateDisplay=summary end
+    end
     local value=Number(amount,0,1e15)
     if value==nil then
         local key=FieldStatus(amount,"number")=="restricted"and"restricted"or"rejected"

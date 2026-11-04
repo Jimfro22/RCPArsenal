@@ -4,6 +4,14 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.63", title = "Keep delayed incoming events",
+        groups = {{label = "Fixed", items = {
+            "Protected events delivered just after death now remain inspectable under Received after death.",
+            "Delayed events keep their delivery times and stay separate from the eight-second chart, named hits and chat totals.",
+            "Facts distinguish public and protected amounts instead of reporting zero events when native widgets show them.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.62", title = "Protected incoming events in Death Log",
         groups = {{label = "Added", items = {
             "Death Log's eight-second view can draw protected dungeon/raid damage and healing through native bars.",

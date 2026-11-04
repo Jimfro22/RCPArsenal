@@ -2,6 +2,14 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.63 — Keep delayed incoming events
+
+### Fixed
+
+- Protected events delivered just after death now remain inspectable under Received after death.
+- Delayed events keep their delivery times and stay separate from the eight-second chart, named hits and chat totals.
+- Facts distinguish public and protected amounts instead of reporting zero events when native widgets show them.
+
 ## 0.15.3-alpha.62 — Protected incoming events in Death Log
 
 ### Added
