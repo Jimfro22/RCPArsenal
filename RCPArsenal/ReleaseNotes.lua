@@ -4,6 +4,13 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.59", title = "Save native recap comparisons",
+        groups = {{label = "Added", items = {
+            "A manual recap-source test saves Blizzard's own recap at death and again one second later.",
+            "Both comparison snapshots survive reload with the saved death. No Blizzard window is needed.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.58", title = "Compact Death Log sharing",
         groups = {{label = "Changed", items = {
             "Post to chat shares up to six named hits from the final six seconds, from either view.",

@@ -1,6 +1,6 @@
 # Current updates
 
-Current build: **0.15.3-alpha.58**. Open **What's new** beneath the settings logo for recent changes. The same notes are maintained from one source in [recent updates](../docs/RECENT_UPDATES.md) in the source repository. [Consolidation and validation](../docs/VALIDATION.md) tracks accepted results and outstanding client tests. The dated notes below are historical.
+Current build: **0.15.3-alpha.59**. Open **What's new** beneath the settings logo for recent changes. The same notes are maintained from one source in [recent updates](../docs/RECENT_UPDATES.md) in the source repository. [Consolidation and validation](../docs/VALIDATION.md) tracks accepted results and outstanding client tests. The dated notes below are historical.
 
 # 0.15.3-alpha.36 live Death Log and manual death entry
 

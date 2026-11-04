@@ -1,6 +1,6 @@
 # RCP Arsenal Windows smoke test
 
-The current consolidation candidate is **0.15.3-alpha.58**, schema 19. Start with the [current validation order and confirmed results](VALIDATION.md); the sections below preserve detailed scenarios from earlier candidates, not a claim that every feature is still untested. Record the exact candidate commit/manifest, ZIP SHA-256, client build, profile origin, role/permissions and shortest reproduction with any Lua error. Preserve SavedVariables and the prior installer. See the [settings contract](SETTINGS_CLEANUP.md).
+The current consolidation candidate is **0.15.3-alpha.59**, schema 19. Start with the [current validation order and confirmed results](VALIDATION.md); the sections below preserve detailed scenarios from earlier candidates, not a claim that every feature is still untested. Record the exact candidate commit/manifest, ZIP SHA-256, client build, profile origin, role/permissions and shortest reproduction with any Lua error. Preserve SavedVariables and the prior installer. See the [settings contract](SETTINGS_CLEANUP.md).
 
 ## Current settings and resurrection checks
 

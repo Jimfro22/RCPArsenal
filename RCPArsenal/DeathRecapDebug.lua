@@ -160,6 +160,8 @@ function D:GetFrozenSnapshot()
         loaded=Fields({addonVersion=RA.VERSION,addonBuild=RA.BUILD,catalogBuild=catalog and catalog.build,catalogRevision=catalog and catalog.revision},LOADED)}
     local personal=Table(page.personalNativeProbe)
     if personal then snapshot.personalNative={packet=Packet(personal),metadata=Fields(personal,{"source","status","observedAt"})}end
+    local late=Table(page.personalNativeProbeLate)
+    if late then snapshot.personalNativeLate={packet=Packet(late),metadata=Fields(late,{"source","status","observedAt"})}end
     local contexts=Table(page.directSpellEvents)
     for _,name in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES"})do
         snapshot.directEvents[name]=Context(contexts and contexts[name])
@@ -177,6 +179,11 @@ function D:GetFrozenSnapshot()
     end
     return snapshot,nil,page
 end
+local personalLateTimer,personalLatePage
+local function CancelPersonalLate()
+    if personalLateTimer then personalLateTimer:Cancel()end
+    personalLateTimer,personalLatePage=nil,nil
+end
 function D:CapturePersonalNativeProbe(input)
     local page=Table(input);local live=page and Table(page.liveIncoming);local probe=live and Table(live.probe)
     if not page or page.personalNativeProbe or not probe or probe.stopReason~="own-death"or probe.endedAt~=page.diedAt then return end
@@ -184,6 +191,22 @@ function D:CapturePersonalNativeProbe(input)
     packet=packet or{rows={}}
     packet.source="personal-default";packet.status=packet.readBefore and"public-response"or(type(reason)=="string"and reason or"unavailable")
     packet.observedAt=Scalar(page.diedAt);page.personalNativeProbe=packet
+    if probe.mode=="native-comparison"and C_Timer and type(C_Timer.NewTimer)=="function"then
+        CancelPersonalLate()
+        local timer
+        local ok,value=pcall(C_Timer.NewTimer,1,function()
+            if personalLateTimer~=timer or personalLatePage~=page then return end
+            personalLateTimer,personalLatePage=nil,nil
+            if R:GetPage()~=page or page.restored or not R:GetState().enabled then return end
+            local late,why=R:ReadPersonalNativeForProbe(page,"late")
+            late=late or{rows={}}
+            late.source="personal-default-late";late.status=late.readBefore and"public-response"or(type(why)=="string"and why or"unavailable")
+            local clockOK,observed=pcall(GetTime)
+            late.observedAt=late.readBefore or(clockOK and Scalar(observed))or nil
+            page.personalNativeProbeLate=late;R:SaveNativeDiagnostics(page)
+        end)
+        if ok and value then timer=value;personalLateTimer,personalLatePage=timer,page end
+    end
 end
 local function Writer()
     local lines,bytes,full={},0,false
@@ -375,9 +398,9 @@ local function WriteDiff(Add,before,after)
     end
     Add("  changedFieldsOrSlots="..changed.."; comparison covers retained rows only")
 end
-local function WritePersonalNativeProbe(Add,linked,probe)
+local function WritePersonalNativeProbe(Add,linked,probe,label)
     if not probe then return end
-    Add("PERSONAL DEFAULT PROBE "..FieldText(probe.metadata,{"source","status","observedAt"}))
+    Add((label or"PERSONAL DEFAULT PROBE").." "..FieldText(probe.metadata,{"source","status","observedAt"}))
     WritePacket(Add,"FROZEN PERSONAL DEFAULT - diagnostic only, never adopted as a meter ID",probe.packet)
     local personal=probe.packet
     local different,comparable=0,#linked.rows>0 and #personal.rows>0
@@ -420,6 +443,7 @@ function R:BuildDebugText(reread)
     WriteCasts(Add,snapshot.casts)
     WritePacket(Add,"FROZEN NATIVE",snapshot.native)
     WritePersonalNativeProbe(Add,snapshot.native,snapshot.personalNative)
+    WritePersonalNativeProbe(Add,snapshot.native,snapshot.personalNativeLate,"PERSONAL DEFAULT AFTER ONE SECOND")
     if reread==true then
         if comparison then WritePacket(Add,"EXPLICIT SAME-ID REREAD",comparison);WriteDiff(Add,snapshot.native,comparison)
         else local value,status=Scalar(readReason);Add("EXPLICIT SAME-ID REREAD unavailable="..Encode(value,status))end
@@ -466,24 +490,30 @@ local function ProbeToken(value)
     return s,status
 end
 function D:StopIncomingProbe(reason,time)
+    if reason~="own-death"then CancelPersonalLate()end
     local owner=incomingProbe
     if not owner or not owner.active then return false end
-    owner.active=false;owner.stopReason=reason or"explicit-stop";owner.endedAt=Guard(time,"number")or ReadScalar(GetTime,"number")
-    incomingProbeFrame:UnregisterAllEvents()
+    time=Guard(time,"number")or ReadScalar(GetTime,"number")
+    if reason=="own-death"and(not time or time<owner.armedAt or time>=owner.deadline)then reason="timeout";CancelPersonalLate()end
+    owner.active=false;owner.stopReason=reason or"explicit-stop";owner.endedAt=time
+    if incomingProbeFrame then incomingProbeFrame:UnregisterAllEvents()end
     if incomingProbeTimer then incomingProbeTimer:Cancel();incomingProbeTimer=nil end
     return true
 end
 function D:GetIncomingProbeForDeath(time)
     if incomingProbe and incomingProbe.stopReason=="own-death"and incomingProbe.endedAt==time then return incomingProbe end
 end
-function D:StartIncomingProbe()
+function D:StartIncomingProbe(nativeOnly)
+    nativeOnly=nativeOnly==true
     if not R:GetState().enabled then return false,"Enable Death Recap before starting the incoming-event test"end
     local time=ReadScalar(GetTime,"number")
-    if not time or time<0 or time+30==math.huge or not C_Timer or type(C_Timer.NewTimer)~="function"then return false,"Incoming-event test clock or timeout unavailable"end
+    local duration=nativeOnly==true and 120 or 30
+    if not time or time<0 or time+duration==math.huge or not C_Timer or type(C_Timer.NewTimer)~="function"then return false,"Incoming-event test clock or timeout unavailable"end
     self:StopIncomingProbe("replaced",time)
-    incomingProbeFrame=incomingProbeFrame or CreateFrame("Frame")
-    local owner={active=true,armedAt=time,deadline=time+30,callbacks=0,playerCallbacks=0,otherCallbacks=0,unreadableUnits=0,textCallbacks=0,textIncomingCallbacks=0,samples={},textSamples={}}
+    local owner={active=true,mode=nativeOnly==true and"native-comparison"or"transport",armedAt=time,deadline=time+duration,callbacks=0,playerCallbacks=0,otherCallbacks=0,unreadableUnits=0,textCallbacks=0,textIncomingCallbacks=0,samples={},textSamples={}}
     incomingProbe=owner
+    if not nativeOnly then
+    incomingProbeFrame=incomingProbeFrame or CreateFrame("Frame")
     local ok=pcall(function()incomingProbeFrame:RegisterEvent("UNIT_COMBAT");incomingProbeFrame:RegisterEvent("COMBAT_TEXT_UPDATE")end)
     if not ok then self:StopIncomingProbe("registration-error",time);return false,"Incoming-event test registration failed"end
     owner.nativeRegistered=ReadScalar(incomingProbeFrame.IsEventRegistered,"boolean",incomingProbeFrame,"UNIT_COMBAT")
@@ -518,10 +548,12 @@ function D:StartIncomingProbe()
             owner.samples[#owner.samples+1]=sample
         end
     end)
-    local timerOK,timer=pcall(C_Timer.NewTimer,30,function()if incomingProbe==owner and owner.active then D:StopIncomingProbe("timeout")end end)
+    end
+    local timerOK,timer=pcall(C_Timer.NewTimer,duration,function()if incomingProbe==owner and owner.active then D:StopIncomingProbe("timeout")end end)
     if not timerOK or not timer then self:StopIncomingProbe("timer-error");return false,"Incoming-event test timeout failed"end
     incomingProbeTimer=timer
-    return true,"Incoming-event test armed for 30 seconds. Start combat now; after death use /rcp recapdebug live."
+    return true,nativeOnly and"Native recap comparison armed for two minutes. After death, wait two seconds, then use /rcp recapdebug. Both sources are saved; no Blizzard window is needed."
+        or"Incoming-event test armed for 30 seconds. Start combat now; after death use /rcp recapdebug live."
 end
 function D:AppendIncomingProbeText(Add,input)
     local p=Table(input);if not p then return end

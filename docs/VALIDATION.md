@@ -1,6 +1,6 @@
 # Consolidation and validation
 
-Current consolidation build: **0.15.3-alpha.58**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
+Current consolidation build: **0.15.3-alpha.59**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
 
 ## Release decision
 
@@ -32,11 +32,13 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 
 ## Validation order
 
-### 1. One short owner check on alpha.58
+### 1. Recap-source comparison on alpha.59
 
-Use a saved death; no new fight is needed. Open Post to chat once from each tab and compare the report: the same last six named hits inside six seconds, compact totals and confirmed available abilities. Choose a targeted-player Whisper and verify the received lines and clickable spell links. The report must not dump anonymous history, late reports, cast history or per-hit absorb detail.
+The latest owner export retained all three native hits inside its eight-second window, but that native packet ended before later attacks visible in the combat log. Blizzard's original recap is no longer available, so record selection versus an early native snapshot is unresolved.
 
-The saved 5:08 fight-time overlap check and the reported Fire Mage use/readiness checks are accepted. The scrolling feedback is recorded below; do not repeat accepted tests without a mismatch.
+Use the [recap-only comparison](DEATH_RECAP_NATIVE_COMPARISON.md): `/rcp recapdebug native start`, one Fire Mage death reproducing Cauterize when convenient, wait two seconds, then `/rcp recapdebug`. Both native responses survive reload with the saved death. This build collects the missing evidence; it does not change the named source or claim the missing-hit issue is fixed.
+
+The saved 5:08 label and reported Fire Mage use/readiness results remain accepted. Compact sharing is implemented; coordinated native delivery acceptance remains below.
 
 For a mismatch, send the version, screenshot, class/spec, what you actually used and what remained available, plus `/rcp recapfacts`. Request the longer `/rcp recapdebug` export only when needed to investigate that mismatch.
 
