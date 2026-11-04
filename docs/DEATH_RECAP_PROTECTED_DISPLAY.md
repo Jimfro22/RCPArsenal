@@ -1,6 +1,9 @@
 # Protected incoming display test
 
 Alpha.61 repairs an explicitly armed experiment, separate from the normal Death Log.
+One owner dungeon capture confirmed visible protected amounts after death.
+Alpha.62 integrates that route into the [normal incoming view](DEATH_RECAP_NATIVE_INCOMING.md);
+this manual probe remains useful for diagnosis.
 It tests whether protected incoming amounts can remain visible through native
 widgets after the player's death. Native acceptance is pending.
 

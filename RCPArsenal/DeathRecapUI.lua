@@ -311,6 +311,11 @@ local function Tooltip(button,lines,spellID,itemID,color,focusIndex)
     end
 end
 local function HideTooltip(target)
+    if not target and frame and frame.protectedIncomingChart then
+        local chart=frame.protectedIncomingChart
+        if chart.details then chart.details:Hide()end
+        chart.guide:Hide()
+    end
     if target and target~=tooltipOwner then return end
     local owner,wasNative=tooltipOwner,tooltipNative;ClearTooltipTracking()
     if wasNative and owner and GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner()==owner then GameTooltip:Hide()end
@@ -588,6 +593,7 @@ function UI:Hide()
     if frame then
         if UI.HideIncoming then UI:HideIncoming(frame)end
         if frame.feedSelector then frame.feedSelector:Hide()end
+        if frame.incomingNotice then frame.incomingNotice:Hide()end
         frame:Hide();frame.selected,frame.selectedItem=nil,nil;frame.healthPanel:SetScript("OnEnter",nil)
         if frame.historyMenu then frame.historyMenu:Hide()end
         for _,b in ipairs(damagePool)do b.group=nil;b:SetScript("OnEnter",nil);b:SetScript("OnClick",nil);b:SetScript("OnMouseWheel",nil)
@@ -1133,11 +1139,15 @@ function UI:Render()
     for _,b in ipairs(damagePool)do if b.span then b.span:Hide()end;if b.amountTarget then b.amountTarget:Hide()end;if b.brackets then HidePool(b.brackets)end;if b.stems then HidePool(b.stems)end end
     for _,b in ipairs(supportPool)do if b.lines then HidePool(b.lines)end;if b.activationStems then HidePool(b.activationStems)end end
     self:HideIncoming(frame)
-    local incoming=not example and M:Incoming(page)or{available=false}
+    local incoming=not example and RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:Describe(page)
+    if not incoming then
+        local expired=not example and page.liveIncoming and page.liveIncoming.nativeDisplay
+        incoming=expired and{available=false,sessionOnlyExpired=true}or(not example and M:Incoming(page)or{available=false})
+    end
     frame.incomingHistory=incoming
     frame.feedMode=incoming.available and(frame.feedMode or"history")or"named"
     local historyMode=frame.feedMode=="history"
-    frame.feedExtra=incoming.available and 32 or 0
+    frame.feedExtra=(incoming.available or incoming.sessionOnlyExpired)and 32 or 0
     self:UpdateIncomingSelector(frame,incoming,frame.feedMode,function(mode)
         if current==page and revision==renderRevision and not(share and share:IsShown())and mode~=frame.feedMode then
             frame.feedMode=mode;self:Render()
@@ -1336,7 +1346,8 @@ function UI:Render()
     for i=1,#model.items do local b=damagePool[i];b.stems=b.stems or{};Stem(b.stems,(X(b.group.first)+X(b.group.last))/2,rail,b.spanY,pink,.55,frame.textExclusions)end
     if historyMode then
         frame.selected=nil;frame.selectedItem=nil;frame.healthPanel.selectedHP=nil;frame.healthPanel.selectedMax=nil
-        self:RenderIncoming(frame,page,incoming,{rail=rail,headerTop=historyHeaderTop,healthTop=HEALTH_TOP+extraHeight,tooltip=Tooltip,hideTooltip=HideTooltip,exclusions=frame.textExclusions,
+        local renderer=incoming.nativeDisplay and self.RenderProtectedIncoming or self.RenderIncoming
+        renderer(self,frame,page,incoming,{rail=rail,headerTop=historyHeaderTop,healthTop=HEALTH_TOP+extraHeight,tooltip=Tooltip,hideTooltip=HideTooltip,exclusions=frame.textExclusions,
             active=function()return current==page and revision==renderRevision and frame:IsShown()and not(share and share:IsShown())end})
         RenderCastMarkers(page,shelfExtra,rail,revision);RenderSupports(page,example,shelfExtra,rail,revision)
         Shelf(page,false,0);return

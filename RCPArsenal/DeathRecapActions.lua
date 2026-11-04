@@ -140,7 +140,8 @@ function R:BuildShareReport(page,preview,feedMode)
         if healing then healSpan=6 end
     elseif RA.DeathLogModel then
         local incoming=RA.DeathLogModel:Incoming(page)
-        if incoming.available then
+        local live=page.liveIncoming
+        if incoming.available and not(live and(live.nativeDisplay or(Number(live.restricted)or 0)>0))then
             healing,healSpan=0,math.min(6,died-page.liveIncoming.startedAt)
             for _,row in ipairs(incoming.rows)do
                 if row.kind=="healing"and row.offset>=-6 then healing=healing+row.amount end

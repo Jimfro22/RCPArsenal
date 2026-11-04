@@ -5,6 +5,7 @@ Recap.LIMITS = { spells=32, items=34, casts=64, samples=1, seconds=30, rows=64, 
 local passive, active, ticker, fetchTimer, eventTimer = {}, {}, nil, nil, nil
 local session, last, baseline, generation, serial = nil, nil, nil, 0, 0
 local Association=RA.DeathRecapAssociation
+local ProtectedIncoming=RA.DeathRecapProtectedIncoming
 local encounterContext;local encounterSerial=0
 local RefreshTicker,cooldownObserver,incomingObserver
 local deathBoundary
@@ -554,6 +555,7 @@ local function CaptureBaseline(reason,domain,spellID,baseID)
 end
 local function NewSession(reason,combatEntryObserved)
     if not Enabled()or not Alive()then return end
+    if ProtectedIncoming then ProtectedIncoming:Cancel()end
     StopDeathBoundary("new-session")
     local previous=session
     Notify("reset")
@@ -577,6 +579,7 @@ local function NewSession(reason,combatEntryObserved)
             session.precombatBaseline=Copy(baseline);session.precombatBaseline.frozenAtCombatEntry=session.startedAt
         end
     else
+        if ProtectedIncoming then ProtectedIncoming:PrepareReference()end
         CaptureBaseline("precombat-baseline")
         for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
     end
@@ -605,6 +608,7 @@ local function BeginCombat(reason,combatEntryObserved)
     -- The combat-entry event arms this stream explicitly. Its lifetime must
     -- not depend on a precombat flag or a second lockdown query in each hit.
     session.incomingRecording=true
+    if ProtectedIncoming then ProtectedIncoming:Begin(session.startedAt)end
     Observe("pull-baseline",false)
     for _,subscription in ipairs(active)do subscription:SetEnabled(true)end
 end
@@ -695,9 +699,11 @@ local function OnDeath()
             page.liveIncoming.rows[#page.liveIncoming.rows+1]=Copy(receipt)
         end
     end
+    if ProtectedIncoming then page.liveIncoming.nativeDisplay=ProtectedIncoming:Freeze(page,time)end
     page.recordedAt=Number(Call(GetServerTime))
     session.dead=true;session.incomingRecording=false;last=page;table.insert(history,1,page)
     while #history>5 do table.remove(history)end
+    if ProtectedIncoming then ProtectedIncoming:Prune(history)end
     if not explicitHistorySelection or not Recap:IsRetainedPage(selectedHistory)then selectedHistory=page;explicitHistorySelection=false end
     StartDeathBoundary(page)
     Diagnostic("CapturePersonalNativeProbe",page)
@@ -1022,6 +1028,7 @@ function Recap:GetState()
         recording=ticker~=nil,coverage=session and session.coverage or "No alive observations"}
 end
 function Recap:Refresh()
+    if ProtectedIncoming then if Enabled()then ProtectedIncoming:Cancel()else ProtectedIncoming:Clear()end end
     StopDeathBoundary("observer-reset")
     Diagnostic("StopCooldownCapture",Enabled()and"observer-reset"or"disabled")
     Diagnostic("StopIncomingProbe",Enabled()and"observer-reset"or"disabled")
@@ -1081,6 +1088,7 @@ incomingObserver=Passive("UNIT_COMBAT",function(_,unit,action,flag,amount,school
     if String(unit)~="player"then session.incomingUnitRejected=session.incomingUnitRejected+1;return end
     action=String(action);if action~="WOUND"and action~="HEAL"then session.incomingActionRejected=session.incomingActionRejected+1;return end
     local time=Now();if not time or not session.startedAt or time<session.startedAt then return end
+    if ProtectedIncoming then ProtectedIncoming:Capture(time,action,flag,amount,school)end
     local value=Number(amount,0,1e15);local status=FieldStatus(amount,"number")
     if not value then
         if status=="restricted"then session.incomingRestricted=session.incomingRestricted+1
@@ -1119,6 +1127,7 @@ for _,event in ipairs({"PLAYER_ALIVE","PLAYER_UNGHOST","PLAYER_ENTERING_WORLD"})
     Passive(event,function()
         StopDeathBoundary(event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
         Diagnostic("StopCooldownCapture",event=="PLAYER_ENTERING_WORLD"and"world-transition"or"life-transition")
+        if ProtectedIncoming then ProtectedIncoming:Cancel()end
         StopRecording();if event=="PLAYER_ENTERING_WORLD"then CancelFetch();encounterContext=nil;baseline=nil end
         if Alive()then
             if Combat()then BeginCombat("Resurrected/entered during combat; incomplete coverage")

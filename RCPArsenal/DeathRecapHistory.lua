@@ -19,6 +19,7 @@ NUMERIC.localDeathNoticeAt=true
 NUMERIC.readBefore=true;NUMERIC.readAfter=true
 NUMERIC.noticeAt=true
 NUMERIC.gameMapID=true
+NUMERIC.retained=true;NUMERIC.protected=true
 IDS.gameMapID=true
 NUMERIC.nativeCooldownAt=true;BOOLEAN.nativeCooldownActive=true
 local function Fields(input,keys,textOnly)
@@ -87,6 +88,7 @@ function H:Snapshot(input)
     local live=Plain(input.liveIncoming)
     if live then
         out.liveIncoming=Fields(live,'source clock startedAt endedAt combatEntryObserved total rejected restricted capacity seconds callbacks inactive unitRejected actionRejected recording sessionPrecombat lockdownAtDeath nativeRegistered')
+        out.liveIncoming.nativeDisplay=Fields(live.nativeDisplay,'retained protected partial')
         out.liveIncoming.rows=Array(live.rows,256,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
         out.liveIncoming.trace=Array(live.trace,6,function(v)return Fields(v,'observedAt recording unit unitStatus action actionStatus')end)
         local boundary=Plain(live.deathBoundary)
