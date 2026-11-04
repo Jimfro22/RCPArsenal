@@ -281,11 +281,26 @@ function R:BuildCoreFactsText()
     local native=Table(page.native);local rows=native and Table(native.rows)
     Add('DAMAGE: '..(rows and #rows..' retained records' or'No native recap attached'))
     local live=Table(page.liveIncoming)
-    if live then Add('LIVE INCOMING: '..#(Table(live.rows)or{})..' receipts in the last 8 seconds; /rcp recapdebug live')end
-    if live and Table(live.nativeDisplay)then
-        local displayed=RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:Describe(page)
-        Add(displayed and('NATIVE DISPLAY: '..#displayed.rows..' events; '..displayed.protected..' protected amounts; kept until reload')
-            or'NATIVE DISPLAY: Session-only amounts cleared; named hits remain saved')
+    if live then
+        local function Count(v)local n=Scalar(v);return type(n)=="number"and n>=0 and n==math.floor(n)and n or 0 end
+        local marker=Table(live.nativeDisplay)
+        local protectedCount=marker and Count(marker.protected)or 0
+        local total=marker and Count(marker.retained)or #(Table(live.rows)or{})
+        local publicCount=math.max(0,total-protectedCount)
+        Add(string.format("INCOMING HISTORY: %d events / last 8s (%d public amounts, %d protected amounts)",total,publicCount,protectedCount))
+        if marker then
+            local displayed=RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:Describe(page)
+            Add(displayed and"Protected display: available until reload"or"Protected display: session-only amounts cleared")
+            if marker.partial==true then Add("Incoming capacity reached; some events were not retained")end
+        end
+        local boundary=Table(live.deathBoundary)
+        local lateMarker=Table(live.nativeLateDisplay)
+        local lateCount=lateMarker and Count(lateMarker.retained)or(boundary and(#(Table(boundary.rows)or{})+Count(boundary.restricted))or 0)
+        if lateCount>0 then
+            local shown=RA.DeathRecapProtectedIncoming and RA.DeathRecapProtectedIncoming:DescribeLate(page)
+            local missing=not shown and boundary and Count(boundary.restricted)>0
+            Add("AFTER DEATH NOTICE: "..lateCount..(lateCount==1 and" event"or" events").." delivered separately"..(missing and"; protected amounts not retained or cleared"or""))
+        end
     end
     Add('Coverage: '..(page.useCoverage and page.useCoverage.combatEntryObserved==true and'combat entry observed'or'incomplete combat entry'))
     if page.restored then Add('Saved death; this report does not query your current character.')end
@@ -299,7 +314,7 @@ function R:BuildLiveHistoryText(includeRaw)
     Add("Your incoming damage/healing receipts. This feed contains no spell names or attackers.")
     Add("Times are local receipt times before the death notice, separate from Blizzard's named recap.")
     local rows=Table(live.rows)or{}
-    Add(string.format("Retained %d receipts / 8 seconds; capacity 256. %d readable receipts this combat; %d restricted amounts; %d rejected amounts.",#rows,Scalar(live.total)or 0,Scalar(live.restricted)or 0,Scalar(live.rejected)or 0))
+    Add(string.format("Retained %d public amounts / 8 seconds; capacity 256. %d public amounts this combat; %d restricted amounts; %d rejected amounts.",#rows,Scalar(live.total)or 0,Scalar(live.restricted)or 0,Scalar(live.rejected)or 0))
     if Scalar(live.callbacks)~=nil then
         local function Count(v)local n=Scalar(v);return type(n)=="number"and n or 0 end
         local function Yes(v)return v==true and"yes"or v==false and"no"or"not recorded"end
@@ -311,7 +326,7 @@ function R:BuildLiveHistoryText(includeRaw)
     end
     if type(D.AppendIncomingProbeText)=="function"then D:AppendIncomingProbeText(Add,live.probe)end
     if Scalar(live.total)and live.total>256 then Add("Capacity reached: the busiest eight-second window may be incomplete.")end
-    if #rows==0 then Add("No readable UNIT_COMBAT receipts captured. The native recap is unchanged.")end
+    if #rows==0 then Add("No public amounts retained for Lua analysis. Protected amounts may still be visible in Death Log.")end
     local native=Table(page.native);local nativeRows=native and Table(native.rows)
     if nativeRows then Add("Blizzard's separate named recap retained "..#nativeRows.." hits.")end
     Add("")

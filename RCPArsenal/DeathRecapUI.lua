@@ -311,10 +311,11 @@ local function Tooltip(button,lines,spellID,itemID,color,focusIndex)
     end
 end
 local function HideTooltip(target)
-    if not target and frame and frame.protectedIncomingChart then
-        local chart=frame.protectedIncomingChart
-        if chart.details then chart.details:Hide()end
-        chart.guide:Hide()
+    if not target and frame then
+        for _,key in ipairs({"incomingChart","protectedIncomingChart"})do
+            local chart=frame[key]
+            if chart then if chart.details then chart.details:Hide()end;chart.guide:Hide()end
+        end
     end
     if target and target~=tooltipOwner then return end
     local owner,wasNative=tooltipOwner,tooltipNative;ClearTooltipTracking()
@@ -1143,6 +1144,11 @@ function UI:Render()
     if not incoming then
         local expired=not example and page.liveIncoming and page.liveIncoming.nativeDisplay
         incoming=expired and{available=false,sessionOnlyExpired=true}or(not example and M:Incoming(page)or{available=false})
+        if not example and not incoming.available and not expired and RA.DeathRecapProtectedIncoming then
+            local late=RA.DeathRecapProtectedIncoming:DescribeLate(page)
+            if late then incoming={available=true,nativeDisplay=true,rows={},damageCount=0,healingCount=0,protected=0,partial=false,referenceMaximum=1000000}
+            elseif page.liveIncoming and page.liveIncoming.nativeLateDisplay then incoming.sessionOnlyExpired=true end
+        end
     end
     frame.incomingHistory=incoming
     frame.feedMode=incoming.available and(frame.feedMode or"history")or"named"

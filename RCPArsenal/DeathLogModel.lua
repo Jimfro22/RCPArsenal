@@ -170,6 +170,8 @@ function Model:LateIncoming(input)
     if not packet or not died or died<0 or notice~=died or not deadline or deadline<died or deadline>died+1
         or Public(packet.source)~="UNIT_COMBAT:player"or Public(packet.clock)~="GetTime"then return result end
     result.valid=true
+    local restricted=Number(packet.restricted)
+    result.restricted=restricted and restricted>=0 and restricted==math.floor(restricted)and restricted or 0
     result.pending=Public(packet.active)==true and Public(page.restored)~=true
     local rows=Table(packet.rows)or{}
     result.partial=Public(packet.truncated)==true or #rows>32 or Public(packet.active)==true and Public(page.restored)==true

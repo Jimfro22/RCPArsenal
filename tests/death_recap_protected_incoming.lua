@@ -27,6 +27,16 @@ local label={SetFormattedText=function(self,format,value)check(format=='%d','Cha
 local b,t=I:Paint(page,2,bar,label)
 check(b and t and rawequal(bar.input,secret)and rawequal(label.input,secret)and label.__raNativeText,'Protected inputs changed before native sinks')
 check(not I:Paint(page,999,bar,label),'Missing sequence used another receipt')
+page.diedAt=13
+check(I:CaptureLate(page,13.1,'WOUND','',secret,1).protected==1,'Protected late receipt was discarded')
+I:CaptureLate(page,13.2,'HEAL','',7,1)
+local late=I:DescribeLate(page);clean(late)
+check(#late.rows==2 and late.rows[1].offset>0 and late.rows[2].kind=='healing','Late receipts lost delivery times or public members')
+I:PaintLate(page,1,label);check(rawequal(label.input,secret),'Late amount changed before native sink')
+check(#I:Describe(page).rows==3,'Late receipt entered pre-notice history')
+I:CaptureLate(page,14.01,'WOUND','',secret,1);check(#I:DescribeLate(page).rows==2,'Late capture exceeded one-second boundary')
+for n=1,40 do I:CaptureLate(page,13.3,'WOUND','',secret,1)end
+check(#I:DescribeLate(page).rows==32 and I:DescribeLate(page).partial,'Late capture exceeded its cap or hid loss')
 I:Begin(20);I:Capture(21,'WOUND','',22,1);check(I:Freeze({},22)==nil,'Public-only capture replaced arithmetic path')
 check(I:Describe(page)~=nil,'New fight erased earlier death')
 I:Begin(30);for n=1,300 do I:Capture(30+n/1000,'WOUND','',secret,1)end
@@ -35,6 +45,7 @@ I:Begin(40);for n=1,300 do I:Capture(40+n/1000,'WOUND','',secret,1)end
 I:Capture(60,'HEAL','',secret,1);local sparse={};summary=I:Freeze(sparse,61)
 check(summary.retained==1 and not summary.partial,'Old overflow mislabeled final eight seconds')
 I:Prune({busy,sparse});check(I:Describe(page)==nil and I:Describe(busy)~=nil,'Public-only deaths could leave evicted private history alive')
+check(I:DescribeLate(page)==nil,'Evicted death retained private late amounts')
 for n=1,5 do I:Begin(100+n);I:Capture(101+n,'HEAL','',secret,1);I:Freeze({},102+n)end
 check(I:Describe(page)==nil and I:Describe(busy)==nil,'More than five deaths retained opaque amounts')
 I:Begin(200);I:Capture(201,'WOUND','',secret,1);I:Cancel();check(I:Freeze({},202)==nil,'Cancelled capture survived')

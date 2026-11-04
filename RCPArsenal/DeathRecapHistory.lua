@@ -89,6 +89,7 @@ function H:Snapshot(input)
     if live then
         out.liveIncoming=Fields(live,'source clock startedAt endedAt combatEntryObserved total rejected restricted capacity seconds callbacks inactive unitRejected actionRejected recording sessionPrecombat lockdownAtDeath nativeRegistered')
         out.liveIncoming.nativeDisplay=Fields(live.nativeDisplay,'retained protected partial')
+        out.liveIncoming.nativeLateDisplay=Fields(live.nativeLateDisplay,'retained protected partial')
         out.liveIncoming.rows=Array(live.rows,256,function(v)return Fields(v,'sequence observedAt kind amount flag school')end)
         out.liveIncoming.trace=Array(live.trace,6,function(v)return Fields(v,'observedAt recording unit unitStatus action actionStatus')end)
         local boundary=Plain(live.deathBoundary)

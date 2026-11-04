@@ -1,9 +1,14 @@
 local _,RA=...
-local I={LIMITS={rows=256,seconds=8,pages=5}};RA.DeathRecapProtectedIncoming=I
+local I={LIMITS={rows=256,seconds=8,pages=5,late=32}};RA.DeathRecapProtectedIncoming=I
 -- Raw amounts live only here. Page tables, models, saved variables and reports
 -- receive public metadata, never these values or a reference to their container.
 local active,referenceMaximum
-local retained,order={},{}
+local retained,lateRetained,order={},{},{}
+local function Remember(page)
+    for _,old in ipairs(order)do if old==page then return end end
+    order[#order+1]=page
+    while #order>I.LIMITS.pages do local old=table.remove(order,1);retained[old]=nil;lateRetained[old]=nil end
+end
 local function Secret(value)
     if type(issecretvalue)~="function"then return nil end
     local ok,result=pcall(issecretvalue,value)
@@ -23,7 +28,7 @@ function I:PrepareReference()
     end
 end
 function I:Cancel()active=nil end
-function I:Clear()active=nil;retained={};order={};referenceMaximum=nil end
+function I:Clear()active=nil;retained={};lateRetained={};order={};referenceMaximum=nil end
 function I:Begin(at)
     active=nil;at=Number(at);if not at then return end
     active={startedAt=at,slots={},count=0,referenceMaximum=referenceMaximum and referenceMaximum>0 and referenceMaximum or 1000000}
@@ -53,8 +58,7 @@ function I:Freeze(page,at)
     end
     -- Public-only deaths keep the existing arithmetic/chart path and persistence.
     if packet.protected==0 then return nil end
-    retained[page]=packet;order[#order+1]=page
-    while #order>self.LIMITS.pages do retained[table.remove(order,1)]=nil end
+    retained[page]=packet;Remember(page)
     return{retained=#packet.rows,protected=packet.protected,partial=packet.partial}
 end
 function I:Describe(page)
@@ -67,18 +71,41 @@ function I:Describe(page)
     end
     return out
 end
+function I:CaptureLate(page,at,action,flag,amount,school)
+    local died=Number(page.diedAt);at=Number(at);action=Token(action)
+    if not died or not at or at<died or at>died+1 or(action~="WOUND"and action~="HEAL")then return nil end
+    local secret=Secret(amount)
+    if secret==nil or(secret==false and not Number(amount))then return nil end
+    local packet=lateRetained[page]
+    if not packet then packet={rows={},protected=0,diedAt=died};lateRetained[page]=packet;Remember(page)end
+    if #packet.rows>=self.LIMITS.late then packet.partial=true
+    else
+        local sequence=#packet.rows+1
+        packet.rows[sequence]={sequence=sequence,at=at,kind=action=="HEAL"and"healing"or"damage",flag=Token(flag),school=Number(school),amount=amount}
+        if secret then packet.protected=packet.protected+1 end
+    end
+    if packet.protected>0 then return{retained=#packet.rows,protected=packet.protected,partial=packet.partial==true}end
+end
+function I:DescribeLate(page)
+    local packet=lateRetained[page]
+    if not packet or packet.protected==0 then return nil end
+    local out={available=#packet.rows>0,nativeDisplay=true,late=true,rows={},protected=packet.protected,partial=packet.partial==true}
+    for _,row in ipairs(packet.rows)do
+        out.rows[#out.rows+1]={sequence=row.sequence,offset=row.at-packet.diedAt,kind=row.kind,flag=row.flag,school=row.school}
+    end
+    return out
+end
 function I:Prune(pages)
     local keep={};for _,page in ipairs(pages)do keep[page]=true end
     for index=#order,1,-1 do
-        if not keep[order[index]]then retained[order[index]]=nil;table.remove(order,index)end
+        if not keep[order[index]]then retained[order[index]]=nil;lateRetained[order[index]]=nil;table.remove(order,index)end
     end
 end
-function I:Paint(page,sequence,bar,label)
-    local packet=retained[page];local row=packet and packet.bySequence[sequence]
+local function Paint(row,maximum,bar,label)
     if not row then return false,false end
     local barOK,textOK=true,true
     if bar then
-        barOK=pcall(bar.SetMinMaxValues,bar,0,packet.referenceMaximum)
+        barOK=pcall(bar.SetMinMaxValues,bar,0,maximum)
         barOK=barOK and pcall(bar.SetValue,bar,row.amount)or false
         if not barOK then pcall(bar.SetValue,bar,0)end
     end
@@ -88,5 +115,13 @@ function I:Paint(page,sequence,bar,label)
         if not textOK then label:SetText("(blocked)")end
     end
     return barOK,textOK
+end
+function I:Paint(page,sequence,bar,label)
+    local packet=retained[page]
+    return Paint(packet and packet.bySequence[sequence],packet and packet.referenceMaximum,bar,label)
+end
+function I:PaintLate(page,sequence,label)
+    local packet=lateRetained[page]
+    return Paint(packet and packet.rows[sequence],nil,nil,label)
 end
 RA:RegisterCallback("PROFILE_RESET",function()I:Clear()end)

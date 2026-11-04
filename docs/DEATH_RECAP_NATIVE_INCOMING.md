@@ -1,12 +1,12 @@
 # Native incoming events in Death Log
 
-Alpha.62 uses the successful standalone display technique in the normal Death
+Alpha.63 uses the successful standalone display technique in the normal Death
 Log. Enable Personal Tools > Death Recap before combat. It is still off by
 default; no extra arming command is required for the integrated view.
 
 ## Owner check
 
-1. Update to alpha.62 and reload before combat. In a dungeon/raid, receive damage
+1. Update to alpha.63 and reload before combat. In a dungeon/raid, receive damage
    and healing, then open Death Log from Death Summary or `/recap` after death.
 2. On **8-second history**, inspect the red damage and green healing bars. Each
    narrow bar represents one receipt, grouped into half-second columns. Hover
@@ -15,8 +15,10 @@ default; no extra arming command is required for the integrated view.
    fixed one-million fallback. Amount labels are not capped or calculated.
 3. Switch **Named hits** and back, close/reopen the log, and switch between two
    deaths. The corresponding live events should remain separate and intact.
-4. Before reloading, send a chart screenshot, a hover screenshot and
-   `/rcp recapfacts`. State whether both damage and healing were visible.
+4. If **Received after death** appears, hover it before reloading. Its amounts
+   were delivered after the death notice; they are not backdated into the chart
+   or identified as the killing blow. Send that hover screenshot and
+   `/rcp recapfacts`. There may be no delayed events in a given death.
 5. After reload, the named recap/readiness and public facts remain saved. A death
    that depended on protected values explains that its live amounts were not
    saved, rather than presenting its remaining public events as a complete view.
@@ -33,8 +35,13 @@ default; no extra arming command is required for the integrated view.
   retains Blizzard's separate named records, often fewer than eight seconds.
 - Timestamps measure delivery to the addon. They do not establish server hit
   times, match a named hit, identify a killing blow or prove effective healing.
-- Public late-delivery reports stay in their separate existing inspection link.
-  Protected amounts delivered after the death notice are not included here.
+- The existing one-second post-death window retains up to 32 late receipts,
+  including protected amounts. **Received after death** uses native labels for
+  those amounts and positive delivery-time offsets. Public-only late reports
+  keep their existing view. They are separate from chart and chat totals.
+  After reload, public delayed amounts survive; cleared protected amounts are
+  explicitly counted as not retained. No callback is labeled a killing blow
+  based on its delivery time or amount.
 - Chat still uses the compact named-hit report. A healing total is omitted if
   protected receipts prevent a complete calculation; zero is not substituted.
 
@@ -42,7 +49,8 @@ default; no extra arming command is required for the integrated view.
 
 The store receives the existing player-only event dispatch; it creates no
 additional listener, timer, polling loop or per-frame script. Nothing records
-when Death Recap is off. One active ring retains at most 256 receipts. At death,
+when Death Recap is off. One active ring retains at most 256 receipts. The existing one-second deadline
+adds at most 32 late receipts per death and no additional timer. At death,
 only the last eight seconds are kept, with an explicit capacity-loss marker.
 Private packets are bounded to five deaths, drop as those deaths leave recent
 history, and clear on disable/profile reset.
@@ -58,5 +66,8 @@ Offline tests cover opaque dataflow, full recorder/UI integration, 256-event
 windows, every tooltip receipt, five-death retention, stale callbacks, view
 switching, chat and persistence boundaries. A standalone owner capture proved
 horizontal native widgets can visibly show protected amounts after death.
-The integrated vertical chart, tooltip pixels, native lifetime and performance
-still require the owner check above; mock tests do not establish those facts.
+An owner alpha.62 dungeon capture confirmed the integrated vertical bars and
+native hover labels for 14 protected receipts. It also exposed one protected
+late callback that was not retained; alpha.63 closes that separate gap.
+Late native pixels, lifetime through reopening/history switching, and native
+performance still require acceptance; mock tests do not establish those facts.

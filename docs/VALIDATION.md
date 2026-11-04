@@ -1,6 +1,6 @@
 # Consolidation and validation
 
-Current consolidation build: **0.15.3-alpha.62**, reviewed 2026-11-04. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
+Current consolidation build: **0.15.3-alpha.63**, reviewed 2026-11-04. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
 
 ## Release decision
 
@@ -16,7 +16,7 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 | Defensive uses and readiness | Separate successful-use records and frozen availability; learned replacement filtering | Owner verified Arcane/Frost charge depletion, Mirror Image use, and Ice Cold use. Fire test confirmed Ice Cold use, a remaining Blazing Barrier charge, unused Alter Time, and Mirror Image omitted as a defensive. |
 | Consumables | Healthstone/potion use, bag presence, cooldown readiness, dimmed unavailable icons | Owner verified empty Healthstone bags, a carried ready Healthstone, and used/on-cooldown potions and stones. Fire also confirmed the used Healthstone unavailable at death. Other item variants need pilot coverage. |
 | Named hits | Shows supplied native records through eight seconds; grouped damage/absorbs; native spell details and boss Journal lookup | Owner confirmed earlier hits, boss click behavior, and the saved 5:08 fight-time label clear of the chart. Native packets can cover less than eight seconds. |
-| Incoming history | Bounded eight-second public receipts plus a native-rendered protected path; recorded uses | Owner supplied public captures and a successful standalone protected-number display in a dungeon. Integrated protected chart, hover, retention and performance need the alpha.62 native check. These receipts have no spell names or attackers. |
+| Incoming history | Bounded eight-second public receipts plus a native-rendered protected path; recorded uses | Owner supplied public captures and a successful standalone protected-number display in a dungeon. Integrated native bars and hover labels confirmed in one owner dungeon capture. Delayed-event rendering, retention through reopening and performance need the alpha.63 check. These receipts have no spell names or attackers. |
 | Raid tools | Versions, supplies, Quick Bar, missing-class chat, draft/save/load/sort/import/apply raid groups | Implemented; a coordinated two-client regression remains. Raid composition statistics are still future work. |
 | Markers | Separate instant, radial, and clear/cancel controls | Stable separate-key direction adopted. Native combat/permission smoke remains; timed one-key experiments are shelved. |
 | Personal tools | Resurrection switches; optional potion reminder, combat filter, sizes/text, sound and glow controls | Implemented; final live reminder/offer acceptance checks remain. |
@@ -32,27 +32,29 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 
 ## Validation order
 
-### 1. Integrated protected incoming display on alpha.62
+### 1. Protected delayed events on alpha.63
 
-One alpha.61 owner dungeon capture confirmed that protected incoming damage
-and healing amounts remained visibly rendered in native bars and labels after
-death. That establishes a usable display route, not named-spell identity,
-Lua arithmetic, chat export, reload persistence or reliability across clients.
+One owner alpha.62 dungeon capture confirmed the integrated native bars and
+hover labels: 14 protected incoming receipts, including damage and healing,
+were visible. This establishes native rendering in that case; it does not
+identify unnamed receipts or prove a clock bridge to named hits.
 
-Alpha.62 connects a separate bounded private store to the normal recorder and
-Death Log. No arming command is needed. Individual native bars retain their own
-amounts; hover/scroll shows native number labels. There are no calculated totals
-for this path. Public-only deaths retain their existing chart and totals.
+The same export recorded a protected callback after the death notice that
+alpha.62 excluded. Alpha.63 retains up to 32 receipts in the existing one-second
+window and exposes them separately under **Received after death**. It reuses
+native labels, stores protected values only in private session memory and
+adds no event listener or timer. Late callbacks are not backdated, assigned
+spell names, called killing blows or included in chart/chat totals.
 
-Test [the integrated view](DEATH_RECAP_NATIVE_INCOMING.md) inside an instance:
-inspect damage and healing, switch Named hits and back, close/reopen, and switch
-between two retained deaths. After reload, confirm that named records/readiness
-persist and the session-only amounts have an explicit explanation. The
-standalone probe result does not substitute for this integrated native check.
+Check that separate hover panel after a new death if delayed receipts occur.
+Reopening/history switching and native CPU/RAM measurements remain pending.
+Facts now count public/protected inputs explicitly, with capacity and cleared
+session explanations. Old protected late amounts cannot be recovered.
 
-Both streams still have different clocks and identities. Additional supported
-named history and defensible time alignment remain investigations. Short
-native coverage alone does not establish a Cauterize-specific cutoff.
+The reviewed native packet had ten records, of which eight fell in the shown
+eight-second window. All eight were represented in seven icon groups; the
+remaining two were older. This capture does not establish another source for
+longer named history in denser fights, or a Cauterize-specific cutoff.
 
 The saved 5:08 label and reported Fire Mage use/readiness results remain accepted. Compact sharing is implemented; coordinated native delivery acceptance remains below.
 
