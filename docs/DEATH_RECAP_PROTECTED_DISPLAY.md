@@ -1,12 +1,12 @@
 # Protected incoming display test
 
-Alpha.60 adds an explicitly armed experiment, separate from the normal Death Log.
+Alpha.61 repairs an explicitly armed experiment, separate from the normal Death Log.
 It tests whether protected incoming amounts can remain visible through native
 widgets after the player's death. Native acceptance is pending.
 
 ## Owner test
 
-1. Update to alpha.60 and `/reload` **before** the test. Enable Personal Tools > Death Recap.
+1. Update to alpha.61 and `/reload` **before** the test. Enable Personal Tools > Death Recap.
 2. Inside a dungeon or raid, while alive and outside combat, run `/rcp recapdebug display start`.
 3. Enter combat and die within two minutes. Receive healing during the fight if possible so both event types can be inspected.
 4. A simple test window freezes the last eight seconds, newest receipts first. Screenshot its rows and counts. Scroll one row per wheel notch to inspect more of the capture.
@@ -18,8 +18,11 @@ labels or missing bars are a negative result. A capture with no protected inputs
 does not validate the protected path.
 
 `/rcp recapdebug display` reopens this login's test. `display report` opens its
-public status report. `display stop`, closing an armed window, module reset or
-disable, world transition, and the two-minute deadline stop recording. After
+public status report. `display stop`, the explicit CLOSE button, profile reset or module
+disable, world transition, and the two-minute deadline stop recording. An
+ordinary combat-session reset or an externally hidden window does not clear
+the capture. The armed window is excluded from generic close-all-windows. If
+it disappears, reopen it with `display` and use `display report` for its state. After
 death all test event subscriptions and the expiry timer stop. Closing a frozen
 window retains that login's capture for review; starting another test replaces it.
 
@@ -43,6 +46,17 @@ window retains that login's capture for review; starting another test replaces i
 - The regular recap, readiness checks, bindings and action bars are unchanged.
   This experiment does not expand Blizzard's named recap or establish a clock
   bridge between the two sources.
+
+## Lifecycle regression
+
+The first alpha.60 owner attempt did not remain usable after death. An offline
+integration of the real Core, recorder, and probe reproduced a definite defect:
+the recorder emits `reset` when combat starts, and the probe treated it as a
+cancellation. Alpha.61 ignores this ordinary session signal, stops explicitly
+on profile reset/disable, and preserves evidence when another UI hides its
+window. The previous module fails the same integration regression. Both the
+full lifecycle test and opaque-input tests pass with the fix; native protected
+rendering still needs the owner check above.
 
 ## Evidence
 

@@ -2,6 +2,14 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.61 — Keep the display test recording
+
+### Fixed
+
+- The manual protected-number test stays armed when combat starts instead of canceling itself.
+- External window hides preserve the capture. Reopen with /rcp recapdebug display; CLOSE still cancels an active test.
+- COPY STATUS includes the last event and window hides to diagnose a failed test without another fight.
+
 ## 0.15.3-alpha.60 — Test protected incoming numbers
 
 ### Added

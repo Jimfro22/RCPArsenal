@@ -4,6 +4,14 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.61", title = "Keep the display test recording",
+        groups = {{label = "Fixed", items = {
+            "The manual protected-number test stays armed when combat starts instead of canceling itself.",
+            "External window hides preserve the capture. Reopen with /rcp recapdebug display; CLOSE still cancels an active test.",
+            "COPY STATUS includes the last event and window hides to diagnose a failed test without another fight.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.60", title = "Test protected incoming numbers",
         groups = {{label = "Added", items = {
             "A manual display test passes protected incoming amounts directly to Blizzard's bars and text.",

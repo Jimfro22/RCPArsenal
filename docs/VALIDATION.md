@@ -1,6 +1,6 @@
 # Consolidation and validation
 
-Current consolidation build: **0.15.3-alpha.60**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
+Current consolidation build: **0.15.3-alpha.61**, reviewed 2026-11-03. This is the current engineering checklist. Older release documents remain historical records. [Recent updates](RECENT_UPDATES.md) and the manual **What's new** button use `RCPArsenal/ReleaseNotes.lua` as their shared source.
 
 ## Release decision
 
@@ -32,7 +32,7 @@ Ready for a small GitHub pilot on other classes/specs. Broad class coverage and 
 
 ## Validation order
 
-### 1. Protected incoming display on alpha.60
+### 1. Protected incoming display on alpha.61
 
 The explicitly armed source comparisons agree between the meter-linked recap,
 Blizzard's personal default at death, and its default one second later. They
@@ -40,6 +40,11 @@ have not established another source for a full eight-second named history.
 A separate owner instance capture delivered protected incoming amounts, which
 the ordinary public-only recorder correctly excluded. Short native coverage
 alone does not establish a Cauterize-specific cutoff.
+
+The first alpha.60 owner attempt failed after death. The combined offline
+lifecycle test reproduced cancellation at ordinary combat entry; alpha.61
+corrects that and keeps captures through external window hides. Native
+protected rendering is still unverified.
 
 Use the [protected display test](DEATH_RECAP_PROTECTED_DISPLAY.md) for one
 instance death. It passes retained amounts directly to documented native bars
