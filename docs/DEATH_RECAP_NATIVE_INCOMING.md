@@ -6,7 +6,7 @@ default; no extra arming command is required for the integrated view.
 
 ## Owner check
 
-1. Update to alpha.63 and reload before combat. In a dungeon/raid, receive damage
+1. Update to alpha.64 and reload before combat. In a dungeon/raid, receive damage
    and healing, then open Death Log from Death Summary or `/recap` after death.
 2. On **8-second history**, inspect the red damage and green healing bars. Each
    narrow bar represents one receipt, grouped into half-second columns. Hover
@@ -69,5 +69,6 @@ horizontal native widgets can visibly show protected amounts after death.
 An owner alpha.62 dungeon capture confirmed the integrated vertical bars and
 native hover labels for 14 protected receipts. It also exposed one protected
 late callback that was not retained; alpha.63 closes that separate gap.
-Late native pixels, lifetime through reopening/history switching, and native
+An alpha.63 owner screenshot confirmed five protected late amounts in the
+separate hover panel. Lifetime through reopening/history switching and native
 performance still require acceptance; mock tests do not establish those facts.

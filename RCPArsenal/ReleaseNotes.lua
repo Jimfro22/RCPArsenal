@@ -4,6 +4,14 @@ local _, RA = ...
 -- Notes describe shipped behavior; native acceptance lives in docs/VALIDATION.md.
 RA.ReleaseNotes = {
     {
+        version = "0.15.3-alpha.64", title = "Initialize named recap capture",
+        groups = {{label = "Fixed", items = {
+            "Enabling Death Log while alive and out of combat now checks its named-recap baseline without waiting for a meter update.",
+            "Unreadable startup checks can recover at existing alive boundaries; old or unresolved death records remain excluded.",
+            "New saved debug reports retain the recap baseline source and failure reason for diagnosis after reload.",
+        }}},
+    },
+    {
         version = "0.15.3-alpha.63", title = "Keep delayed incoming events",
         groups = {{label = "Fixed", items = {
             "Protected events delivered just after death now remain inspectable under Received after death.",

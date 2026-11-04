@@ -2,6 +2,14 @@
 
 <!-- Generated from RCPArsenal/ReleaseNotes.lua; edit that source, then run tools/export_release_notes.lua. -->
 
+## 0.15.3-alpha.64 — Initialize named recap capture
+
+### Fixed
+
+- Enabling Death Log while alive and out of combat now checks its named-recap baseline without waiting for a meter update.
+- Unreadable startup checks can recover at existing alive boundaries; old or unresolved death records remain excluded.
+- New saved debug reports retain the recap baseline source and failure reason for diagnosis after reload.
+
 ## 0.15.3-alpha.63 — Keep delayed incoming events
 
 ### Fixed
