@@ -60,6 +60,7 @@ enabled=true;combat=true;check(not P:Start()and created==0,'In-combat arm create
 dead=true;check(not P:Start()and created==0,'Dead arm created UI');dead=false
 check(P:Start(),'Display test did not arm');local f=named.RCPArsenalProtectedDisplayTest;local firstTimer=timers[#timers]
 check(f.shown and firstTimer.delay==120 and subscriptions()==6,'Armed indicator/deadline/subscription bound wrong')
+check(#UISpecialFrames==0,'Armed indicator can be dismissed by generic close-all-windows')
 local initialCreated=created
 event('UNIT_COMBAT','player','WOUND','',secret,1)
 check(P:BuildReport():find('Received 0;',1,true),'Out-of-combat feedback entered capture')
@@ -72,8 +73,12 @@ time=11.3;event('UNIT_COMBAT','player','WOUND','',0,1)
 event('UNIT_COMBAT','player','WOUND','',-1,1)
 local observer;for _,o in ipairs(objects)do if o.events.UNIT_COMBAT then observer=o end end
 local stale=observer.scripts.OnEvent
+-- Model an external death-dialog hide BEFORE this observer receives the death.
+f:Hide();check(subscriptions()==6 and not firstTimer.cancelled,'External hide discarded the armed capture')
 time=12;dead=true;event('PLAYER_DEAD')
 local report=P:BuildReport()
+check(f.shown and report:find('State: frozen at own death',1,true),'Death did not reopen the hidden test')
+check(report:find('Last event: PLAYER_DEAD; window hides: 1',1,true),'Lifecycle diagnostics lost the death/hide order')
 check(report:find('Received 3; public 1; protected 2; rejected 1',1,true),'Protected/public/filter counters wrong')
 check(report:find('Retained 3 / 8 seconds; protected retained 2; partial no',1,true),'Frozen window changed')
 check(report:find('bar calls accepted 3; text calls accepted 3',1,true),'Native sink acceptance not reported')
@@ -84,6 +89,8 @@ check(f.rows[2].kind.text=='Healing'and f.rows[3].kind.text=='Damage','Event kin
 for _,o in ipairs(objects)do if rawget(o,'label')and o.label.text=='COPY STATUS'then o:Fire('OnClick')end end
 check(copied==report,'Copy exported protected values or changed metadata')
 f:Hide();check(P:Show()and f.shown,'Frozen capture could not reopen')
+report=P:BuildReport()
+check(not P:Start()and P:BuildReport()==report,'Rearming while dead erased the existing capture')
 firstTimer.fn();stale(observer,'UNIT_COMBAT','player','WOUND','',secret,1)
 check(P:BuildReport()==report,'Stale callback changed frozen evidence')
 f.rows[2].amount.failText=true;f.rows[2].bar.failBar=true;P:Render()
@@ -114,8 +121,13 @@ check(P:BuildReport():find('Received 1; public 1; protected 0',1,true),'Second c
 
 dead=false;combat=false;time=70;P:Start();event('PLAYER_ENTERING_WORLD')
 check(subscriptions()==0 and P:BuildReport():find('State: world-changed',1,true),'World transition left recorder armed')
-time=80;P:Start();f:Hide();check(subscriptions()==0 and timers[#timers].cancelled,'Closing armed indicator left hidden work')
-time=90;P:Start();callbacks.DEATH_RECAP_CHANGED('reset');check(subscriptions()==0,'Module reset left recorder active')
+time=80;P:Start()
+for _,o in ipairs(objects)do if rawget(o,'label')and o.label.text=='CLOSE'then o:Fire('OnClick')end end
+check(not f.shown and subscriptions()==0 and timers[#timers].cancelled,'Explicit close left recording active')
+check(P:BuildReport():find('State: window-closed',1,true),'Explicit close reason missing')
+time=90;P:Start();callbacks.DEATH_RECAP_CHANGED('reset')
+check(subscriptions()==6 and P:BuildReport():find('State: armed/recording',1,true),'Normal combat reset canceled the test')
+callbacks.PROFILE_RESET();check(subscriptions()==0,'Profile reset left recorder active')
 time=100;P:Start();enabled=false;callbacks.DEATH_RECAP_CHANGED('settings');check(subscriptions()==0,'Module disable left recorder active')
 enabled=true;time=110;P:Start();time=230;event('PLAYER_REGEN_DISABLED');event('UNIT_COMBAT','player','WOUND','',secret,1)
 check(subscriptions()==0 and P:BuildReport():find('State: timeout',1,true),'Delayed expiry callback allowed capture past deadline')

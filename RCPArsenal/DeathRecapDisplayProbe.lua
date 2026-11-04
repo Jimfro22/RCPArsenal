@@ -71,16 +71,23 @@ local function CreateWindow()
     Button(f,"COPY STATUS",20,function()
         local shown,reason=RA.DeathRecapUI:ShowDebugText(P:BuildReport());if not shown then RA:Print(reason)end
     end)
-    Button(f,"CLOSE",512,function()f:Hide()end)
+    Button(f,"CLOSE",512,function()
+        if owner and owner.active then P:Stop("window-closed")end
+        f:Hide()
+    end)
     f:EnableMouseWheel(true)
     f:SetScript("OnMouseWheel",function(_,delta)
         delta=Number(math.abs(delta))and delta or 0
         if owner and owner.frozen and delta~=0 then owner.offset=math.max(0,math.min(math.max(0,#owner.rows-P.LIMITS.visible),(owner.offset or 0)+(delta<0 and 1 or -1)));P:Render()end
     end)
-    f:SetScript("OnHide",function()if owner and owner.active then P:Stop("window-closed")end end)
+    -- Visibility changes are not a user cancellation. Death/other UI code can
+    -- hide a window before PLAYER_DEAD reaches this observer; clearing here
+    -- would discard the receipts and unregister that very death notification.
+    f:SetScript("OnHide",function()if owner then owner.hiddenCount=(owner.hiddenCount or 0)+1 end end)
     local width,height=Number(Read(UIParent.GetWidth,UIParent)),Number(Read(UIParent.GetHeight,UIParent))
     if width and height and width>40 and height>80 then f:SetScale(math.min(1,(width-32)/640,(height-32)/570))end
-    if type(UISpecialFrames)=="table"then table.insert(UISpecialFrames,"RCPArsenalProtectedDisplayTest")end
+    -- Keep the armed indicator out of the generic close-all-windows list.
+    -- CLOSE and the explicit stop command still cancel immediately.
     window=f
     return f
 end
@@ -125,6 +132,7 @@ local function Freeze(o,at)
 end
 local function Event(o,event,unit,action,_,amount)
     if owner~=o or not o.active then return end
+    o.lastEvent=event
     local at=Now();if not at or at<o.armedAt then P:Stop("clock-unavailable");return end
     if at>=o.deadline then P:Stop("timeout");return end
     if event=="PLAYER_ENTERING_WORLD"or event=="PLAYER_LOGOUT"then P:Stop("world-changed");return end
@@ -151,7 +159,7 @@ end
 function P:Start()
     local state=RA.DeathRecap:GetState()
     if not state.enabled then return false,"Enable Personal Tools > Death Recap before arming the display test"end
-    if Read(UnitIsDeadOrGhost,"player")~=false or Read(InCombatLockdown)~=false then return false,"Arm the display test alive and outside combat"end
+    if Read(UnitIsDeadOrGhost,"player")~=false or Read(InCombatLockdown)~=false then return false,"Arm the display test alive and outside combat; /rcp recapdebug display reopens an existing test"end
     local at=Now()
     if not at or Secret(0)~=false or not C_Timer or type(C_Timer.NewTimer)~="function"then return false,"Display test timer or public clock unavailable"end
     self:Stop("replaced")
@@ -185,9 +193,10 @@ function P:BuildReport()
         if row.barAccepted then bars=bars+1 end;if row.textAccepted then text=text+1 end
     end
     local meta=o.metadata or{}
-    return table.concat({"RCP protected-number display test v1", "Arsenal "..RA.VERSION,
+    return table.concat({"RCP protected-number display test v2", "Arsenal "..RA.VERSION,
         "Client "..(meta.version or"not recorded").." build "..(meta.build or"not recorded").."; instance "..(meta.instanceType or"not recorded").."; difficulty "..(meta.difficulty or"not recorded"),
         "State: "..(o.frozen and"frozen at own death"or o.active and"armed/recording"or o.reason),
+        "Last event: "..(o.lastEvent or"none").."; window hides: "..(o.hiddenCount or 0),
         string.format("Received %d; public %d; protected %d; rejected %d",o.count,o.public,o.protected,o.rejected),
         string.format("Retained %d / 8 seconds; protected retained %d; partial %s",#rows,protected,o.partial and"yes"or"no"),
         string.format("Rendered rows %d; bar calls accepted %d; text calls accepted %d",drawn,bars,text),
@@ -196,5 +205,8 @@ function P:BuildReport()
         "Protected amounts are excluded from this report, chat, and saved history. Reload clears the test."},"\n")
 end
 RA:RegisterCallback("DEATH_RECAP_CHANGED",function(kind)
-    if owner and(kind=="reset"or kind=="settings"and not RA.DeathRecap:GetState().enabled)then P:Stop("recap-settings-changed")end
+    -- "reset" also means the ordinary start of a fresh combat session. The
+    -- probe owns its own lifecycle and must remain armed through that signal.
+    if owner and kind=="settings"and not RA.DeathRecap:GetState().enabled then P:Stop("recap-settings-changed")end
 end)
+RA:RegisterCallback("PROFILE_RESET",function()P:Stop("profile-reset")end)
